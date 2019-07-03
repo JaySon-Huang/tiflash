@@ -4,6 +4,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <common/likely.h>
+#include <common/logger_useful.h>
 
 #include <Storages/Page/Page.h>
 #include <Storages/Page/PageDefines.h>
@@ -90,9 +91,9 @@ public:
     void decrRefCount()
     {
         assert(ref_count >= 1);
-        --ref_count;
-        if (ref_count == 0)
+        if (--ref_count == 0)
         {
+            LOG_TRACE(&Poco::Logger::root(), "Removing version, maxId:" + DB::toString(max_page_id) + ", " + DB::toString(normal_pages.size()) + " pages from version set");
             delete this; // remove this node from version set
         }
     }
@@ -238,9 +239,9 @@ private:
     std::unordered_map<PageId, PageId>    page_ref; // RefPageId -> PageId
 
     // For MVCC
-    UInt32         ref_count;
-    PageEntryMap * next;
-    PageEntryMap * prev;
+    std::atomic<UInt32> ref_count;
+    PageEntryMap *      next;
+    PageEntryMap *      prev;
 
     PageId max_page_id;
 
