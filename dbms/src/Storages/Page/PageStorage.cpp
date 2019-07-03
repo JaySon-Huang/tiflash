@@ -90,8 +90,7 @@ PageEntry PageStorage::getEntry(PageId page_id)
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     auto it = page_entry_map->find(page_id);
@@ -165,8 +164,7 @@ Page PageStorage::read(PageId page_id)
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     auto it = page_entry_map->find(page_id);
@@ -188,8 +186,7 @@ PageMap PageStorage::read(const std::vector<PageId> & page_ids)
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     std::map<PageFileIdAndLevel, std::pair<PageIdAndEntries, ReaderPtr>> file_read_infos;
@@ -228,8 +225,7 @@ void PageStorage::read(const std::vector<PageId> & page_ids, PageHandler & handl
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     std::map<PageFileIdAndLevel, std::pair<PageIdAndEntries, ReaderPtr>> file_read_infos;
@@ -265,8 +261,7 @@ void PageStorage::traverse(const std::function<void(const Page & page)> & accept
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     std::map<PageFileIdAndLevel, PageIds> file_and_pages;
@@ -299,8 +294,7 @@ void PageStorage::traversePageEntries( //
         page_entry_map->incrRefCount();
     }
     SCOPE_EXIT({
-        std::unique_lock decr_lock(read_mutex);
-        page_entry_map->decrRefCount();
+        page_entry_map->decrRefCount(read_mutex);
     });
 
     // traverse over all Pages or RefPages
@@ -344,8 +338,7 @@ bool PageStorage::gc()
             page_entry_map->incrRefCount();
         }
         SCOPE_EXIT({
-            std::unique_lock decr_lock(read_mutex);
-            page_entry_map->decrRefCount();
+            page_entry_map->decrRefCount(read_mutex);
         });
 
         std::map<PageFileIdAndLevel, std::pair<size_t, PageIds>> file_valid_pages;
