@@ -60,10 +60,10 @@ PageStorage::PageStorage(const String & storage_path_, const Config & config_)
 {
     /// page_files are in ascending ordered by (file_id, level).
     auto page_files = PageStorage::listAllPageFiles(storage_path, /* remove_tmp_file= */ true, page_file_log);
-    // TODO recover current map from files
-    PageEntriesEdit edit;
+    // recover current map from files
     for (auto & page_file : page_files)
     {
+        PageEntriesEdit edit;
         const_cast<PageFile &>(page_file).readAndSetPageMetas(edit);
 
         // Only level 0 is writable.
@@ -71,8 +71,9 @@ PageStorage::PageStorage(const String & storage_path_, const Config & config_)
         {
             write_file = page_file;
         }
+        // apply edit to version_set
+        version_set.apply(edit);
     }
-    version_set.apply(edit);
 }
 
 PageId PageStorage::getMaxId()
@@ -89,9 +90,7 @@ PageEntry PageStorage::getEntry(PageId page_id)
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     auto it = page_entry_map->find(page_id);
     if (it != page_entry_map->end())
@@ -150,7 +149,7 @@ void PageStorage::write(const WriteBatch & wb)
 
     {
         std::unique_lock read_lock(read_mutex);
-        // TODO apply changes into version_set(generate a new version)
+        // apply changes into version_set(generate a new version)
         version_set.apply(edit);
     }
 }
@@ -163,9 +162,7 @@ Page PageStorage::read(PageId page_id)
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     auto it = page_entry_map->find(page_id);
     if (it == page_entry_map->end())
@@ -185,9 +182,7 @@ PageMap PageStorage::read(const std::vector<PageId> & page_ids)
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     std::map<PageFileIdAndLevel, std::pair<PageIdAndEntries, ReaderPtr>> file_read_infos;
     for (auto page_id : page_ids)
@@ -224,9 +219,7 @@ void PageStorage::read(const std::vector<PageId> & page_ids, PageHandler & handl
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     std::map<PageFileIdAndLevel, std::pair<PageIdAndEntries, ReaderPtr>> file_read_infos;
     for (auto page_id : page_ids)
@@ -260,9 +253,7 @@ void PageStorage::traverse(const std::function<void(const Page & page)> & accept
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     std::map<PageFileIdAndLevel, PageIds> file_and_pages;
     {
@@ -293,9 +284,7 @@ void PageStorage::traversePageEntries( //
         page_entry_map = version_set.currentMap();
         page_entry_map->incrRefCount();
     }
-    SCOPE_EXIT({
-        page_entry_map->decrRefCount(read_mutex);
-    });
+    SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
     // traverse over all Pages or RefPages
     for (auto iter = page_entry_map->cbegin(); iter != page_entry_map->cend(); ++iter)
@@ -337,9 +326,7 @@ bool PageStorage::gc()
             page_entry_map = version_set.currentMap();
             page_entry_map->incrRefCount();
         }
-        SCOPE_EXIT({
-            page_entry_map->decrRefCount(read_mutex);
-        });
+        SCOPE_EXIT({ page_entry_map->decrRefCount(read_mutex); });
 
         std::map<PageFileIdAndLevel, std::pair<size_t, PageIds>> file_valid_pages;
         {
