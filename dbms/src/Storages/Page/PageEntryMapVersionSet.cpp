@@ -10,7 +10,7 @@ void PageEntryMapVersionSet::apply(const PageEntriesEdit & edit)
     base->incrRefCount();
 
     auto * v = new PageEntryMap;
-    v->copyEntries(*base);
+    v->copyEntries(*base); // maybe expensive if there are millions of pages?
     for (const auto & rec : edit.getRecords())
     {
         switch (rec.type)
@@ -38,7 +38,7 @@ void PageEntryMapVersionSet::gcApply(const PageEntriesEdit & edit)
     base->incrRefCount();
 
     auto * v = new PageEntryMap;
-    v->copyEntries(*base);
+    v->copyEntries(*base); // maybe expensive if there are millions of pages?
     for (const auto & rec : edit.getRecords())
     {
         if (rec.type != WriteBatch::WriteType::PUT)
