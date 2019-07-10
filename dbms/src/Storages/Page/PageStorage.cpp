@@ -339,7 +339,7 @@ bool PageStorage::gc()
         LOG_INFO(log, "GC decide to merge " << merge_files.size() << " files, containing " << migrate_page_count << " regions");
 
         // There are no valid pages to be migrated but valid ref pages, scan over all `merge_files` and do migrate.
-        gc_file_entries_edit = gcMigratePages(snapshot->version(), file_valid_pages, merge_files);
+        gc_file_entries_edit = gcMigratePages(snapshot, file_valid_pages, merge_files);
     }
 
     std::set<PageFileIdAndLevel> live_files;
@@ -424,9 +424,8 @@ PageStorage::GcCandidates PageStorage::gcSelectCandidateFiles( // keep readable 
     return merge_files;
 }
 
-PageEntriesEdit PageStorage::gcMigratePages(const PageEntryMap * const current,
-                                            const GcLivesPages &       file_valid_pages,
-                                            const GcCandidates &       merge_files) const
+PageEntriesEdit
+PageStorage::gcMigratePages(const SnapshotPtr & snapshot, const GcLivesPages & file_valid_pages, const GcCandidates & merge_files) const
 {
     PageEntriesEdit gc_file_edit;
 
@@ -436,6 +435,7 @@ PageEntriesEdit PageStorage::gcMigratePages(const PageEntryMap * const current,
 
     size_t num_successful_migrate_pages = 0;
     size_t num_valid_ref_pages          = 0;
+    auto * current                      = snapshot->version();
     {
         PageEntriesEdit legacy_edit; // All page entries in `merge_files`
         // No need to sync after each write. Do sync before closing is enough.
