@@ -1,6 +1,7 @@
+#include <Flash/BatchCoprocessorHandler.h>
+
 #include <Flash/Coprocessor/DAGDriver.h>
 #include <Flash/Coprocessor/InterpreterDAG.h>
-#include <Flash/CoprocessorHandler.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/Transaction/LockException.h>
@@ -16,12 +17,12 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
-CoprocessorHandler::CoprocessorHandler(
-    CoprocessorContext & cop_context_, const coprocessor::Request * cop_request_, coprocessor::Response * cop_response_)
-    : cop_context(cop_context_), cop_request(cop_request_), cop_response(cop_response_), log(&Logger::get("CoprocessorHandler"))
+BatchCoprocessorHandler::BatchCoprocessorHandler(
+    CoprocessorContext & cop_context_, const coprocessor::BatchRequest * cop_request_, coprocessor::BatchResponse * cop_response_)
+    : cop_context(cop_context_), cop_request(cop_request_), cop_response(cop_response_), log(&Logger::get("BatchCoprocessorHandler"))
 {}
 
-grpc::Status CoprocessorHandler::execute()
+grpc::Status BatchCoprocessorHandler::execute()
 try
 {
     switch (cop_request->tp())
@@ -29,24 +30,16 @@ try
         case COP_REQ_TYPE_DAG:
         {
             std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> key_ranges;
-            for (auto & range : cop_request->ranges())
-            {
-                std::string start_key(range.start());
-                DecodedTiKVKey start(std::move(start_key));
-                std::string end_key(range.end());
-                DecodedTiKVKey end(std::move(end_key));
-                key_ranges.emplace_back(std::make_pair(std::move(start), std::move(end)));
-            }
             tipb::DAGRequest dag_request;
             dag_request.ParseFromString(cop_request->data());
             LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling DAG request: " << dag_request.DebugString());
-            if (dag_request.has_is_rpn_expr() && dag_request.is_rpn_expr())
-                throw Exception("DAG request with rpn expression is not supported in TiFlash", ErrorCodes::NOT_IMPLEMENTED);
             tipb::SelectResponse dag_response;
             std::vector<RegionInfo> regions;
-            regions.emplace_back(cop_context.kv_context.region_id(), cop_context.kv_context.region_epoch().version(),
-                    cop_context.kv_context.region_epoch().conf_ver());
-            DAGDriver driver(cop_context.db_context, dag_request, regions, dag_request.start_ts_fallback(), -1, std::move(key_ranges),dag_response);
+            for (auto & r : cop_request->regions()) {
+                regions.emplace_back(r.region_id(), r.region_epoch().version(), r.region_epoch().conf_ver());
+            }
+            DAGDriver driver(cop_context.db_context, dag_request, regions, std::move(key_ranges),
+                dag_response);
             driver.execute();
             cop_response->set_data(dag_response.SerializeAsString());
             LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handle DAG request done");
@@ -62,33 +55,49 @@ try
 }
 catch (const LockException & e)
 {
-    LOG_WARNING(
-        log, __PRETTY_FUNCTION__ << ": LockException: region " << cop_request->context().region_id() << ", message: " << e.message());
+    LOG_ERROR(log,
+        __PRETTY_FUNCTION__ << ": LockException: region " << cop_request->context().region_id() << "\n"
+                            << e.getStackTrace().toString());
     cop_response->Clear();
-    kvrpcpb::LockInfo * lock_info = cop_response->mutable_locked();
-    lock_info->set_key(e.lock_infos[0]->key);
-    lock_info->set_primary_lock(e.lock_infos[0]->primary_lock);
-    lock_info->set_lock_ttl(e.lock_infos[0]->lock_ttl);
-    lock_info->set_lock_version(e.lock_infos[0]->lock_version);
+    for (int i = 0; i < cop_request->regions_size(); i++) {
+        auto * status = cop_response->add_region_status();
+        if (cop_request->regions(i).region_id() == e.region_id)
+        {
+            auto * lock_info = status->mutable_locked();
+            lock_info->set_key(e.lock_infos[0]->key);
+            lock_info->set_primary_lock(e.lock_infos[0]->primary_lock);
+            lock_info->set_lock_ttl(e.lock_infos[0]->lock_ttl);
+            lock_info->set_lock_version(e.lock_infos[0]->lock_version);
+        }
+        else
+        {
+            status->set_success(true);
+        }
+    }
     // return ok so TiDB has the chance to see the LockException
     return grpc::Status::OK;
 }
 catch (const RegionException & e)
 {
-    LOG_WARNING(
-        log, __PRETTY_FUNCTION__ << ": RegionException: region " << cop_request->context().region_id() << ", message: " << e.message());
+    LOG_ERROR(log,
+        __PRETTY_FUNCTION__ << ": RegionException: region " << cop_request->context().region_id() << "\n"
+                            << e.getStackTrace().toString());
     cop_response->Clear();
-    errorpb::Error * region_err;
+    //errorpb::Error * region_err;
     switch (e.status)
     {
-        case RegionException::RegionReadStatus::NOT_FOUND:
-        case RegionException::RegionReadStatus::PENDING_REMOVE:
-            region_err = cop_response->mutable_region_error();
-            region_err->mutable_region_not_found()->set_region_id(cop_request->context().region_id());
+        case RegionTable::RegionReadStatus::NOT_FOUND:
+        case RegionTable::RegionReadStatus::PENDING_REMOVE:
+            for (int i = 0; i < cop_request->regions_size(); i++) {
+                auto * status = cop_response->add_region_status();
+                status->mutable_region_error()->mutable_region_not_found()->set_region_id(cop_request->regions(i).region_id());
+            }
             break;
-        case RegionException::RegionReadStatus::VERSION_ERROR:
-            region_err = cop_response->mutable_region_error();
-            region_err->mutable_epoch_not_match();
+        case RegionTable::RegionReadStatus::VERSION_ERROR:
+            for (int i = 0; i < cop_request->regions_size(); i++) {
+                auto * status = cop_response->add_region_status();
+                status->mutable_region_error()->mutable_epoch_not_match();
+            }
             break;
         default:
             // should not happen
@@ -118,7 +127,7 @@ catch (...)
     return recordError(grpc::StatusCode::INTERNAL, "other exception");
 }
 
-grpc::Status CoprocessorHandler::recordError(grpc::StatusCode err_code, const String & err_msg)
+grpc::Status BatchCoprocessorHandler::recordError(grpc::StatusCode err_code, const String & err_msg)
 {
     cop_response->Clear();
     cop_response->set_other_error(err_msg);

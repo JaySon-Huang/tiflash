@@ -21,6 +21,9 @@ public:
     grpc::Status Coprocessor(
         grpc::ServerContext * grpc_context, const coprocessor::Request * request, coprocessor::Response * response) override;
 
+    grpc::Status BatchCoprocessor(grpc::ServerContext *context, const coprocessor::BatchRequest *request,
+                                  coprocessor::BatchResponse *response) override;
+
     grpc::Status BatchCommands(grpc::ServerContext * grpc_context,
         grpc::ServerReaderWriter<tikvpb::BatchCommandsResponse, tikvpb::BatchCommandsRequest> * stream) override;
 

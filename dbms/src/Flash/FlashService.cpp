@@ -4,6 +4,7 @@
 #include <Flash/FlashService.h>
 #include <Server/IServer.h>
 #include <grpcpp/server_builder.h>
+#include "BatchCoprocessorHandler.h"
 
 namespace DB
 {
@@ -34,6 +35,27 @@ grpc::Status FlashService::Coprocessor(
     LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handle coprocessor request done: " << ret.error_code() << ", " << ret.error_message());
     return ret;
 }
+
+    grpc::Status FlashService::BatchCoprocessor(::grpc::ServerContext *grpc_context,
+                                                const ::coprocessor::BatchRequest *request,
+                                                ::coprocessor::BatchResponse *response)
+    {
+        LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling coprocessor request: " << request->DebugString());
+
+        auto [context, status] = createDBContext(grpc_context);
+        if (!status.ok())
+        {
+            return status;
+        }
+
+        CoprocessorContext cop_context(context, request->context(), *grpc_context);
+        BatchCoprocessorHandler cop_handler(cop_context, request, response);
+
+        auto ret = cop_handler.execute();
+
+        LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handle coprocessor request done: " << ret.error_code() << ", " << ret.error_message());
+        return ret;
+    }
 
 grpc::Status FlashService::BatchCommands(
     grpc::ServerContext * grpc_context, grpc::ServerReaderWriter<::tikvpb::BatchCommandsResponse, tikvpb::BatchCommandsRequest> * stream)

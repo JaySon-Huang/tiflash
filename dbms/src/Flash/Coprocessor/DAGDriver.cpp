@@ -21,14 +21,12 @@ extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_EXCEPTION;
 } // namespace ErrorCodes
 
-DAGDriver::DAGDriver(Context & context_, const tipb::DAGRequest & dag_request_, RegionID region_id_, UInt64 region_version_,
-    UInt64 region_conf_version_, UInt64 start_ts, UInt64 schema_ver, std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> && key_ranges_,
+DAGDriver::DAGDriver(Context & context_, const tipb::DAGRequest & dag_request_, const std::vector<RegionInfo> & regions_,
+    UInt64 start_ts, UInt64 schema_ver, std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> && key_ranges_,
     tipb::SelectResponse & dag_response_, bool internal_)
     : context(context_),
       dag_request(dag_request_),
-      region_id(region_id_),
-      region_version(region_version_),
-      region_conf_version(region_conf_version_),
+      regions(regions_),
       key_ranges(std::move(key_ranges_)),
       dag_response(dag_response_),
       internal(internal_),
@@ -44,7 +42,7 @@ void DAGDriver::execute()
 try
 {
     DAGContext dag_context(dag_request.executors_size());
-    DAGQuerySource dag(context, dag_context, region_id, region_version, region_conf_version, key_ranges, dag_request);
+    DAGQuerySource dag(context, dag_context, regions, key_ranges, dag_request);
 
     BlockIO streams = executeQuery(dag, context, internal, QueryProcessingStage::Complete);
     if (!streams.in || streams.out)

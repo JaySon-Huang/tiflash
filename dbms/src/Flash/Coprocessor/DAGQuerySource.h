@@ -10,6 +10,7 @@
 #include <Storages/Transaction/TiDB.h>
 #include <Storages/Transaction/TiKVKeyValue.h>
 #include <Storages/Transaction/Types.h>
+#include "DAGDriver.h"
 
 namespace DB
 {
@@ -28,7 +29,7 @@ public:
     static const String TOPN_NAME;
     static const String LIMIT_NAME;
 
-    DAGQuerySource(Context & context_, DAGContext & dag_context_, RegionID region_id_, UInt64 region_version_, UInt64 region_conf_version_,
+    DAGQuerySource(Context & context_, DAGContext & dag_context_, const std::vector<RegionInfo> & regions,
         const std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> & key_ranges_, const tipb::DAGRequest & dag_request_);
 
     std::tuple<std::string, ASTPtr> parse(size_t max_query_size) override;
@@ -37,9 +38,6 @@ public:
 
     DAGContext & getDAGContext() const { return dag_context; };
 
-    RegionID getRegionID() const { return region_id; }
-    UInt64 getRegionVersion() const { return region_version; }
-    UInt64 getRegionConfVersion() const { return region_conf_version; }
     const std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> & getKeyRanges() const { return key_ranges; }
 
     bool hasSelection() const { return sel_index != -1; };
@@ -86,6 +84,8 @@ public:
 
     tipb::EncodeType getEncodeType() const { return encode_type; }
 
+    const std::vector<RegionInfo> & getRegions() const { return regions; }
+
 protected:
     void assertValid(Int32 index, const String & name) const
     {
@@ -102,9 +102,7 @@ protected:
     Context & context;
     DAGContext & dag_context;
 
-    const RegionID region_id;
-    const UInt64 region_version;
-    const UInt64 region_conf_version;
+    const std::vector<RegionInfo> & regions;
     const std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> & key_ranges;
 
     const tipb::DAGRequest & dag_request;

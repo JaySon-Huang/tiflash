@@ -279,8 +279,8 @@ RegionException::RegionReadStatus InterpreterDAG::getRegionReadStatus(const Regi
 {
     if (!current_region)
         return RegionException::NOT_FOUND;
-    if (current_region->version() != dag.getRegionVersion() || current_region->confVer() != dag.getRegionConfVersion())
-        return RegionException::VERSION_ERROR;
+    //if (current_region->version() != dag.getRegionVersion() || current_region->confVer() != dag.getRegionConfVersion())
+    //    return RegionException::VERSION_ERROR;
     if (current_region->isPendingRemove())
         return RegionException::PENDING_REMOVE;
     return RegionException::OK;
@@ -346,23 +346,7 @@ void InterpreterDAG::executeTS(const tipb::TableScan & ts, Pipeline & pipeline)
 
     if (handle_col_id == -1)
         handle_col_id = required_columns.size();
-
-    auto current_region = context.getTMTContext().getKVStore()->getRegion(dag.getRegionID());
-    auto region_read_status = getRegionReadStatus(current_region);
-    if (region_read_status != RegionException::OK)
-    {
-        std::vector<RegionID> region_ids;
-        region_ids.push_back(dag.getRegionID());
-        LOG_WARNING(log, __PRETTY_FUNCTION__ << " Meet region exception for region " << dag.getRegionID());
-        throw RegionException(std::move(region_ids), region_read_status);
-    }
-    const bool pk_is_uint64 = storage->getPKType() == IManageableStorage::PKType::UINT64;
-    if (!checkKeyRanges(dag.getKeyRanges(), table_id, pk_is_uint64, current_region->getRange(), handle_col_id, handle_filter_expr))
-    {
-        // need to add extra filter on handle column
-        filter_on_handle = true;
-        conditions.push_back(&handle_filter_expr);
-    }
+    filter_on_handle = false;
 
     bool has_handle_column = (handle_col_id != (Int32)required_columns.size());
 
@@ -426,12 +410,25 @@ void InterpreterDAG::executeTS(const tipb::TableScan & ts, Pipeline & pipeline)
     query_info.mvcc_query_info = std::make_unique<MvccQueryInfo>();
     query_info.mvcc_query_info->resolve_locks = true;
     query_info.mvcc_query_info->read_tso = settings.read_tso;
-    RegionQueryInfo info;
-    info.region_id = dag.getRegionID();
-    info.version = dag.getRegionVersion();
-    info.conf_version = dag.getRegionConfVersion();
-    info.range_in_table = current_region->getHandleRangeByTable(table_id);
-    query_info.mvcc_query_info->regions_query_info.push_back(info);
+    for (auto & r : dag.getRegions()) {
+        RegionQueryInfo info;
+        info.region_id = r.region_id;
+        info.version = r.region_version;
+        info.conf_version = r.region_conf_version;
+        auto current_region = context.getTMTContext().getKVStore()->getRegion(info.region_id);
+        if (!current_region) {
+            std::vector<RegionID> region_ids;
+            for (auto & rr : dag.getRegions()) {
+                region_ids.push_back(rr.region_id);
+            }
+            throw RegionException(std::move(region_ids), RegionException::RegionReadStatus::NOT_FOUND);
+        }
+        if (!checkKeyRanges(dag.getKeyRanges(), table_id, storage->pkIsUInt64(), current_region->getRange(), 0, handle_filter_expr))
+            throw Exception("Cop request only support full range scan for given region",
+                            ErrorCodes::COP_BAD_DAG_REQUEST);
+        info.range_in_table = current_region->getHandleRangeByTable(table_id);
+        query_info.mvcc_query_info->regions_query_info.push_back(info);
+    }
     query_info.mvcc_query_info->concurrent = 0.0;
     pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
