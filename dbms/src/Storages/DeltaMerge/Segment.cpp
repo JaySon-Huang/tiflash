@@ -529,8 +529,8 @@ StableValueSpacePtr Segment::prepareMergeDelta(DMContext &             dm_contex
                                        dm_context.stable_chunk_rows);
     data_stream      = std::make_shared<DMHandleFilterBlockInputStream<true>>(data_stream, range, 0);
     data_stream      = std::make_shared<ReorganizeBlockInputStream>(data_stream, dm_context.handle_column.name);
-    data_stream      = std::make_shared<DMVersionFilterBlockInputStream<DM_VERSION_FILTER_MODE_COMPACT>>(
-        data_stream, read_info.read_columns, dm_context.min_version);
+    // data_stream      = std::make_shared<DMVersionFilterBlockInputStream<DM_VERSION_FILTER_MODE_COMPACT>>(
+    //     data_stream, read_info.read_columns, dm_context.min_version);
 
     auto new_stable = createNewStable(dm_context, data_stream, segment_snap.stable->getId(), wbs);
 

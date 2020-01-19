@@ -3,18 +3,11 @@
 #include <common/ThreadPool.h>
 #include <gperftools/malloc_extension.h>
 
+#include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/isSupportedDataTypeCast.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/DeltaMerge/FilterParser/FilterParser.h>
-#include <Storages/StorageDeltaMerge-internal.h>
-#include <Storages/StorageDeltaMerge.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageTinyLog.h>
-
-#include <Common/typeid_cast.h>
-#include <Core/Defines.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -24,6 +17,12 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/DeltaMerge/FilterParser/FilterParser.h>
+#include <Storages/StorageDeltaMerge-internal.h>
+#include <Storages/StorageDeltaMerge.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageTinyLog.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/Region.h>
 #include <Storages/Transaction/RegionException.h>
@@ -388,7 +387,14 @@ inline void doLearnerRead(const TiDB::TableID table_id,         //
 
             /// Blocking learner read. Note that learner read must be performed ahead of data read,
             /// otherwise the desired index will be blocked by the lock of data read.
-            region->waitIndex(region->learnerRead());
+            if (!tmt.isBgFlushDisabled())
+            {
+                region->waitIndex(region->learnerRead());
+            }
+            else
+            {
+                region->waitFlushedIndex(region->learnerRead());
+            }
         }
     };
     auto start_time = Clock::now();
@@ -502,6 +508,7 @@ BlockInputStreams StorageDeltaMerge::read( //
             throw Exception("TMTContext is not initialized", ErrorCodes::LOGICAL_ERROR);
 
         const auto & mvcc_query_info = *query_info.mvcc_query_info;
+        LOG_DEBUG(log, "reading with tso: " << mvcc_query_info.read_tso);
 
         // Read with specify tso, check if tso is smaller than TiDB GcSafePoint
         auto pd_client = tmt.getPDClient();

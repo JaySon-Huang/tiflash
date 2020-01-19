@@ -18,6 +18,7 @@ std::tuple<size_t, UInt64> RegionMeta::serialize(WriteBuffer & buf) const
     size += writeBinary2(apply_state, buf);
     size += writeBinary2(applied_term, buf);
     size += writeBinary2(region_state.getBase(), buf);
+    size += writeBinary2(flushed_index, buf);
     return {size, apply_state.applied_index()};
 }
 
@@ -27,7 +28,8 @@ RegionMeta RegionMeta::deserialize(ReadBuffer & buf)
     auto apply_state = readApplyState(buf);
     auto applied_term = readBinary2<UInt64>(buf);
     auto region_state = readRegionLocalState(buf);
-    return RegionMeta(std::move(peer), std::move(apply_state), applied_term, std::move(region_state));
+    auto flushed_index = readBinary2<UInt64>(buf);
+    return RegionMeta(std::move(peer), std::move(apply_state), applied_term, std::move(region_state), flushed_index);
 }
 
 RegionID RegionMeta::regionId() const { return region_id; }
@@ -115,6 +117,7 @@ RegionMeta::RegionMeta(RegionMeta && rhs) : region_id(rhs.regionId())
     apply_state = std::move(rhs.apply_state);
     applied_term = rhs.applied_term;
     region_state = std::move(rhs.region_state);
+    flushed_index = rhs.flushed_index;
 }
 
 ImutRegionRangePtr RegionMeta::getRange() const
@@ -131,12 +134,14 @@ std::string RegionMeta::toString(bool dump_status) const
     {
         UInt64 term = 0;
         UInt64 index = 0;
+        UInt64 curr_flush_index = 0;
         {
             std::lock_guard<std::mutex> lock(mutex);
             term = applied_term;
             index = apply_state.applied_index();
+            curr_flush_index = flushed_index;
         }
-        ss << ", applied: term " << term << " index " << index;
+        ss << ", applied: term " << term << " index " << index << " flushed_index " << curr_flush_index;
     }
     ss << "]";
     return ss.str();
@@ -395,10 +400,11 @@ const raft_serverpb::RaftApplyState & MetaRaftCommandDelegate::applyState() cons
 const RegionState & MetaRaftCommandDelegate::regionState() const { return region_state; }
 
 RegionMeta::RegionMeta(metapb::Peer peer_, raft_serverpb::RaftApplyState apply_state_, const UInt64 applied_term_,
-    raft_serverpb::RegionLocalState region_state_)
+    raft_serverpb::RegionLocalState region_state_, const UInt64 flushed_index_)
     : peer(std::move(peer_)),
       apply_state(std::move(apply_state_)),
       applied_term(applied_term_),
+      flushed_index(flushed_index_),
       region_state(std::move(region_state_)),
       region_id(region_state.getRegion().id())
 {}
@@ -423,5 +429,34 @@ raft_serverpb::MergeState RegionMeta::getMergeState() const
     std::lock_guard<std::mutex> lock(mutex);
     return region_state.getMergeState();
 }
+
+//============================================================================
+// Record the index we have flushed to IStorage
+//============================================================================
+
+void RegionMeta::setFlushedIndex(UInt64 index)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    flushed_index = index;
+    cv.notify_all();
+}
+
+void RegionMeta::waitFlushedIndex(UInt64 index) const
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait(lock, [this, index] { return doCheckFlushedIndex(index); });
+}
+
+bool RegionMeta::checkFlushedIndex(UInt64 index) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return doCheckFlushedIndex(index);
+}
+
+bool RegionMeta::doCheckFlushedIndex(UInt64 index) const
+{
+    return region_state.getState() == raft_serverpb::PeerState::Tombstone || flushed_index >= index;
+}
+
 
 } // namespace DB

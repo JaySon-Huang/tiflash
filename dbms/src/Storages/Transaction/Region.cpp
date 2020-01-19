@@ -570,6 +570,21 @@ void Region::waitIndex(UInt64 index)
     }
 }
 
+void Region::setFlushedIndex(UInt64 index) { meta.setFlushedIndex(index); }
+
+void Region::waitFlushedIndex(UInt64 index)
+{
+    if (index_reader != nullptr)
+    {
+        if (!meta.checkFlushedIndex(index))
+        {
+            LOG_DEBUG(log, toString() << " need to wait learner index flushed: " << index);
+            meta.waitFlushedIndex(index);
+            LOG_DEBUG(log, toString(false) << " wait learner index " << index << " done");
+        }
+    }
+}
+
 UInt64 Region::version() const { return meta.version(); }
 
 UInt64 Region::confVer() const { return meta.confVer(); }

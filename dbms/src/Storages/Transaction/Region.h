@@ -129,6 +129,9 @@ public:
 
     void waitIndex(UInt64 index);
 
+    void setFlushedIndex(UInt64 index);
+    void waitFlushedIndex(UInt64 index);
+
     UInt64 appliedIndex() const;
 
     RegionVersion version() const;

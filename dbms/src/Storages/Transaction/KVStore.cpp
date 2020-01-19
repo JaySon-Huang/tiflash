@@ -178,7 +178,7 @@ void KVStore::onServiceCommand(enginepb::CommandRequestBatch && cmds, RaftContex
 
     auto task_lock = genTaskLock();
 
-    std::vector<RegionPtr> dirty_regions;
+    std::unordered_map<RegionID, RegionPtr> dirty_regions;
 
     for (auto && cmd : *cmds.mutable_requests())
     {
@@ -212,7 +212,7 @@ void KVStore::onServiceCommand(enginepb::CommandRequestBatch && cmds, RaftContex
 
         if (tmt_context != nullptr && tmt_context->isBgFlushDisabled())
         {
-            dirty_regions.push_back(curr_region_ptr);
+            dirty_regions.emplace(curr_region_ptr->id(), curr_region_ptr);
         }
 
         const auto region_report = [&]() { *(responseBatch.add_responses()) = curr_region.toCommandResponse(); };
@@ -363,8 +363,9 @@ void KVStore::onServiceCommand(enginepb::CommandRequestBatch && cmds, RaftContex
     if (tmt_context != nullptr && tmt_context->isBgFlushDisabled())
     {
         auto s_time = Clock::now();
-        for (auto region : dirty_regions)
+        for (auto && [_id, region] : dirty_regions)
         {
+            (void)_id;
             region_table->tryFlushRegion(region, false);
         }
         auto e_time = Clock::now();

@@ -21,7 +21,7 @@ class RegionMeta
 {
 public:
     RegionMeta(metapb::Peer peer_, raft_serverpb::RaftApplyState apply_state_, const UInt64 applied_term_,
-        raft_serverpb::RegionLocalState region_state_);
+        raft_serverpb::RegionLocalState region_state_, const UInt64 flushed_index_);
 
     RegionMeta(metapb::Peer peer_, metapb::Region region, raft_serverpb::RaftApplyState apply_state_);
 
@@ -66,6 +66,10 @@ public:
     void waitIndex(UInt64 index) const;
     bool checkIndex(UInt64 index) const;
 
+    void setFlushedIndex(UInt64 index);
+    bool checkFlushedIndex(UInt64 index) const;
+    void waitFlushedIndex(UInt64 index) const;
+
     bool isPeerRemoved() const;
 
     std::tuple<RegionVersion, RegionVersion, ImutRegionRangePtr> dumpVersionRange() const;
@@ -81,6 +85,7 @@ private:
     void doSetRegion(const metapb::Region & region);
     void doSetApplied(UInt64 index, UInt64 term);
     bool doCheckIndex(UInt64 index) const;
+    bool doCheckFlushedIndex(UInt64 index) const;
 
 private:
     metapb::Peer peer;
@@ -88,6 +93,8 @@ private:
     // raft_serverpb::RaftApplyState contains applied_index_ and it's truncated_state_ can be used for CompactLog.
     raft_serverpb::RaftApplyState apply_state;
     UInt64 applied_term;
+
+    UInt64 flushed_index;
 
     RegionState region_state;
 
