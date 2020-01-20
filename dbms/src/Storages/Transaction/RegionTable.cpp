@@ -294,7 +294,7 @@ RegionDataReadInfoList RegionTable::tryFlushRegion(const RegionPtr & region, boo
         const UInt64 region_index = region->appliedIndex();
         data_list_to_remove = flushRegion(region, try_persist);
         region->setFlushedIndex(region_index);
-        LOG_TRACE(log, "Region " << region_id << " flush index updated to " << region_index);
+        //LOG_TRACE(log, "Region " << region_id << " flush index updated to " << region_index);
     }
     catch (...)
     {

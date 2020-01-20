@@ -413,6 +413,7 @@ RegionMeta::RegionMeta(metapb::Peer peer_, metapb::Region region, raft_serverpb:
     : peer(std::move(peer_)),
       apply_state(std::move(apply_state_)),
       applied_term(apply_state.truncated_state().term()),
+      flushed_index(0),
       region_id(region.id())
 {
     region_state.setRegion(std::move(region));
