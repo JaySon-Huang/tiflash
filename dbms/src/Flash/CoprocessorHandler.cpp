@@ -78,7 +78,15 @@ try
                 LOG_WARNING(log, "tmt_output:" << tmt_out);
                 if (dm_out != tmt_out)
                 {
-                    LOG_ERROR(log, "dm_output is not align with tmt_output!");
+                    LOG_ERROR(log,
+                        "dm_output is not align with tmt_output! start_ts:" << cop_request->start_ts() //
+                                                                            << " debug_str:" << cop_request->ShortDebugString());
+                }
+                else 
+                {
+                    LOG_ERROR(log,
+                        "dm_output is aligned with tmt_output! start_ts:" << cop_request->start_ts() //
+                                                                            << " debug_str:" << cop_request->ShortDebugString());
                 }
             }
 
