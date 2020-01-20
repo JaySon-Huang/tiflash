@@ -161,6 +161,7 @@ void InterpreterDAG::executeTS(const tipb::TableScan & ts, Pipeline & pipeline)
         throw Exception("Table id not specified in table scan executor", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
     TableID table_id = ts.table_id();
+    LOG_WARNING(log, "Executing table scan with table_id:" << table_id);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -276,10 +277,25 @@ void InterpreterDAG::executeTS(const tipb::TableScan & ts, Pipeline & pipeline)
     if (!checkKeyRanges(dag.getKeyRanges(), table_id, /* pk_is_uint64= */ storage->getPKType() == IManageableStorage::PKType::UINT64,
             current_region->getRange()))
         throw Exception("Cop request only support full range scan for given region", ErrorCodes::COP_BAD_DAG_REQUEST);
-    info.range_in_table = current_region->getHandleRangeByTable(table_id);
+    if (table_id >= 1000000)
+        info.range_in_table = current_region->getHandleRangeByTable(table_id - 1000000);
+    else
+        info.range_in_table = current_region->getHandleRangeByTable(table_id);
     query_info.mvcc_query_info->regions_query_info.push_back(info);
     query_info.mvcc_query_info->concurrent = 0.0;
     pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+
+    if (false)
+    {
+        auto debug_storage = context.getTMTContext().getStorages().getByName(storage->getDatabaseName(), storage->getTableName() + "_tmt");
+        LOG_WARNING(log, "debugging read from `" + debug_storage->getDatabaseName() + "`.`" + debug_storage->getTableName() + "`");
+        auto debug_streams = debug_storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+        auto dm_streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+        // TODO: compare them
+    }
 
     if (pipeline.streams.empty())
     {
@@ -481,8 +497,8 @@ void InterpreterDAG::getAndLockStorageWithSchemaVersion(TableID table_id, Int64 
 
         if (storage_->engineType() != ::TiDB::StorageEngine::TMT && storage_->engineType() != ::TiDB::StorageEngine::DM)
         {
-            throw Exception("Specifying schema_version for non-managed storage: " + storage_->getName() + ", table: " + storage_->getTableName()
-                    + ",id: " + DB::toString(table_id) + " is not allowed",
+            throw Exception("Specifying schema_version for non-managed storage: " + storage_->getName()
+                    + ", table: " + storage_->getTableName() + ",id: " + DB::toString(table_id) + " is not allowed",
                 ErrorCodes::LOGICAL_ERROR);
         }
 

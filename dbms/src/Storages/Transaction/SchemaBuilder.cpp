@@ -655,12 +655,19 @@ void SchemaBuilder<Getter>::applyCreateTableImpl(const TiDB::DBInfo & db_info, T
     else
     {
         applyCreatePhysicalTableImpl(db_info, table_info);
+        auto tmt_info = table_info;
+        tmt_info.id = table_info.id + 1000000;
+        tmt_info.name = table_info.name + "_tmt";
+        tmt_info.engine_type = StorageEngine::TMT;
+        applyCreatePhysicalTableImpl(db_info, tmt_info);
     }
 }
 
 template <typename Getter>
 void SchemaBuilder<Getter>::applyDropTableImpl(const String & database_name, const String & table_name)
 {
+    if (endsWith(table_name, "_tmt"))
+        return ;
     LOG_INFO(log, "try to drop table : " << database_name << "." << table_name);
     auto drop_query = std::make_shared<ASTDropQuery>();
     drop_query->database = database_name;

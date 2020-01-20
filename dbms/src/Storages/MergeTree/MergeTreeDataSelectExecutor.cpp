@@ -343,10 +343,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(const Names & column_names_t
                     // wait learner read index
                     auto region = kvstore_region[region_query_info.region_id];
 
-                    if (region->getMappedTableID() != data.table_info->id)
-                        throw Exception(std::string(__PRETTY_FUNCTION__) + ": table id not match, expect "
-                                + std::to_string(region->getMappedTableID()) + ", got " + std::to_string(data.table_info->id),
-                            ErrorCodes::LOGICAL_ERROR);
+                    // if (region->getMappedTableID() != data.table_info->id)
+                    //     throw Exception(std::string(__PRETTY_FUNCTION__) + ": table id not match, expect "
+                    //             + std::to_string(region->getMappedTableID()) + ", got " + std::to_string(data.table_info->id),
+                    //         ErrorCodes::LOGICAL_ERROR);
 
                     /// Blocking learner read. Note that learner read must be performed ahead of data read,
                     /// otherwise the desired index will be blocked by the lock of data read.
@@ -393,6 +393,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(const Names & column_names_t
         }
 
         { // check all regions
+        if (log->trace())
+        {
+            {
+                std::stringstream ss;
+                for (const auto & region : regions_executor_data)
+                {
+                    auto & range = region.info.range_in_table;
+                    ss << "[" << range.first.toString() << "," << range.second.toString() << "),";
+                }
+                LOG_TRACE(log, "reading ranges: orig: " << ss.str());
+            }
+        }
             std::sort(regions_executor_data.begin(), regions_executor_data.end());
 
             region_cnt = regions_executor_data.size();

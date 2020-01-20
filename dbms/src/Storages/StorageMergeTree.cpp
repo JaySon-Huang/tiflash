@@ -88,8 +88,14 @@ void StorageMergeTree::startup()
 {
     if (data.merging_params.mode == MergeTreeData::MergingParams::Txn)
     {
+        LOG_WARNING(log, "putting `" << getDatabaseName() + "`.`"+getTableName()+"` to storages");
         TMTContext & tmt = context.getTMTContext();
         tmt.getStorages().put(std::static_pointer_cast<StorageMergeTree>(shared_from_this()));
+        {
+            auto ss = tmt.getStorages().getAllStorage();
+            for (auto && [id, s] : ss)
+                LOG_WARNING(log, "all storages: " << id << ",`" + s->getDatabaseName() + "`.`" + s->getTableName() + "`");
+        }
     }
 
     merge_task_handle = background_pool.addTask([this] { return mergeTask(); });

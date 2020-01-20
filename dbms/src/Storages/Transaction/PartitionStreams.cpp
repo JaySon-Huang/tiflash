@@ -70,6 +70,22 @@ void RegionTable::writeBlockByRegion(Context & context, RegionPtr region, Region
             return true;
         }
 
+        {
+            auto ss = tmt.getStorages().getAllStorage();
+            for (auto && [id, s] : ss)
+                LOG_WARNING(log, "all storages: " << id << ",`" + s->getDatabaseName() + "`.`" + s->getTableName() + "`");
+        }
+        auto debug_tmt = tmt.getStorages().getByName(storage->getDatabaseName(), storage->getTableName() + "_tmt");
+        if (debug_tmt == nullptr)
+        {
+            if (!force_decode)
+                return false;
+            data_list_to_remove = std::move(data_list_read);
+            return true;
+        }
+
+        auto debug_lock = debug_tmt->lockStructure(true, __PRETTY_FUNCTION__);
+
         /// Lock throughout decode and write, during which schema must not change.
         auto lock = storage->lockStructure(true, __PRETTY_FUNCTION__);
 
@@ -107,6 +123,11 @@ void RegionTable::writeBlockByRegion(Context & context, RegionPtr region, Region
                 output->writePrefix();
                 output->write(block);
                 output->writeSuffix();
+
+                LOG_WARNING(log, "Debug writing to `" + debug_tmt->getDatabaseName() + "`.`" + debug_tmt->getTableName() + "`");
+                auto debug_storage = std::dynamic_pointer_cast<StorageMergeTree>(debug_tmt);
+                TxnMergeTreeBlockOutputStream debug_output(*debug_storage);
+                debug_output.write(std::move(block));
                 break;
             }
             case ::TiDB::StorageEngine::DEBUGGING_MEMORY:
@@ -178,7 +199,11 @@ std::tuple<Block, RegionException::RegionReadStatus> RegionTable::readBlockByReg
             if (version != region_version || conf_ver != conf_version)
                 return {Block(), RegionException::VERSION_ERROR};
 
-            handle_range = key_range->getHandleRangeByTable(table_info.id);
+
+            if (table_info.id >= 1000000)
+                handle_range = key_range->getHandleRangeByTable(table_info.id - 1000000);
+            else
+                handle_range = key_range->getHandleRangeByTable(table_info.id);
         }
 
         /// Deal with locks.

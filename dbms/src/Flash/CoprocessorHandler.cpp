@@ -29,25 +29,59 @@ try
         case COP_REQ_TYPE_DAG:
         {
             std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> key_ranges;
+            std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> dup_key_ranges;
             for (auto & range : cop_request->ranges())
             {
-                std::string start_key(range.start());
-                DecodedTiKVKey start(std::move(start_key));
-                std::string end_key(range.end());
-                DecodedTiKVKey end(std::move(end_key));
-                key_ranges.emplace_back(std::make_pair(std::move(start), std::move(end)));
+                {
+                    std::string start_key(range.start());
+                    DecodedTiKVKey start(std::move(start_key));
+                    std::string end_key(range.end());
+                    DecodedTiKVKey end(std::move(end_key));
+                    key_ranges.emplace_back(std::make_pair(std::move(start), std::move(end)));
+                }
+                {
+                    std::string start_key(range.start());
+                    DecodedTiKVKey start(std::move(start_key));
+                    std::string end_key(range.end());
+                    DecodedTiKVKey end(std::move(end_key));
+                    dup_key_ranges.emplace_back(std::make_pair(std::move(start), std::move(end)));
+                }
             }
             tipb::DAGRequest dag_request;
             dag_request.ParseFromString(cop_request->data());
             LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling DAG request: " << dag_request.DebugString());
             if (dag_request.has_is_rpn_expr() && dag_request.is_rpn_expr())
                 throw Exception("DAG request with rpn expression is not supported in TiFlash", ErrorCodes::NOT_IMPLEMENTED);
+
             tipb::SelectResponse dag_response;
             DAGDriver driver(cop_context.db_context, dag_request, cop_context.kv_context.region_id(),
                 cop_context.kv_context.region_epoch().version(), cop_context.kv_context.region_epoch().conf_ver(),
                 cop_request->start_ts() > 0 ? cop_request->start_ts() : dag_request.start_ts_fallback(), cop_request->schema_ver(),
                 std::move(key_ranges), dag_response);
             driver.execute();
+
+            if (true)
+            {
+                tipb::SelectResponse tmt_dag_response;
+                auto tmt_dag_request = dag_request;
+                auto orig_table_id = dag_request.mutable_executors(0)->tbl_scan().table_id();
+                tmt_dag_request.mutable_executors(0)->mutable_tbl_scan()->set_table_id(orig_table_id + 1000000);
+                DAGDriver tmt_driver(cop_context.db_context, tmt_dag_request, cop_context.kv_context.region_id(),
+                    cop_context.kv_context.region_epoch().version(), cop_context.kv_context.region_epoch().conf_ver(),
+                    cop_request->start_ts() > 0 ? cop_request->start_ts() : dag_request.start_ts_fallback(), cop_request->schema_ver(),
+                    std::move(dup_key_ranges), tmt_dag_response);
+                tmt_driver.execute();
+                // compare their output
+                const String dm_out = dag_response.ShortDebugString();
+                const String tmt_out = tmt_dag_response.ShortDebugString();
+                LOG_WARNING(log, "dm_output:" << dm_out);
+                LOG_WARNING(log, "tmt_output:" << tmt_out);
+                if (dm_out != tmt_out)
+                {
+                    LOG_ERROR(log, "dm_output is not align with tmt_output!");
+                }
+            }
+
             cop_response->set_data(dag_response.SerializeAsString());
             LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handle DAG request done");
             break;
