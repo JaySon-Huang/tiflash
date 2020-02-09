@@ -38,7 +38,7 @@ try
             for (auto & r : cop_request->regions()) {
                 regions.emplace_back(r.region_id(), r.region_epoch().version(), r.region_epoch().conf_ver());
             }
-            DAGDriver driver(cop_context.db_context, dag_request, regions, std::move(key_ranges),
+            DAGDriver driver(cop_context.db_context, dag_request, regions, dag_request.start_ts_fallback(), -1, std::move(key_ranges),
                 dag_response);
             driver.execute();
             cop_response->set_data(dag_response.SerializeAsString());
@@ -86,14 +86,14 @@ catch (const RegionException & e)
     //errorpb::Error * region_err;
     switch (e.status)
     {
-        case RegionTable::RegionReadStatus::NOT_FOUND:
-        case RegionTable::RegionReadStatus::PENDING_REMOVE:
+        case RegionException::RegionReadStatus::NOT_FOUND:
+        case RegionException::RegionReadStatus::PENDING_REMOVE:
             for (int i = 0; i < cop_request->regions_size(); i++) {
                 auto * status = cop_response->add_region_status();
                 status->mutable_region_error()->mutable_region_not_found()->set_region_id(cop_request->regions(i).region_id());
             }
             break;
-        case RegionTable::RegionReadStatus::VERSION_ERROR:
+        case RegionException::RegionReadStatus::VERSION_ERROR:
             for (int i = 0; i < cop_request->regions_size(); i++) {
                 auto * status = cop_response->add_region_status();
                 status->mutable_region_error()->mutable_epoch_not_match();
