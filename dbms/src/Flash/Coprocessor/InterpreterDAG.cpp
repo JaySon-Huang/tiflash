@@ -152,8 +152,8 @@ bool checkRangeAndGenExprIfNeeded(std::vector<HandleRange<HandleType>> & ranges,
     if (ranges.empty())
     {
         // generate an always false filter
-        constructInt64LiteralTiExpr(handle_filter, 0);
-        return false;
+        //constructInt64LiteralTiExpr(handle_filter, 0);
+        return true;
     }
     std::sort(ranges.begin(), ranges.end(),
         [](const HandleRange<HandleType> & a, const HandleRange<HandleType> & b) { return a.first < b.first; });
@@ -229,8 +229,8 @@ bool checkKeyRanges(const std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>>
 {
     if (key_ranges.empty())
     {
-        constructInt64LiteralTiExpr(handle_filter, 0);
-        return false;
+        //constructInt64LiteralTiExpr(handle_filter, 0);
+        return true;
     }
 
     std::vector<HandleRange<Int64>> handle_ranges;
