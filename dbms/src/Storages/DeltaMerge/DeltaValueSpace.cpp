@@ -1,5 +1,3 @@
-#include <ext/scope_guard.h>
-
 #include <DataTypes/isSupportedDataTypeCast.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/CompressedReadBuffer.h>
@@ -8,6 +6,9 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/DeltaMerge/DeltaValueSpace.h>
 #include <Storages/DeltaMerge/HandleFilter.h>
+#include <Storages/DeltaMerge/convertColumnTypeHelpers.h>
+
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -261,15 +262,33 @@ Columns readPackFromDisk(const PackPtr &       pack, //
                          size_t                col_start,
                          size_t                col_end)
 {
-    PageReadFields fields;
+    Columns columns(col_end - col_start);
+
+    std::vector<PageId> page_ids;
+    PageReadFields      fields;
     fields.first = pack->data_page;
     for (size_t index = col_start; index < col_end; ++index)
     {
         auto col_id = column_defines[index].id;
         auto it     = pack->colid_to_offset.find(col_id);
-        if (it == pack->colid_to_offset.end())
-            // TODO: support DDL.
-            throw Exception("Cannot find column with id" + DB::toString(col_id));
+        if (unlikely(it == pack->colid_to_offset.end()))
+        {
+            // New column after ddl is not exist in this DMFile, fill with default value
+            const auto & cd = column_defines[index];
+            // Read default value from `column_define.default_value`
+            ColumnPtr column;
+            if (cd.default_value.isNull())
+            {
+                column = cd.type->createColumnConstWithDefaultValue(pack->rows);
+            }
+            else
+            {
+                column = cd.type->createColumnConst(pack->rows, cd.default_value);
+            }
+            column = column->convertToFullColumnIfConst();
+
+            columns[index].swap(column);
+        }
         else
         {
             auto col_index = it->second;
@@ -280,18 +299,25 @@ Columns readPackFromDisk(const PackPtr &       pack, //
     auto page_map = page_reader.read({fields});
     Page page     = page_map[pack->data_page];
 
-    Columns columns;
-    for (size_t index = col_start; index < col_end; ++index)
+    for (size_t index = col_start, id_offset = 0; index < col_end; ++index)
     {
-        auto col_id    = column_defines[index].id;
-        auto col_index = pack->colid_to_offset[col_id];
-        auto data_buf  = page.getFieldData(col_index);
+        if (columns[index] == nullptr)
+        {
+            auto col_id    = column_defines[index].id;
+            auto col_index = pack->colid_to_offset[col_id];
+            auto data_buf  = page.getFieldData(col_index);
 
-        auto & cd  = column_defines[index];
-        auto   col = cd.type->createColumn();
-        deserializeColumn(*col, cd.type, data_buf, pack->rows);
+            auto & cd   = column_defines[index];
+            auto   type = pack->getDataTypeByColumnID(cd.id);
+            auto   col  = cd.type->createColumn();
+            deserializeColumn(*col, type, data_buf, pack->rows);
 
-        columns.push_back(std::move(col));
+            auto converted_column = convertColumnByColumnDefineIfNeed(type, std::move(col), cd);
+            columns[index]        = std::move(col);
+
+            ++id_offset;
+        }
+        // else the column is fill with default values.
     }
 
     return columns;
@@ -921,10 +947,16 @@ bool DeltaValueSpace::compact(DMContext & context)
             if (unlikely(pack->isDeleteRange()))
                 throw Exception("Unexpectedly selected a delete range to compact", ErrorCodes::LOGICAL_ERROR);
 
+            // TODO: to support time-travel, we should not do compaction with different schemas.
             Block  block      = pack->isCached() ? readPackFromCache(pack) : readPackFromDisk(pack, reader);
             size_t block_rows = block.rows();
             for (size_t i = 0; i < schema.columns(); ++i)
+            {
+                // TODO: getByColumnId
+                // not exist, insert column with default value
+                // type is different, cast?
                 compact_columns[i]->insertRangeFrom(*block.getByPosition(i).column, 0, block_rows);
+            }
 
             wbs.removed_log.delPage(pack->data_page);
         }
@@ -1209,8 +1241,9 @@ size_t DeltaValueSpace::Snapshot::read(const HandleRange & range, MutableColumns
         if (rows_start_in_pack == rows_end_in_pack)
             continue;
 
+        // TODO: this get the full columns of pack, which may cause unnecessary copying
         auto & columns         = getColumnsOfPack(pack_index, output_columns.size());
-        auto & handle_col_data = toColumnVectorData<Handle>(columns[0]);
+        auto & handle_col_data = toColumnVectorData<Handle>(columns[0]); // TODO: Magic number of fixed position of pk
         if (rows_in_pack_limit == 1)
         {
             if (range.check(handle_col_data[rows_start_in_pack]))

@@ -1,8 +1,8 @@
-#include <Poco/File.h>
-
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Poco/File.h>
 #include <Storages/DeltaMerge/File/DMFileReader.h>
+#include <Storages/DeltaMerge/convertColumnTypeHelpers.h>
 #include <Storages/Page/PageUtil.h>
 
 namespace DB
@@ -39,7 +39,7 @@ DMFileReader::Stream::Stream(DMFileReader & reader, //
         marks = mark_load();
 
     size_t data_file_size = Poco::File(data_path).getSize();
-    size_t packs         = reader.dmfile->getPacks();
+    size_t packs          = reader.dmfile->getPacks();
     size_t buffer_size    = 0;
     size_t estimated_size = 0;
     for (size_t i = 0; i < packs;)
@@ -129,12 +129,13 @@ DMFileReader::DMFileReader(bool                  enable_clean_read_,
     {
         auto callback = [&](const IDataType::SubstreamPath & substream) {
             String stream_name = DMFile::getFileNameBase(cd.id, substream);
-            auto   stream      = std::make_unique<Stream>(*this, //
-                                                   cd.id,
-                                                   stream_name,
-                                                   aio_threshold,
-                                                   max_read_buffer_size,
-                                                   log);
+            auto   stream      = std::make_unique<Stream>( //
+                *this,
+                cd.id,
+                stream_name,
+                aio_threshold,
+                max_read_buffer_size,
+                log);
             column_streams.emplace(stream_name, std::move(stream));
         };
         cd.type->enumerateStreams(callback, {});
@@ -174,7 +175,7 @@ Block DMFileReader::read()
     // Find max continuing rows we can read.
     size_t start_pack_id = next_pack_id;
 
-    auto & pack_stats    = dmfile->getPackStats();
+    auto & pack_stats     = dmfile->getPackStats();
     size_t read_rows      = 0;
     size_t not_clean_rows = 0;
 
@@ -188,7 +189,7 @@ Block DMFileReader::read()
         not_clean_rows += pack_stats[next_pack_id].not_clean;
     }
 
-    if (!read_rows)
+    if (read_rows == 0)
         return {};
 
     Block res;
@@ -232,28 +233,53 @@ Block DMFileReader::read()
         }
         else
         {
-            String stream_name = DMFile::getFileNameBase(cd.id);
-            auto & stream      = column_streams.at(stream_name);
-            if (shouldSeek(start_pack_id) || skip_packs_by_column[i] > 0)
+            const String stream_name = DMFile::getFileNameBase(cd.id);
+            if (auto iter = column_streams.find(stream_name); iter != column_streams.end())
             {
-                auto & mark = (*stream->marks)[start_pack_id];
-                stream->buf->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+                auto & stream = iter->second;
+                if (shouldSeek(start_pack_id) || skip_packs_by_column[i] > 0)
+                {
+                    auto & mark = (*stream->marks)[start_pack_id];
+                    stream->buf->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+                }
+
+                auto data_type = dmfile->getColumnStat(cd.id).type;
+                auto column    = data_type->createColumn();
+                data_type->deserializeBinaryBulkWithMultipleStreams( //
+                    *column,
+                    [&](const IDataType::SubstreamPath & substream_path) {
+                        String substream_name = DMFile::getFileNameBase(cd.id, substream_path);
+                        auto & sub_stream     = column_streams.at(substream_name);
+                        return sub_stream->buf.get();
+                    },
+                    read_rows,
+                    stream->avg_size_hint,
+                    true,
+                    {});
+                IDataType::updateAvgValueSizeHint(*column, stream->avg_size_hint);
+
+                // Cast column's data from DataType in disk to what we need now
+                auto converted_column = convertColumnByColumnDefineIfNeed(data_type, std::move(column), cd);
+
+                res.insert(ColumnWithTypeAndName{std::move(converted_column), cd.type, cd.name, cd.id});
             }
+            else
+            {
+                // New column after ddl is not exist in this DMFile, fill with default value
+                // Read default value from `column_define.default_value`
+                ColumnPtr column;
+                if (cd.default_value.isNull())
+                {
+                    column = cd.type->createColumnConstWithDefaultValue(read_rows);
+                }
+                else
+                {
+                    column = cd.type->createColumnConst(read_rows, cd.default_value);
+                }
+                column = column->convertToFullColumnIfConst();
 
-            auto column = cd.type->createColumn();
-            cd.type->deserializeBinaryBulkWithMultipleStreams(*column, //
-                                                              [&](const IDataType::SubstreamPath & substream) {
-                                                                  String name   = DMFile::getFileNameBase(cd.id, substream);
-                                                                  auto & stream = column_streams.at(name);
-                                                                  return stream->buf.get();
-                                                              },
-                                                              read_rows,
-                                                              stream->avg_size_hint,
-                                                              true,
-                                                              {});
-            IDataType::updateAvgValueSizeHint(*column, stream->avg_size_hint);
-
-            res.insert(ColumnWithTypeAndName{std::move(column), cd.type, cd.name, cd.id});
+                res.insert(ColumnWithTypeAndName{std::move(column), cd.type, cd.name, cd.id});
+            }
 
             skip_packs_by_column[i] = 0;
         }

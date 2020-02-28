@@ -177,15 +177,7 @@ DMContextPtr DeltaMergeStore::newDMContext(const Context & db_context, const DB:
                                store_columns,
                                /* min_version */ 0,
                                settings.not_compress_columns,
-                               db_settings.dm_segment_limit_rows,
-                               db_settings.dm_segment_delta_limit_rows,
-                               db_settings.dm_segment_delta_cache_limit_rows,
-                               db_settings.dm_segment_delta_small_pack_rows,
-                               db_settings.dm_segment_stable_pack_rows,
-                               db_settings.dm_enable_logical_split,
-                               db_settings.dm_read_delta_only,
-                               db_settings.dm_read_stable_only,
-                               db_settings.dm_enable_skippable_place);
+                               db_settings);
     return DMContextPtr(ctx);
 }
 
@@ -910,48 +902,35 @@ bool DeltaMergeStore::handleBackgroundTask()
     }
 
     SegmentPtr left, right;
-    ThreadType type = ThreadType::Write;
-    try
+    ThreadType type;
+    switch (task.type)
     {
-        switch (task.type)
-        {
-        case Split:
-            std::tie(left, right) = segmentSplit(*task.dm_context, task.segment);
-            type                  = ThreadType::BG_Split;
-            break;
-        case Merge:
-            segmentMerge(*task.dm_context, task.segment, task.next_segment);
-            type = ThreadType::BG_Merge;
-            break;
-        case MergeDelta:
-            left = segmentMergeDelta(*task.dm_context, task.segment, false);
-            type = ThreadType::BG_MergeDelta;
-            break;
-        case Compact:
-        {
-            task.segment->getDelta()->compact(*task.dm_context);
-            left = task.segment;
-            type = ThreadType::BG_Compact;
-            break;
-        }
-        case Flush:
-        {
-            task.segment->getDelta()->flush(*task.dm_context);
-            left = task.segment;
-            type = ThreadType::BG_Flush;
-            break;
-        }
-        default:
-            throw Exception("Unsupported task type: " + DeltaMergeStore::toString(task.type));
-        }
+    case Split:
+        std::tie(left, right) = segmentSplit(*task.dm_context, task.segment);
+        type                  = ThreadType::BG_Split;
+        break;
+    case Merge:
+        segmentMerge(*task.dm_context, task.segment, task.next_segment);
+        type = ThreadType::BG_Merge;
+        break;
+    case MergeDelta:
+        left = segmentMergeDelta(*task.dm_context, task.segment, false);
+        type = ThreadType::BG_MergeDelta;
+        break;
+    case Compact: {
+        task.segment->getDelta()->compact(*task.dm_context);
+        left = task.segment;
+        type = ThreadType::BG_Compact;
+        break;
     }
-    catch (const Exception & e)
-    {
-        LOG_ERROR(log,
-                  "Task " << toString(task.type) << " on Segment [" << task.segment->segmentId()
-                          << ((bool)task.next_segment ? ("] and [" + DB::toString(task.next_segment->segmentId())) : "")
-                          << "] failed. Error msg: " << e.message());
-        e.rethrow();
+    case Flush: {
+        task.segment->getDelta()->flush(*task.dm_context);
+        left = task.segment;
+        type = ThreadType::BG_Flush;
+        break;
+    }
+    default:
+        throw Exception("Unsupported task type: " + DeltaMergeStore::toString(task.type));
     }
 
     if (left)

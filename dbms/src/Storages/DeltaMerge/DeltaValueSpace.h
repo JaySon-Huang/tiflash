@@ -6,6 +6,7 @@
 #include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
+#include <Storages/DeltaMerge/Range.h>
 #include <Storages/DeltaMerge/WriteBatches.h>
 #include <Storages/Page/PageDefines.h>
 #include <Storages/Page/PageStorage.h>
@@ -77,6 +78,13 @@ public:
             colid_to_offset.clear();
             for (size_t i = 0; i < schema->columns(); ++i)
                 colid_to_offset.emplace(schema->getByPosition(i).column_id, i);
+        }
+
+        DataTypePtr getDataTypeByColumnID(ColId cid) const
+        {
+            // Note that cid must exist
+            auto index = colid_to_offset.at(cid);
+            return schema->getByPosition(index).type;
         }
 
         String toString()

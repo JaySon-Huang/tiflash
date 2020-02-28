@@ -65,18 +65,18 @@ public:
     void enableGC();
     void remove();
 
-    UInt64 fileId() { return file_id; }
-    UInt64 refId() { return ref_id; }
-    String path() { return parent_path + (status == Status::READABLE ? "/dmf_" : "/.tmp.dmf_") + DB::toString(file_id); }
-    String metaPath() { return path() + "/meta.txt"; }
-    String packStatPath() { return path() + "/pack"; }
+    UInt64 fileId() const { return file_id; }
+    UInt64 refId() const { return ref_id; }
+    String path() const { return parent_path + (status == Status::READABLE ? "/dmf_" : "/.tmp.dmf_") + DB::toString(file_id); }
+    String metaPath() const { return path() + "/meta.txt"; }
+    String packStatPath() const { return path() + "/pack"; }
     // Do not gc me.
-    String ngcPath() { return path() + "/" + NGC_FILE_NAME; }
-    String colDataPath(const String & file_name_base) { return path() + "/" + file_name_base + ".dat"; }
-    String colIndexPath(const String & file_name_base) { return path() + "/" + file_name_base + ".idx"; }
-    String colMarkPath(const String & file_name_base) { return path() + "/" + file_name_base + ".mrk"; }
+    String ngcPath() const { return path() + "/" + NGC_FILE_NAME; }
+    String colDataPath(const String & file_name_base) const { return path() + "/" + file_name_base + ".dat"; }
+    String colIndexPath(const String & file_name_base) const { return path() + "/" + file_name_base + ".idx"; }
+    String colMarkPath(const String & file_name_base) const { return path() + "/" + file_name_base + ".mrk"; }
 
-    const ColumnStat & getColumnStat(ColId col_id)
+    const ColumnStat & getColumnStat(ColId col_id) const
     {
         auto it = column_stats.find(col_id);
         if (it == column_stats.end())
@@ -84,7 +84,7 @@ public:
         return it->second;
     }
 
-    size_t getRows()
+    size_t getRows() const
     {
         size_t rows = 0;
         for (auto & s : pack_stats)
@@ -92,7 +92,7 @@ public:
         return rows;
     }
 
-    size_t getBytes()
+    size_t getBytes() const
     {
         size_t bytes = 0;
         for (auto & s : pack_stats)
@@ -100,11 +100,11 @@ public:
         return bytes;
     }
 
-    size_t              getPacks() { return pack_stats.size(); }
-    const PackStats &   getPackStats() { return pack_stats; }
-    const PackStat &    getPackStat(size_t pack_index) { return pack_stats[pack_index]; }
-    const ColumnStats & getColumnStats() { return column_stats; }
-    Status              getStatus() { return status; }
+    size_t              getPacks() const { return pack_stats.size(); }
+    const PackStats &   getPackStats() const { return pack_stats; }
+    const PackStat &    getPackStat(size_t pack_index) const { return pack_stats[pack_index]; }
+    const ColumnStats & getColumnStats() const { return column_stats; }
+    Status              getStatus() const { return status; }
 
     static String getFileNameBase(ColId col_id, const IDataType::SubstreamPath & substream = {})
     {

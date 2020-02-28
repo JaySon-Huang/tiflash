@@ -1,16 +1,15 @@
-#include <ctime>
-#include <memory>
-
-#include "dm_basic_include.h"
-
 #include <Poco/ConsoleChannel.h>
 #include <Poco/File.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
-
 #include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/DeltaMergeStore.h>
 #include <Storages/DeltaMerge/Segment.h>
+
+#include <ctime>
+#include <memory>
+
+#include "dm_basic_include.h"
 
 namespace DB
 {
@@ -46,8 +45,10 @@ public:
 
     void SetUp() override
     {
-        db_context = std::make_unique<Context>(DMTestEnv::getContext(DB::Settings()));
+        db_context     = std::make_unique<Context>(DMTestEnv::getContext(DB::Settings()));
+        table_columns_ = std::make_shared<ColumnDefines>();
         dropDataInDisk();
+
         segment = reload();
         ASSERT_EQ(segment->segmentId(), DELTA_MERGE_FIRST_SEGMENT_ID);
     }
@@ -68,7 +69,7 @@ protected:
     // setColumns should update dm_context at the same time
     void setColumns(const ColumnDefinesPtr & columns)
     {
-        table_columns_ = columns;
+        *table_columns_ = columns;
 
         dm_context_ = std::make_unique<DMContext>(*db_context,
                                                   path,
@@ -78,14 +79,7 @@ protected:
                                                   table_columns_,
                                                   /*min_version_*/ 0,
                                                   settings.not_compress_columns,
-                                                  db_context->getSettingsRef().dm_segment_limit_rows,
-                                                  db_context->getSettingsRef().dm_segment_delta_limit_rows,
-                                                  db_context->getSettingsRef().dm_segment_delta_cache_limit_rows,
-                                                  db_context->getSettingsRef().dm_segment_delta_small_pack_rows,
-                                                  db_context->getSettingsRef().dm_segment_stable_pack_rows,
-                                                  db_context->getSettingsRef().dm_enable_logical_split,
-                                                  false,
-                                                  false);
+                                                  db_context->getSettingsRef());
     }
 
     const ColumnDefinesPtr & tableColumns() const { return table_columns_; }

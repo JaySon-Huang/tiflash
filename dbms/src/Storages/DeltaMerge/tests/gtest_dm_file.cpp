@@ -25,9 +25,12 @@ public:
     void SetUp() override
     {
         dropFiles();
-        storage_pool = std::make_unique<StoragePool>("test.t1", path, DB::Settings());
-        dm_file      = DMFile::create(0, path);
-        db_context   = std::make_unique<Context>(DMTestEnv::getContext(DB::Settings()));
+        auto settings = DB::Settings();
+        settings.dm_enable_skippable_place = false; // TODO: we should add some test with enable it
+        storage_pool   = std::make_unique<StoragePool>("test.t1", path);
+        dm_file        = DMFile::create(0, path);
+        db_context     = std::make_unique<Context>(DMTestEnv::getContext(settings));
+        table_columns_ = std::make_shared<ColumnDefines>();
 
         reload();
     }
@@ -43,22 +46,18 @@ public:
 
     void reload(const ColumnDefinesPtr & cols = DMTestEnv::getDefaultColumns())
     {
-        dm_context = std::make_unique<DMContext>(*db_context,
-                                                 path,
-                                                 db_context->getExtraPaths(),
-                                                 *storage_pool,
-                                                 0,
-                                                 cols,
-                                                 0,
-                                                 settings.not_compress_columns,
-                                                 db_context->getSettingsRef().dm_segment_limit_rows,
-                                                 db_context->getSettingsRef().dm_segment_delta_limit_rows,
-                                                 db_context->getSettingsRef().dm_segment_delta_cache_limit_rows,
-                                                 db_context->getSettingsRef().dm_segment_delta_small_pack_rows,
-                                                 db_context->getSettingsRef().dm_segment_stable_pack_rows,
-                                                 db_context->getSettingsRef().dm_enable_logical_split,
-                                                 false,
-                                                 false);
+        *table_columns_ = cols;
+
+        dm_context = std::make_unique<DMContext>( //
+            *db_context,
+            path,
+            db_context->getExtraPaths(),
+            *storage_pool,
+            /*hash_salt*/ 0,
+            table_columns_,
+            0,
+            settings.not_compress_columns,
+            db_context->getSettingsRef());
     }
 
 
@@ -70,10 +69,10 @@ private:
     String                     path;
     std::unique_ptr<Context>   db_context;
     std::unique_ptr<DMContext> dm_context;
-
+    /// all these var live as ref in dm_context
     std::unique_ptr<StoragePool> storage_pool;
-
-    DeltaMergeStore::Settings settings;
+    ColumnDefinesPtr             table_columns_;
+    DeltaMergeStore::Settings    settings;
 
 protected:
     DMFilePtr dm_file;
@@ -129,7 +128,7 @@ try
         stream->readSuffix();
         ASSERT_EQ(num_rows_read, num_rows_write);
     }
-} // namespace tests
+}
 CATCH
 
 TEST_F(DMFile_Test, NumberTypes)

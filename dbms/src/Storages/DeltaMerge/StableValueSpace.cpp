@@ -2,6 +2,7 @@
 #include <Storages/DeltaMerge/FilterHelper.h>
 #include <Storages/DeltaMerge/StableValueSpace.h>
 #include <Storages/DeltaMerge/StoragePool.h>
+#include <Storages/DeltaMerge/WriteBatches.h>
 
 namespace DB
 {
@@ -97,15 +98,16 @@ SkippableBlockInputStreamPtr StableValueSpace::getInputStream(const DMContext & 
     SkippableBlockInputStreams streams;
     for (auto & file : files)
     {
-        streams.push_back(std::make_shared<DMFileBlockInputStream>(context.db_context, //
-                                                                   max_data_version,
-                                                                   enable_clean_read,
-                                                                   context.hash_salt,
-                                                                   file,
-                                                                   read_columns,
-                                                                   handle_range,
-                                                                   filter,
-                                                                   IdSetPtr{}));
+        streams.push_back(std::make_shared<DMFileBlockInputStream>( //
+            context.db_context,
+            max_data_version,
+            enable_clean_read,
+            context.hash_salt,
+            file,
+            read_columns,
+            handle_range,
+            filter,
+            IdSetPtr{}));
     }
     return std::make_shared<ConcatSkippableBlockInputStream>(streams);
 }
