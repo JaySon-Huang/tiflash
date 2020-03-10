@@ -12,15 +12,6 @@ namespace DM
 namespace tests
 {
 
-namespace
-{
-DataTypePtr typeFromString(const String & str)
-{
-    auto & data_type_factory = DataTypeFactory::instance();
-    return data_type_factory.get(str);
-}
-} // namespace
-
 TEST(ConvertColumnType_test, CastNumeric)
 {
     {
