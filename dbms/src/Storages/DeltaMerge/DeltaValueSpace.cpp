@@ -210,17 +210,18 @@ Columns readPackFromCache(const PackPtr & pack, const ColumnDefines & column_def
     Columns columns;
     for (size_t i = col_start; i < col_end; ++i)
     {
-        auto & col = column_defines[i];
-        auto   it  = pack->colid_to_offset.find(col.id);
+        auto & cd = column_defines[i];
+        auto   it = pack->colid_to_offset.find(cd.id);
         if (it == pack->colid_to_offset.end())
         {
-            // TODO: support DDL.
-            throw Exception("Cannot find column with id" + DB::toString(col.id));
+            ColumnPtr column = createColumnWithDefaultValue(cd, pack->rows - pack->cache_offset);
+            columns.emplace_back(std::move(column));
         }
         else
         {
+            // TODO: is data type of cd and pack always the same?
             auto col_offset = it->second;
-            auto col_data   = col.type->createColumn();
+            auto col_data   = cd.type->createColumn();
             col_data->insertRangeFrom(*cache_block.getByPosition(col_offset).column, pack->cache_offset, pack->rows);
             columns.push_back(std::move(col_data));
         }
@@ -262,32 +263,21 @@ Columns readPackFromDisk(const PackPtr &       pack, //
                          size_t                col_start,
                          size_t                col_end)
 {
-    Columns columns(col_end - col_start);
+    size_t num_columns_read = col_end - col_start;
+
+    Columns columns(num_columns_read); // allocate empty columns
 
     std::vector<PageId> page_ids;
     PageReadFields      fields;
     fields.first = pack->data_page;
     for (size_t index = col_start; index < col_end; ++index)
     {
-        auto col_id = column_defines[index].id;
-        auto it     = pack->colid_to_offset.find(col_id);
+        const auto & cd = column_defines[index];
+        auto         it = pack->colid_to_offset.find(cd.id);
         if (unlikely(it == pack->colid_to_offset.end()))
         {
-            // New column after ddl is not exist in this DMFile, fill with default value
-            const auto & cd = column_defines[index];
-            // Read default value from `column_define.default_value`
-            ColumnPtr column;
-            if (cd.default_value.isNull())
-            {
-                column = cd.type->createColumnConstWithDefaultValue(pack->rows);
-            }
-            else
-            {
-                column = cd.type->createColumnConst(pack->rows, cd.default_value);
-            }
-            column = column->convertToFullColumnIfConst();
-
-            columns[index].swap(column);
+            // New column after ddl is not exist in this pack, fill with default value
+            columns[index - col_start] = createColumnWithDefaultValue(cd, pack->rows);
         }
         else
         {
@@ -301,23 +291,25 @@ Columns readPackFromDisk(const PackPtr &       pack, //
 
     for (size_t index = col_start, id_offset = 0; index < col_end; ++index)
     {
-        if (columns[index] == nullptr)
+        const size_t index_in_read_columns = index - col_start;
+        if (columns[index_in_read_columns] != nullptr)
         {
-            auto col_id    = column_defines[index].id;
-            auto col_index = pack->colid_to_offset[col_id];
-            auto data_buf  = page.getFieldData(col_index);
-
-            auto & cd   = column_defines[index];
-            auto   type = pack->getDataTypeByColumnID(cd.id);
-            auto   col  = cd.type->createColumn();
-            deserializeColumn(*col, type, data_buf, pack->rows);
-
-            auto converted_column = convertColumnByColumnDefineIfNeed(type, std::move(col), cd);
-            columns[index]        = std::move(col);
-
-            ++id_offset;
+            // the column is fill with default values.
+            continue;
         }
-        // else the column is fill with default values.
+        auto col_id    = column_defines[index].id;
+        auto col_index = pack->colid_to_offset[col_id];
+        auto data_buf  = page.getFieldData(col_index);
+
+        auto & cd = column_defines[index];
+        // Deserialize column by pack's schema
+        auto type = pack->getDataTypeByColumnID(cd.id);
+        auto col  = cd.type->createColumn();
+        deserializeColumn(*col, type, data_buf, pack->rows);
+
+        columns[index_in_read_columns] = convertColumnByColumnDefineIfNeed(type, std::move(col), cd);
+
+        ++id_offset;
     }
 
     return columns;

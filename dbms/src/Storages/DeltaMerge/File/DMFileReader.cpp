@@ -127,6 +127,9 @@ DMFileReader::DMFileReader(bool                  enable_clean_read_,
 
     for (auto & cd : read_columns)
     {
+        if (!dmfile->isColumnExist(cd.id))
+            continue;
+
         auto callback = [&](const IDataType::SubstreamPath & substream) {
             String stream_name = DMFile::getFileNameBase(cd.id, substream);
             auto   stream      = std::make_unique<Stream>( //
@@ -267,17 +270,7 @@ Block DMFileReader::read()
             {
                 // New column after ddl is not exist in this DMFile, fill with default value
                 // Read default value from `column_define.default_value`
-                ColumnPtr column;
-                if (cd.default_value.isNull())
-                {
-                    column = cd.type->createColumnConstWithDefaultValue(read_rows);
-                }
-                else
-                {
-                    column = cd.type->createColumnConst(read_rows, cd.default_value);
-                }
-                column = column->convertToFullColumnIfConst();
-
+                ColumnPtr column = createColumnWithDefaultValue(cd, read_rows);
                 res.insert(ColumnWithTypeAndName{std::move(column), cd.type, cd.name, cd.id});
             }
 

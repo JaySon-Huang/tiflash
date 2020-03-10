@@ -11,6 +11,8 @@ namespace DM
 //==========================================================================================
 ColumnPtr convertColumnByColumnDefineIfNeed(const DataTypePtr & from_type, ColumnPtr && from_col, const ColumnDefine & to_column_define);
 
+ColumnPtr createColumnWithDefaultValue(const ColumnDefine & column_define, size_t num_rows);
+
 void castColumnAccordingToColumnDefine(const DataTypePtr &  disk_type,
                                        const ColumnPtr &    disk_col,
                                        const ColumnDefine & read_define,

@@ -340,6 +340,21 @@ void castColumnAccordingToColumnDefine(const DataTypePtr &  disk_type,
     }
 }
 
+ColumnPtr createColumnWithDefaultValue(const ColumnDefine & column_define, size_t num_rows)
+{
+    ColumnPtr column;
+    // Read default value from `column_define.default_value`
+    if (column_define.default_value.isNull())
+    {
+        column = column_define.type->createColumnConstWithDefaultValue(num_rows);
+    }
+    else
+    {
+        column = column_define.type->createColumnConst(num_rows, column_define.default_value);
+    }
+    column = column->convertToFullColumnIfConst();
+    return column;
+}
 
 } // namespace DM
 } // namespace DB

@@ -100,11 +100,21 @@ public:
         return bytes;
     }
 
-    size_t              getPacks() const { return pack_stats.size(); }
-    const PackStats &   getPackStats() const { return pack_stats; }
-    const PackStat &    getPackStat(size_t pack_index) const { return pack_stats[pack_index]; }
+    size_t            getPacks() const { return pack_stats.size(); }
+    const PackStats & getPackStats() const { return pack_stats; }
+    const PackStat &  getPackStat(size_t pack_index) const { return pack_stats[pack_index]; }
+
     const ColumnStats & getColumnStats() const { return column_stats; }
-    Status              getStatus() const { return status; }
+    const ColumnStat &  getColumnStat(ColId col_id) const
+    {
+        auto it = column_stats.find(col_id);
+        if (it == column_stats.end())
+            throw Exception("Column [" + DB::toString(col_id) + "] not found in dm file [" + path() + "]");
+        return it->second;
+    }
+    bool isColumnExist(ColId col_id) const { return column_stats.find(col_id) != column_stats.end(); }
+
+    Status getStatus() const { return status; }
 
     static String getFileNameBase(ColId col_id, const IDataType::SubstreamPath & substream = {})
     {
