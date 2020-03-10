@@ -27,7 +27,7 @@ public:
         dropFiles();
         auto settings = DB::Settings();
         settings.dm_enable_skippable_place = false; // TODO: we should add some test with enable it
-        storage_pool   = std::make_unique<StoragePool>("test.t1", path);
+        storage_pool   = std::make_unique<StoragePool>("test.t1", path, settings);
         dm_file        = DMFile::create(0, path);
         db_context     = std::make_unique<Context>(DMTestEnv::getContext(settings));
         table_columns_ = std::make_shared<ColumnDefines>();
@@ -46,7 +46,7 @@ public:
 
     void reload(const ColumnDefinesPtr & cols = DMTestEnv::getDefaultColumns())
     {
-        *table_columns_ = cols;
+        *table_columns_ = *cols;
 
         dm_context = std::make_unique<DMContext>( //
             *db_context,

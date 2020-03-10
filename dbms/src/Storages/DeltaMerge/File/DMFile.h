@@ -76,14 +76,6 @@ public:
     String colIndexPath(const String & file_name_base) const { return path() + "/" + file_name_base + ".idx"; }
     String colMarkPath(const String & file_name_base) const { return path() + "/" + file_name_base + ".mrk"; }
 
-    const ColumnStat & getColumnStat(ColId col_id) const
-    {
-        auto it = column_stats.find(col_id);
-        if (it == column_stats.end())
-            throw Exception("Column [" + DB::toString(col_id) + "] not found in dm file [" + path() + "]");
-        return it->second;
-    }
-
     size_t getRows() const
     {
         size_t rows = 0;

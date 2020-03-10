@@ -69,7 +69,7 @@ protected:
     // setColumns should update dm_context at the same time
     void setColumns(const ColumnDefinesPtr & columns)
     {
-        *table_columns_ = columns;
+        *table_columns_ = *columns;
 
         dm_context_ = std::make_unique<DMContext>(*db_context,
                                                   path,
@@ -880,7 +880,7 @@ try
     }
 
     {
-        ColumnDefines columns_to_read = DMTestEnv::getDefaultColumns();
+        ColumnDefines columns_to_read = *DMTestEnv::getDefaultColumns();
         columns_to_read.emplace_back(column_i32_after_ddl);
 
         // read written data
