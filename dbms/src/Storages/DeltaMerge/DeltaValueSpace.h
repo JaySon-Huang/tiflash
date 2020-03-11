@@ -87,7 +87,7 @@ public:
             return schema->getByPosition(index).type;
         }
 
-        String toString()
+        String toString() const
         {
             return "{rows:" + DB::toString(rows)                //
                 + ",bytes:" + DB::toString(bytes)               //

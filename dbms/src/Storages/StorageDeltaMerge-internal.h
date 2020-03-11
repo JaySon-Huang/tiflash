@@ -13,6 +13,7 @@ namespace
 {
 inline ::DB::HandleID getRangeEndID(const ::DB::TiKVHandle::Handle<HandleID> & end)
 {
+    // TODO: Fix
     switch (end.type)
     {
         case ::DB::TiKVHandle::HandleIDType::NORMAL:
