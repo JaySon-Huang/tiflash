@@ -111,7 +111,7 @@ DMFilePtr writeIntoNewDMFile(DMContext &                 dm_context, //
 
 StableValueSpacePtr createNewStable(DMContext & context, const BlockInputStreamPtr & input_stream, PageId stable_id, WriteBatches & wbs)
 {
-    auto delegate   = context.path_pool.getStableDelegate();
+    auto delegate   = context.path_pool.getStableDiskDelegator();
     auto store_path = delegate.choosePath();
 
     PageId dmfile_id = context.storage_pool.newDataPageId();
@@ -716,7 +716,7 @@ Segment::prepareSplitLogical(DMContext & dm_context, const SegmentSnapshotPtr & 
     DMFiles my_stable_files;
     DMFiles other_stable_files;
 
-    auto delegate = dm_context.path_pool.getStableDelegate();
+    auto delegate = dm_context.path_pool.getStableDiskDelegator();
     for (auto & dmfile : segment_snap->stable->getDMFiles())
     {
         auto ori_ref_id       = dmfile->refId();
