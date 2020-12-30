@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Storages/IManageableStorage.h>
 #include <Storages/Transaction/BackgroundService.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/Region.h>
@@ -90,6 +91,39 @@ BackgroundService::BackgroundService(TMTContext & tmt_)
     else
     {
         LOG_INFO(log, "Configuration raft.disable_bg_flush is set to true, background flush tasks are disabled.");
+        storage_gc_handle = background_pool.addTask(
+            [this] {
+                // Get a storage snapshot with weak_ptrs first
+                std::unordered_map<TableID, std::weak_ptr<IManageableStorage>> storages;
+                for (const auto & [table_id, storage] : tmt.getStorages().getAllStorage())
+                    storages.emplace(table_id, storage);
+                for (const auto & [table_id, storage_] : storages)
+                {
+                    // The TiFlash process receive a signal to terminate.
+                    if (tmt.getTerminated())
+                        break;
+
+                    std::ignore = table_id;
+                    auto storage = storage_.lock();
+                    // The storage has been free or dropped.
+                    if (!storage || storage->is_dropped)
+                        continue;
+                    try
+                    {
+                        // Block this thread and do GC on the storage
+                        // It is OK if any schema changes is apply to the storage while doing GC, so we
+                        // do not acquire structure lock on the storage.
+                        storage->onSyncGc(tmt.getContext());
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                }
+                // Always return false
+                return false;
+            },
+            false, /*interval_ms=*/5 * 60 * 1000);
     }
 }
 

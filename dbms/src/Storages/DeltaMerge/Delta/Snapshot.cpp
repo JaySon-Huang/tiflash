@@ -94,6 +94,19 @@ SnapshotPtr DeltaValueSpace::createSnapshot(const DMContext & context, bool for_
     return snap;
 }
 
+RowKeyRange DeltaValueSpace::Snapshot::getSquashDeleteRange() const
+{
+    RowKeyRange squashed_delete_range = RowKeyRange::newNone(is_common_handle, rowkey_column_size);
+    for (auto iter = packs.cbegin(); iter != packs.cend(); ++iter)
+    {
+        const auto & pack = *iter;
+        if (!pack->isDeleteRange())
+            continue;
+        squashed_delete_range = squashed_delete_range.merge(pack->delete_range);
+    }
+    return squashed_delete_range;
+}
+
 class DeltaSnapshotInputStream : public IBlockInputStream
 {
     DeltaSnapshotPtr delta_snap;

@@ -118,7 +118,7 @@ public:
                 + ",saved:" + DB::toString(saved)                          //
                 + ",appendable:" + DB::toString(appendable)                //
                 + ",schema:" + (schema ? schema->dumpStructure() : "none") //
-                + ",cache_block:" + (cache ? cache->block.dumpStructure() : "none") + ")";
+                + ",cache_block:" + (cache ? cache->block.dumpStructure() : "none") + "}";
             return s;
         }
     };
@@ -185,6 +185,8 @@ public:
         size_t getBytes() const { return bytes; }
         size_t getDeletes() const { return deletes; }
 
+        RowKeyRange getSquashDeleteRange() const;
+
         void                prepare(const DMContext & context, const ColumnDefines & column_defines_);
         BlockInputStreamPtr prepareForStream(const DMContext & context, const ColumnDefines & column_defines_);
 
@@ -221,8 +223,6 @@ private:
 
     /// This instance has been abandoned. Like after merge delta, split/merge.
     std::atomic_bool abandoned = false;
-    /// We need to run compact.
-    std::atomic_bool shouldCompact = false;
     /// Current segment is being compacted, split, merged or merged delta.
     /// Note that those things can not be done at the same time.
     std::atomic_bool is_updating = false;
@@ -305,7 +305,6 @@ public:
     size_t getValidCacheRows() const;
 
     bool isUpdating() const { return is_updating; }
-    bool isShouldCompact() const { return shouldCompact; }
 
     std::atomic<size_t> & getLastTryFlushRows() { return last_try_flush_rows; }
     std::atomic<size_t> & getLastTryCompactPacks() { return last_try_compact_packs; }

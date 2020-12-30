@@ -141,7 +141,7 @@ public:
     using SegmentSortedMap = std::map<RowKeyValueRef, SegmentPtr, std::less<>>;
     using SegmentMap       = std::unordered_map<PageId, SegmentPtr>;
 
-    enum ThreadType
+    enum class ThreadType
     {
         Init,
         Write,
@@ -153,7 +153,7 @@ public:
         BG_Flush,
     };
 
-    enum TaskType
+    enum class TaskType
     {
         Split,
         Merge,
@@ -167,21 +167,21 @@ public:
     {
         switch (type)
         {
-        case Init:
+        case ThreadType::Init:
             return "Init";
-        case Write:
+        case ThreadType::Write:
             return "Write";
-        case Read:
+        case ThreadType::Read:
             return "Read";
-        case BG_Split:
+        case ThreadType::BG_Split:
             return "BG_Split";
-        case BG_Merge:
+        case ThreadType::BG_Merge:
             return "BG_Merge";
-        case BG_MergeDelta:
+        case ThreadType::BG_MergeDelta:
             return "BG_MergeDelta";
-        case BG_Compact:
+        case ThreadType::BG_Compact:
             return "BG_Compact";
-        case BG_Flush:
+        case ThreadType::BG_Flush:
             return "BG_Flush";
         default:
             return "Unknown";
@@ -192,17 +192,17 @@ public:
     {
         switch (type)
         {
-        case Split:
+        case TaskType::Split:
             return "Split";
-        case Merge:
+        case TaskType::Merge:
             return "Merge";
-        case MergeDelta:
+        case TaskType::MergeDelta:
             return "MergeDelta";
-        case Compact:
+        case TaskType::Compact:
             return "Compact";
-        case Flush:
+        case TaskType::Flush:
             return "Flush";
-        case PlaceIndex:
+        case TaskType::PlaceIndex:
             return "PlaceIndex";
         default:
             return "Unknown";
@@ -297,7 +297,10 @@ public:
     /// Compact fregment packs into bigger one.
     void compact(const Context & context, const RowKeyRange & range);
 
-    /// Apply `commands` on `table_columns`
+    /// Iterator over all segments and apply gc jobs.
+    void onSyncGc(const Context & context);
+
+    /// Apply DDL `commands` on `table_columns`
     void applyAlters(const AlterCommands &         commands, //
                      const OptionTableInfoConstRef table_info,
                      ColumnID &                    max_column_id_used,
@@ -340,11 +343,15 @@ private:
 
     SegmentPair segmentSplit(DMContext & dm_context, const SegmentPtr & segment, bool is_foreground);
     void        segmentMerge(DMContext & dm_context, const SegmentPtr & left, const SegmentPtr & right, bool is_foreground);
-    SegmentPtr  segmentMergeDelta(DMContext & dm_context, const SegmentPtr & segment, bool is_foreground);
+    SegmentPtr
+    segmentMergeDelta(DMContext & dm_context, const SegmentPtr & segment, bool is_foreground, SegmentSnapshotPtr segment_snap = nullptr);
 
     bool handleBackgroundTask(bool heavy);
 
-    bool isSegmentValid(const SegmentPtr & segment);
+    // isSegmentValid should be protected by lock on `read_write_mutex`
+    inline bool isSegmentValid(std::shared_lock<std::shared_mutex> &, const SegmentPtr & segment) { return doIsSegmentValid(segment); }
+    inline bool isSegmentValid(std::unique_lock<std::shared_mutex> &, const SegmentPtr & segment) { return doIsSegmentValid(segment); }
+    bool doIsSegmentValid(const SegmentPtr & segment);
 
     void restoreStableFiles();
 
@@ -390,7 +397,7 @@ private:
 
     MergeDeltaTaskPool background_tasks;
 
-    DB::Timestamp latest_gc_safe_point = 0;
+    std::atomic<DB::Timestamp> latest_gc_safe_point = 0;
 
     // Synchronize between write threads and read threads.
     mutable std::shared_mutex read_write_mutex;

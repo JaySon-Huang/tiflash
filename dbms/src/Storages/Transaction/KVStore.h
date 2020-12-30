@@ -84,6 +84,7 @@ public:
     RegionPtr genRegionPtr(metapb::Region && region, UInt64 peer_id, UInt64 index, UInt64 term);
     const TiFlashRaftProxyHelper * getProxyHelper() const { return proxy_helper; }
 
+    RegionPreDecodeBlockDataPtr preHandleSnapshot(RegionPtr new_region, const SnapshotViewArray snaps, TMTContext & tmt);
 private:
     friend class MockTiDB;
     friend struct MockTiDBTable;

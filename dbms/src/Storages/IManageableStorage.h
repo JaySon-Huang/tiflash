@@ -50,6 +50,8 @@ public:
 
     virtual void deleteRows(const Context &, size_t /*rows*/) { throw Exception("Unsupported"); }
 
+    virtual void onSyncGc(const Context &) { throw Exception("Unsupported"); }
+
     virtual void mergeDelta(const Context &) { throw Exception("Unsupported"); }
 
     virtual BlockInputStreamPtr listSegments(const Context &) { throw Exception("Unsupported"); }

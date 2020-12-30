@@ -35,7 +35,9 @@ public:
         /// Wake up any thread.
         void wake();
 
-        TaskInfo(BackgroundProcessingPool & pool_, const Task & function_, const bool multi_) : pool(pool_), function(function_), multi(multi_) {}
+        TaskInfo(BackgroundProcessingPool & pool_, const Task & function_, const bool multi_, const uint64_t interval_ms_)
+            : pool(pool_), function(function_), multi(multi_), interval_millisecond(interval_ms_)
+        {}
 
     private:
         friend class BackgroundProcessingPool;
@@ -45,11 +47,13 @@ public:
 
         /// Read lock is hold when task is executed.
         std::shared_mutex rwlock;
-        std::atomic<bool> removed {false};
+        std::atomic<bool> removed{false};
 
         /// only can be invoked by one thread at same time.
         const bool multi;
-        std::atomic_bool occupied {false};
+        std::atomic_bool occupied{false};
+
+        const uint64_t interval_millisecond;
 
         std::multimap<Poco::Timestamp, std::shared_ptr<TaskInfo>>::iterator iterator;
     };
@@ -64,8 +68,10 @@ public:
         return size;
     }
 
-    /// if multi == false, this task can only be called by one thread at same time.
-    TaskHandle addTask(const Task & task, const bool multi = true);
+    /// If multi == false, this task can only be called by one thread at same time.
+    /// If itnerval_ms is zero, this task will be scheduled with `sleep_seconds`.
+    /// If interval_ms is not zero, this task will be scheduled with the user-defined interval.
+    TaskHandle addTask(const Task & task, const bool multi = true, const size_t interval_ms = 0);
     void removeTask(const TaskHandle & task);
 
     ~BackgroundProcessingPool();
