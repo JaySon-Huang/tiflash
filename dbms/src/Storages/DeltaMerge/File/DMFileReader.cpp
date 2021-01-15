@@ -397,6 +397,24 @@ Block DMFileReader::read()
         }
     }
 
+    if constexpr (DM_RUN_CHECK)
+    {
+        // Check whether the number of rows in each column is consistent
+        auto col_iter = res.cbegin();
+        for (size_t i = 0; i < res.columns(); ++i, ++col_iter)
+        {
+            if (unlikely(col_iter->column->size() != read_rows))
+            {
+                const auto & cd = read_columns[i];
+                throw Exception("The rows of column is not as expected [column_id=" + DB::toString(cd.id) + "] [type=" + cd.type->getName()
+                                    + "] [expect_rows=" + DB::toString(read_rows)
+                                    + "] [actual_rows=" + DB::toString(col_iter->column->size()) + "] [DTFile=" + dmfile->path()
+                                    + "] [schema=" + res.dumpStructure() + "]",
+                                ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+    }
+
     return res;
 }
 

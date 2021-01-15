@@ -28,6 +28,16 @@ inline Block cutBlock(Block && block, size_t offset, size_t limit)
     if (offset == 0 && limit == rows)
         return std::move(block);
 
+    if constexpr (DM_RUN_CHECK)
+    {
+        if (unlikely(rows < offset + limit))
+        {
+            throw Exception("Try to cut block with invalid param [rows=" + DB::toString(rows) + "] [offset=" + DB::toString(offset)
+                                + "] [limit=" + DB::toString(limit) + "]",
+                            ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+
     if (offset == 0)
     {
         size_t pop_size = rows - limit;
@@ -119,8 +129,16 @@ public:
                     return {};
             }
 
-            Block res = is_block_sorted ? RowKeyFilter::filterSorted(rowkey_range, std::move(block), handle_col_pos)
-                                        : RowKeyFilter::filterUnsorted(rowkey_range, std::move(block), handle_col_pos);
+            Block res;
+            if constexpr (is_block_sorted)
+            {
+                res.swap(RowKeyFilter::filterSorted(rowkey_range, std::move(block), handle_col_pos));
+            }
+            else
+            {
+                res.swap(RowKeyFilter::filterUnsorted(rowkey_range, std::move(block), handle_col_pos));
+            }
+
             if (!res || !res.rows())
                 continue;
             else
