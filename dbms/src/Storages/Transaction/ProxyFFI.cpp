@@ -212,15 +212,27 @@ BatchReadIndexRes TiFlashRaftProxyHelper::batchReadIndex(const std::vector<kvrpc
     return res;
 }
 
-struct PreHandledSnapshot
+struct PreHandledSnapshotWithBlock
 {
-    ~PreHandledSnapshot() { CurrentMetrics::sub(CurrentMetrics::RaftNumSnapshotsPendingApply); }
-    PreHandledSnapshot(const RegionPtr & region_, RegionPtrWithBlock::CachePtr && cache_) : region(region_), cache(std::move(cache_))
+    ~PreHandledSnapshotWithBlock() { CurrentMetrics::sub(CurrentMetrics::RaftNumSnapshotsPendingApply); }
+    PreHandledSnapshotWithBlock(const RegionPtr & region_, RegionPtrWithBlock::CachePtr && cache_)
+        : region(region_), cache(std::move(cache_))
     {
         CurrentMetrics::add(CurrentMetrics::RaftNumSnapshotsPendingApply);
     }
     RegionPtr region;
     RegionPtrWithBlock::CachePtr cache;
+};
+
+struct PreHandledSnapshotWithFiles
+{
+    ~PreHandledSnapshotWithFiles() { CurrentMetrics::sub(CurrentMetrics::RaftNumSnapshotsPendingApply); }
+    PreHandledSnapshotWithFiles(const RegionPtr & region_, std::string && path_) : region(region_), path(std::move(path_))
+    {
+        CurrentMetrics::add(CurrentMetrics::RaftNumSnapshotsPendingApply);
+    }
+    RegionPtr region;
+    std::string path; // The path storing pre-handled files
 };
 
 RawCppPtr PreHandleSnapshot(
@@ -233,9 +245,17 @@ RawCppPtr PreHandleSnapshot(
         auto & tmt = *server->tmt;
         auto & kvstore = tmt.getKVStore();
         auto new_region = kvstore->genRegionPtr(std::move(region), peer_id, index, term);
-        auto new_region_block_cache = kvstore->preHandleSnapshot(new_region, snaps, index, term, tmt);
-        auto res = new PreHandledSnapshot{new_region, std::move(new_region_block_cache)};
-        return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshot);
+#if 1
+        // Pre-decode as a block
+        auto new_region_block_cache = kvstore->preHandleSnapshotToBlock(new_region, snaps, index, term, tmt);
+        auto res = new PreHandledSnapshotWithBlock{new_region, std::move(new_region_block_cache)};
+        return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithBlock);
+#else
+        // Pre-decode and save as DTFiles
+        auto save_path = kvstore->preHandleSnapshotToFiles(new_region, snaps, index, term, tmt);
+        auto res = new PreHandledSnapshotWithFiles{new_region, std::move(save_path)};
+        return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithFiles);
+#endif
     }
     catch (...)
     {
@@ -244,12 +264,24 @@ RawCppPtr PreHandleSnapshot(
     }
 }
 
+template <typename PreHandledSnapshot>
 void ApplyPreHandledSnapshot(EngineStoreServerWrap * server, PreHandledSnapshot * snap)
 {
+    static_assert(
+        std::is_same_v<PreHandledSnapshot, PreHandledSnapshotWithBlock> || std::is_same_v<PreHandledSnapshot, PreHandledSnapshotWithFiles>,
+        "Unknown pre-handled snapshot type");
+
     try
     {
         auto & kvstore = server->tmt->getKVStore();
-        kvstore->handlePreApplySnapshot(RegionPtrWithBlock{snap->region, std::move(snap->cache)}, *server->tmt);
+        if constexpr (std::is_same_v<PreHandledSnapshot, PreHandledSnapshotWithBlock>)
+        {
+            kvstore->handlePreApplySnapshot(RegionPtrWithBlock{snap->region, std::move(snap->cache)}, *server->tmt);
+        }
+        else if constexpr (std::is_same_v<PreHandledSnapshot, PreHandledSnapshotWithFiles>)
+        {
+            kvstore->handlePreApplySnapshot(RegionPtrWithSnapshotFiles{snap->region, std::move(snap->path)}, *server->tmt);
+        }
     }
     catch (...)
     {
@@ -262,9 +294,15 @@ void ApplyPreHandledSnapshot(EngineStoreServerWrap * server, RawVoidPtr res, Raw
 {
     switch (static_cast<RawCppPtrTypeImpl>(type))
     {
-        case RawCppPtrTypeImpl::PreHandledSnapshot:
+        case RawCppPtrTypeImpl::PreHandledSnapshotWithBlock:
         {
-            PreHandledSnapshot * snap = reinterpret_cast<PreHandledSnapshot *>(res);
+            auto * snap = reinterpret_cast<PreHandledSnapshotWithBlock *>(res);
+            ApplyPreHandledSnapshot(server, snap);
+            break;
+        }
+        case RawCppPtrTypeImpl::PreHandledSnapshotWithFiles:
+        {
+            auto * snap = reinterpret_cast<PreHandledSnapshotWithFiles *>(res);
             ApplyPreHandledSnapshot(server, snap);
             break;
         }
@@ -283,8 +321,11 @@ void GcRawCppPtr(EngineStoreServerWrap *, RawVoidPtr ptr, RawCppPtrType type)
             case RawCppPtrTypeImpl::String:
                 delete reinterpret_cast<RawCppStringPtr>(ptr);
                 break;
-            case RawCppPtrTypeImpl::PreHandledSnapshot:
-                delete reinterpret_cast<PreHandledSnapshot *>(ptr);
+            case RawCppPtrTypeImpl::PreHandledSnapshotWithBlock:
+                delete reinterpret_cast<PreHandledSnapshotWithBlock *>(ptr);
+                break;
+            case RawCppPtrTypeImpl::PreHandledSnapshotWithFiles:
+                delete reinterpret_cast<PreHandledSnapshotWithFiles *>(ptr);
                 break;
             default:
                 LOG_ERROR(&Logger::get(__PRETTY_FUNCTION__), "unknown type " + std::to_string(uint32_t(type)));

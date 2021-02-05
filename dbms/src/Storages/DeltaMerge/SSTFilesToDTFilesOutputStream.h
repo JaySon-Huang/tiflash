@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Stopwatch.h>
-#include <Storages/Transaction/RaftStoreProxyFFI/ColumnFamily.h>
+#include <RaftStoreProxyFFI/ColumnFamily.h>
 
 #include <memory>
 #include <string_view>
@@ -43,8 +43,9 @@ public:
 
     void writePrefix();
     void writeSuffix();
-
     void write();
+
+    String outputDir() const { return snap_dir; }
 
 private:
     void scanCF(ColumnFamilyType cf, const std::string_view until = std::string_view{});

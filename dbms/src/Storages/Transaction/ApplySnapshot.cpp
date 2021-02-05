@@ -12,6 +12,7 @@
 #include <Storages/Transaction/ProxyFFI.h>
 #include <Storages/Transaction/Region.h>
 #include <Storages/Transaction/RegionDataMover.h>
+#include <Storages/Transaction/RegionTable.h>
 #include <Storages/Transaction/SSTReader.h>
 #include <Storages/Transaction/TMTContext.h>
 
@@ -30,7 +31,8 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-void KVStore::checkAndApplySnapshot(const RegionPtrWithBlock & new_region, TMTContext & tmt)
+template <typename RegionPtrWrap>
+void KVStore::checkAndApplySnapshot(const RegionPtrWrap & new_region, TMTContext & tmt)
 {
     auto region_id = new_region->id();
     auto old_region = getRegion(region_id);
@@ -131,7 +133,8 @@ void KVStore::checkAndApplySnapshot(const RegionPtrWithBlock & new_region, TMTCo
     onSnapshot(new_region, old_region, old_applied_index, tmt);
 }
 
-void KVStore::onSnapshot(const RegionPtrWithBlock & new_region_wrap, RegionPtr old_region, UInt64 old_region_index, TMTContext & tmt)
+template <typename RegionPtrWrap>
+void KVStore::onSnapshot(const RegionPtrWrap & new_region_wrap, RegionPtr old_region, UInt64 old_region_index, TMTContext & tmt)
 {
     RegionID region_id = new_region_wrap->id();
 
@@ -149,8 +152,16 @@ void KVStore::onSnapshot(const RegionPtrWithBlock & new_region_wrap, RegionPtr o
                     auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
                     auto key_range = DM::RowKeyRange::fromRegionRange(
                         new_region_wrap->getRange(), table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
-                    // Call `deleteRange` to delete data for range
-                    dm_storage->deleteRange(key_range, context.getSettingsRef());
+                    if constexpr (std::is_same_v<RegionPtrWrap, RegionPtrWithSnapshotFiles>)
+                    {
+                        // Call `ingestFiles` to delete data for range and ingest external DTFiles.
+                        dm_storage->ingestFiles(key_range, new_region_wrap.snapshot_path, context.getSettingsRef());
+                    }
+                    else
+                    {
+                        // Call `deleteRange` to delete data for range
+                        dm_storage->deleteRange(key_range, context.getSettingsRef());
+                    }
                     break;
                 }
                 default:
@@ -164,13 +175,21 @@ void KVStore::onSnapshot(const RegionPtrWithBlock & new_region_wrap, RegionPtr o
         auto & region_table = tmt.getRegionTable();
         // extend region to make sure data won't be removed.
         region_table.extendRegionRange(region_id, *range);
-        // try to flush data into ch first.
+        // try to flush data into storage first.
         try
         {
-            auto tmp = region_table.tryFlushRegion(new_region_wrap, false);
+            if constexpr (std::is_same_v<RegionPtrWrap, RegionPtrWithBlock>)
             {
-                std::lock_guard<std::mutex> lock(bg_gc_region_data_mutex);
-                bg_gc_region_data.push_back(std::move(tmp));
+                auto tmp = region_table.tryFlushRegion(new_region_wrap, false);
+                {
+                    std::lock_guard<std::mutex> lock(bg_gc_region_data_mutex);
+                    bg_gc_region_data.push_back(std::move(tmp));
+                }
+            }
+            else
+            {
+                // For `RegionPtrWithSnapshotFiles`, we need to cast it as `RegionPtr`
+                region_table.tryFlushRegion((RegionPtr)(new_region_wrap), false);
             }
             tryFlushRegionCacheInStorage(tmt, *new_region_wrap, log);
         }
@@ -188,7 +207,7 @@ void KVStore::onSnapshot(const RegionPtrWithBlock & new_region_wrap, RegionPtr o
         if (getRegion(region_id) != old_region || (old_region && old_region_index != old_region->appliedIndex()))
         {
             throw Exception(
-                std::string(__PRETTY_FUNCTION__) + ": region " + std::to_string(region_id) + " instance changed, should not happen",
+                std::string(__PRETTY_FUNCTION__) + ": region " + DB::toString(region_id) + " instance changed, should not happen",
                 ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -212,14 +231,12 @@ void KVStore::onSnapshot(const RegionPtrWithBlock & new_region_wrap, RegionPtr o
     }
 }
 
-
 extern RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr &, Context &);
 
-/// `preHandleSnapshot` read data from SSTFiles.
-/// Generate DTFile(s) for commited data and return the path of DTFile(s), the uncommited data will be
-/// inserted to `new_region`
-RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshot(
-    RegionPtr new_region, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
+
+/// `preHandleSnapshotToBlock` read data from SSTFiles and predoced the data as a block
+RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshotToBlock(
+    RegionPtr new_region, const SSTViewVec snaps, uint64_t /*index*/, uint64_t /*term*/, TMTContext & tmt)
 {
     RegionPreDecodeBlockDataPtr cache{nullptr};
     {
@@ -275,16 +292,24 @@ RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshot(
         LOG_INFO(log, "Pre-handle snapshot " << new_region->toString(false) << " cost " << watch.elapsedMilliseconds() << "ms");
     }
 
+    return cache;
+}
+
+/// `preHandleSnapshotToFiles` read data from SSTFiles and generate DTFile(s) for commited data
+/// return the path of DTFile(s), the uncommited data will be inserted to `new_region`
+String KVStore::preHandleSnapshotToFiles(RegionPtr new_region, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
+{
     DM::SSTFilesToDTFilesOutputStream stream(new_region, snaps, index, term, proxy_helper, tmt);
 
     stream.writePrefix();
     stream.write();
     stream.writeSuffix();
 
-    return cache;
+    return stream.outputDir();
 }
 
-void KVStore::handlePreApplySnapshot(const RegionPtrWithBlock & new_region, TMTContext & tmt)
+template <typename RegionPtrWrap>
+void KVStore::handlePreApplySnapshot(const RegionPtrWrap & new_region, TMTContext & tmt)
 {
     LOG_INFO(log, "Try to apply snapshot: " << new_region->toString(true));
 
@@ -301,6 +326,14 @@ void KVStore::handlePreApplySnapshot(const RegionPtrWithBlock & new_region, TMTC
 
     LOG_INFO(log, new_region->toString(false) << " apply snapshot success");
 }
+
+template void KVStore::handlePreApplySnapshot<RegionPtrWithBlock>(const RegionPtrWithBlock &, TMTContext &);
+template void KVStore::handlePreApplySnapshot<RegionPtrWithSnapshotFiles>(const RegionPtrWithSnapshotFiles &, TMTContext &);
+template void KVStore::checkAndApplySnapshot<RegionPtrWithBlock>(const RegionPtrWithBlock &, TMTContext &);
+template void KVStore::checkAndApplySnapshot<RegionPtrWithSnapshotFiles>(const RegionPtrWithSnapshotFiles &, TMTContext &);
+template void KVStore::onSnapshot<RegionPtrWithBlock>(const RegionPtrWithBlock &, RegionPtr, UInt64, TMTContext &);
+template void KVStore::onSnapshot<RegionPtrWithSnapshotFiles>(const RegionPtrWithSnapshotFiles &, RegionPtr, UInt64, TMTContext &);
+
 
 static const metapb::Peer & findPeer(const metapb::Region & region, UInt64 peer_id)
 {
@@ -332,10 +365,12 @@ RegionPtr KVStore::genRegionPtr(metapb::Region && region, UInt64 peer_id, UInt64
 }
 
 void KVStore::handleApplySnapshot(
-    metapb::Region && region, UInt64 peer_id, const SSTViewVec snaps, UInt64 index, UInt64 term, TMTContext & tmt)
+    metapb::Region && region, uint64_t peer_id, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
 {
     auto new_region = genRegionPtr(std::move(region), peer_id, index, term);
-    handlePreApplySnapshot(RegionPtrWithBlock{new_region, preHandleSnapshot(new_region, snaps, index, term, tmt)}, tmt);
+    handlePreApplySnapshot(RegionPtrWithBlock{new_region, preHandleSnapshotToBlock(new_region, snaps, index, term, tmt)}, tmt);
+    // TODO enable pre handle to files by default
+    // handlePreApplySnapshot(RegionPtrWithSnapshotFiles{new_region, preHandleSnapshotToFiles(new_region, snaps, index, term, tmt)}, tmt);
 }
 
 EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec snaps, UInt64 index, UInt64 term, TMTContext & tmt)
@@ -374,6 +409,7 @@ EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec 
 
     // try to flush remain data in memory.
     func_try_flush();
+    // TODO: handle `IngestSST` with `DM::SSTFilesToDTFilesOutputStream`
     region->handleIngestSST(snaps, index, term, tmt);
     func_try_flush();
 

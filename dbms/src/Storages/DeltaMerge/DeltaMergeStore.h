@@ -279,6 +279,11 @@ public:
 
     void deleteRange(const Context & db_context, const DB::Settings & db_settings, const RowKeyRange & delete_range);
 
+    void ingestFiles(const Context &      db_context,
+                     const DB::Settings & db_settings,
+                     const String &       files_parent_dir,
+                     const RowKeyRange &  delete_range);
+
     BlockInputStreams readRaw(const Context &       db_context,
                               const DB::Settings &  db_settings,
                               const ColumnDefines & column_defines,
