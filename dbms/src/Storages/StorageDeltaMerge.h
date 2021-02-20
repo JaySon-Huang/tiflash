@@ -105,7 +105,7 @@ public:
     void checkStatus(const Context & context) override;
     void deleteRows(const Context &, size_t rows) override;
 
-    const DM::DeltaMergeStorePtr & getStore() { return store; }
+    const DM::DeltaMergeStorePtr & getStore() const { return store; }
 
     bool isCommonHandle() const override { return is_common_handle; }
 
@@ -135,8 +135,6 @@ private:
     DataTypePtr getPKTypeImpl() const override;
 
 private:
-    using ColumnIdMap = std::unordered_map<String, size_t>;
-
     const bool data_path_contains_database_name = false;
 
     DM::DeltaMergeStorePtr store;

@@ -881,6 +881,8 @@ void StorageDeltaMerge::rename(
         return;
     }
 
+    /// Note that this routine is only left for CI tests. `clean_rename` should always be true in production env.
+
     // For DatabaseOrdinary, we need to rename data path, then recreate a new store.
     const String new_path = new_path_to_db + "/" + new_table_name;
 
