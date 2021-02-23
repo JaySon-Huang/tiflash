@@ -38,7 +38,8 @@ public:
                                   uint64_t                       index_,
                                   uint64_t                       term_,
                                   const TiFlashRaftProxyHelper * proxy_helper_,
-                                  TMTContext &                   tmt_);
+                                  TMTContext &                   tmt_,
+                                  size_t                         expected_size_ = DEFAULT_MERGE_BLOCK_SIZE);
     ~SSTFilesToDTFilesOutputStream();
 
     void writePrefix();
@@ -61,6 +62,7 @@ private:
     const uint64_t                 snap_term;
     const TiFlashRaftProxyHelper * proxy_helper{nullptr};
     TMTContext &                   tmt;
+    size_t                         expected_size;
     Poco::Logger *                 log;
 
     using SSTReaderPtr = std::unique_ptr<SSTReader>;

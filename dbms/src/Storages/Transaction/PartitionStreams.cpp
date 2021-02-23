@@ -366,7 +366,7 @@ RegionTable::ResolveLocksAndWriteRegionRes RegionTable::resolveLocksAndWriteRegi
         region_data_lock);
 }
 
-/// pre-decode region data into block cache and remove
+/// Pre-decode region data into block cache and remove committed data from `region`
 RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & region, Context & context)
 {
     auto data_list_read = ReadRegionCommitCache(region);
@@ -421,8 +421,8 @@ RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & regio
     return std::make_unique<RegionPreDecodeBlockData>(std::move(res_block), schema_version, std::move(*data_list_read));
 }
 
-// TODO Totally replace `GenRegionPreDecodeBlockData`
-std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionPreDecodeBlockDataNew(const RegionPtr & region, TMTContext & tmt)
+/// Decode region data into block and belonging schema snapshot, remove committed data from `region`
+std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt)
 {
     auto data_list_read = ReadRegionCommitCache(region);
 
@@ -455,7 +455,8 @@ std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionPreDecodeBlockDataNew(con
         // Get schema snapshot
         if (unlikely(storage->engineType() != ::TiDB::StorageEngine::DT))
         {
-            throw Exception("Try to convert SSTFiles into DTFiles with unknown storage engine [engine_type=" + DB::toString(table_id) + "]",
+            throw Exception("Try to convert SSTFiles into DTFiles with unknown storage engine [table_id=" + DB::toString(table_id)
+                    + "] [engine_type=" + DB::toString(static_cast<Int32>(storage->engineType())) + "]",
                 ErrorCodes::LOGICAL_ERROR);
         }
         if (auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage); dm_storage != nullptr)

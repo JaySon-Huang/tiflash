@@ -1,0 +1,88 @@
+# Disable background schema sync to test schema sync triggled by applying snapshot
+=> DBGInvoke __enable_schema_sync_service('false')
+=> DBGInvoke __drop_tidb_table(default, test)
+=> drop table if exists default.test
+
+=> DBGInvoke __mock_tidb_table(default, test, 'col_1 Int64', '', 'dt')
+=> DBGInvoke __region_snapshot(4, 0, 10000, default, test)
+=> DBGInvoke __refresh_schemas()
+
+#####
+### Pre-handle region to dt files then apply
+#=> DBGInvoke region_snapshot_pre_handle_file(default, test, 4, 3, 6)
+#┌─region_snapshot_pre_handle_file(default, test, 4, 3, 6)────────┐
+#│ Generate 1 files for [region_id=4]                             │
+#└────────────────────────────────────────────────────────────────┘
+#=> DBGInvoke __region_snapshot_pre_handle_file(4)
+##RETURN
+#=> select * from default.test
+#┌─col_1─┬─_tidb_rowid─┐
+#│    -3 │           3 │
+#│    -4 │           4 │
+#│    -5 │           5 │
+#└───────┴─────────────┘
+
+#####
+### Mock to test idempotence of applying snapshot
+#=> DBGInvoke region_snapshot_pre_handle_file(default, test, 4, 3, 6)
+#┌─region_snapshot_pre_handle_file(default, test, 4, 3, 6)────────┐
+#│ Generate 1 files for [region_id=4]                             │
+#└────────────────────────────────────────────────────────────────┘
+### Mock that we crashed before applying first snapshot, then replay the process of apply snapshot
+#=> DBGInvoke region_snapshot_pre_handle_file(default, test, 4, 3, 6)
+#┌─region_snapshot_pre_handle_file(default, test, 4, 3, 6)────────┐
+#│ Generate 1 files for [region_id=4]                             │
+#└────────────────────────────────────────────────────────────────┘
+#=> DBGInvoke __region_snapshot_pre_handle_file(4)
+##RETURN
+#=> select * from default.test
+#┌─col_1─┬─_tidb_rowid─┐
+#│    -3 │           3 │
+#│    -4 │           4 │
+#│    -5 │           5 │
+#└───────┴─────────────┘
+
+#####
+### Mock to test apply snapshot with multiple schema
+=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_2 String')
+=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_3 UInt64')
+#=> DBGInvoke region_snapshot_pre_handle_file(default, test, 4, 3, 12, 'col_1 Int64, col_2 String, col_3 UInt64', '', 2)
+#┌─region_snapshot_pre_handle_file(default, test, 4, 3, 6)────────┐
+#│ Generate 1 files for [region_id=4]                             │
+#└────────────────────────────────────────────────────────────────┘
+#=> DBGInvoke region_snapshot_pre_handle_file(4)
+#┌─region_snapshot_pre_handle_file(4)───┐
+#│ success apply region 4 with dt files │
+#└──────────────────────────────────────┘
+##RETURN
+#=> select * from default.test
+#┌─col_1─┬─_tidb_rowid─┐
+#│    -3 │           3 │
+#│    -4 │           4 │
+#│    -5 │           5 │
+#└───────┴─────────────┘
+
+#####
+### Mock to test apply snapshot with an older schema
+#=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_2 String')
+#=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_3 UInt64')
+#=> DBGInvoke region_snapshot_pre_handle_file(default, test, 4, 3, 12, 'col_1 Int64, col_2 String, col_3 UInt64', '', 2)
+#┌─region_snapshot_pre_handle_file(default, test, 4, 3, 6)────────┐
+#│ Generate 1 files for [region_id=4]                             │
+#└────────────────────────────────────────────────────────────────┘
+#=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_4 Nullable(UInt64)')
+#=> DBGInvoke __add_column_to_tidb_table(default, test, 'col_5 Nullable(String)')
+#=> DBGInvoke region_snapshot_pre_handle_file(4)
+#┌─region_snapshot_pre_handle_file(4)───┐
+#│ success apply region 4 with dt files │
+#└──────────────────────────────────────┘
+##RETURN
+#=> select * from default.test
+#┌─col_1─┬─_tidb_rowid─┐
+#│    -3 │           3 │
+#│    -4 │           4 │
+#│    -5 │           5 │
+#└───────┴─────────────┘
+
+#=> DBGInvoke __drop_tidb_table(default, test)
+#=> drop table if exists default.test

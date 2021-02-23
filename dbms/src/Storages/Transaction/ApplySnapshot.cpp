@@ -20,6 +20,10 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char force_set_prehandle_dtfile_block_size[];
+}
 
 namespace FailPoints
 {
@@ -299,7 +303,11 @@ RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshotToBlock(
 /// return the path of DTFile(s), the uncommited data will be inserted to `new_region`
 String KVStore::preHandleSnapshotToFiles(RegionPtr new_region, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
 {
-    DM::SSTFilesToDTFilesOutputStream stream(new_region, snaps, index, term, proxy_helper, tmt);
+    size_t expected_block_size = DEFAULT_MERGE_BLOCK_SIZE;
+
+    fiu_do_on(FailPoints::force_set_prehandle_dtfile_block_size, { expected_block_size = 3; });
+
+    DM::SSTFilesToDTFilesOutputStream stream(new_region, snaps, index, term, proxy_helper, tmt, expected_block_size);
 
     stream.writePrefix();
     stream.write();

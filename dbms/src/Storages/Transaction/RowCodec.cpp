@@ -393,18 +393,18 @@ void encodeRowV1(const TiDB::TableInfo & table_info, const std::vector<Field> & 
         column_in_key = 1;
     else if (table_info.is_common_handle)
         column_in_key = table_info.getPrimaryIndexInfo().idx_cols.size();
-    if (table_info.columns.size() != fields.size() + column_in_key)
+    if (table_info.columns.size() < fields.size() + column_in_key)
         throw Exception(std::string("Encoding row has ") + std::to_string(table_info.columns.size()) + " columns but "
                 + std::to_string(fields.size() + table_info.pk_is_handle) + " values: ",
             ErrorCodes::LOGICAL_ERROR);
 
-    size_t index = 0;
-    for (auto & column_info : table_info.columns)
+    for (size_t index = 0; index < std::min(table_info.columns.size(), fields.size()); ++index)
     {
+        auto & column_info = table_info.columns[index];
         if ((table_info.pk_is_handle || table_info.is_common_handle) && column_info.hasPriKeyFlag())
             continue;
         EncodeDatum(Field(column_info.id), TiDB::CodecFlagInt, ss);
-        EncodeDatumForRow(fields[index++], column_info.getCodecFlag(), ss, column_info);
+        EncodeDatumForRow(fields[index], column_info.getCodecFlag(), ss, column_info);
     }
 }
 
@@ -419,7 +419,7 @@ struct RowEncoderV2
             column_in_key = 1;
         else if (table_info.is_common_handle)
             column_in_key = table_info.getPrimaryIndexInfo().idx_cols.size();
-        if (table_info.columns.size() != fields.size() + column_in_key)
+        if (table_info.columns.size() < fields.size() + column_in_key)
             throw Exception(std::string("Encoding row has ") + std::to_string(table_info.columns.size()) + " columns but "
                     + std::to_string(fields.size() + table_info.pk_is_handle) + " values: ",
                 ErrorCodes::LOGICAL_ERROR);
@@ -428,7 +428,7 @@ struct RowEncoderV2
         size_t value_length = 0;
 
         /// Cache encoded individual columns.
-        for (size_t i_col = 0, i_val = 0; i_col < table_info.columns.size(); i_col++)
+        for (size_t i_col = 0, i_val = 0; i_col < std::min(table_info.columns.size(), fields.size()); i_col++)
         {
             const auto & column_info = table_info.columns[i_col];
             const auto & field = fields[i_val];

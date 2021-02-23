@@ -20,7 +20,7 @@ struct ColumnDefine;
 using ColumnDefines    = std::vector<ColumnDefine>;
 using ColumnDefinesPtr = std::shared_ptr<ColumnDefines>;
 } // namespace DM
-extern std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionPreDecodeBlockDataNew(const RegionPtr & region, TMTContext & tmt);
+extern std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt);
 
 namespace DM
 {
@@ -31,13 +31,15 @@ SSTFilesToDTFilesOutputStream::SSTFilesToDTFilesOutputStream( //
     uint64_t                       index_,
     uint64_t                       term_,
     const TiFlashRaftProxyHelper * proxy_helper_,
-    TMTContext &                   tmt_)
+    TMTContext &                   tmt_,
+    size_t                         expected_size_)
     : region(std::move(region_)),
       snaps(snaps_),
       snap_index(index_),
       snap_term(term_),
       proxy_helper(proxy_helper_),
       tmt(tmt_),
+      expected_size(expected_size_),
       log(&Poco::Logger::get("SSTFilesToDTFilesOutputStream"))
 {
 }
@@ -52,13 +54,13 @@ void SSTFilesToDTFilesOutputStream::writePrefix()
         switch (snapshot.type)
         {
         case ColumnFamilyType::Default:
-            default_reader = std::make_unique<SSTReader>(proxy_helper, snaps.views[i]);
+            default_reader = std::make_unique<SSTReader>(proxy_helper, snapshot);
             break;
         case ColumnFamilyType::Write:
-            write_reader = std::make_unique<SSTReader>(proxy_helper, snaps.views[i]);
+            write_reader = std::make_unique<SSTReader>(proxy_helper, snapshot);
             break;
         case ColumnFamilyType::Lock:
-            lock_reader = std::make_unique<SSTReader>(proxy_helper, snaps.views[i]);
+            lock_reader = std::make_unique<SSTReader>(proxy_helper, snapshot);
             break;
         }
     }
@@ -91,7 +93,9 @@ void SSTFilesToDTFilesOutputStream::writeSuffix()
     auto & ctx     = tmt.getContext();
     auto   metrics = ctx.getTiFlashMetrics();
     GET_METRIC(metrics, tiflash_raft_command_duration_seconds, type_apply_snapshot_predecode).Observe(watch.elapsedSeconds());
-    LOG_INFO(log, "Pre-handle snapshot " << region->toString(false) << " cost " << watch.elapsedMilliseconds() << "ms");
+    LOG_INFO(log,
+             "Pre-handle snapshot " << region->toString(false) << " to " << curr_file_id << " DTfiles, cost " << watch.elapsedMilliseconds()
+                                    << "ms [rows=" << process_writes << "]");
     // Note that number of keys in different cf will be aggregated into one metrics
     GET_METRIC(metrics, tiflash_raft_process_keys, type_apply_snapshot).Increment(process_keys);
 }
@@ -116,7 +120,7 @@ void SSTFilesToDTFilesOutputStream::write()
         ++process_writes;
         write_reader->next();
 
-        if (process_writes % 8192 == 0) // FIXME: magic number
+        if (process_writes % expected_size == 0)
         {
             saveCommitedData();
         }
@@ -163,7 +167,7 @@ void SSTFilesToDTFilesOutputStream::saveCommitedData()
     Block            block;
     bool             schema_sync_triggered = false;
     ColumnDefinesPtr schema_snap;
-    std::tie(block, schema_sync_triggered, schema_snap) = GenRegionPreDecodeBlockDataNew(region, tmt);
+    std::tie(block, schema_sync_triggered, schema_snap) = GenRegionBlockDatawithSchema(region, tmt);
 
     if (block.rows() == 0)
         return;
@@ -177,6 +181,7 @@ void SSTFilesToDTFilesOutputStream::saveCommitedData()
         // TODO: Add some logging
         bool single_file_mode = /*!write_reader || !write_reader->remained();*/ true;
         dt_file               = DMFile::create(/*file_id*/ ++curr_file_id, /*parent_path*/ snap_dir, single_file_mode);
+        LOG_INFO(log, "Create file for snapshot data [file=" << dt_file->path() << "] [single_file_mode=" << single_file_mode << "]");
         dt_stream = std::make_unique<DMFileBlockOutputStream>(tmt.getContext(), dt_file, *schema_snap, /*need_rate_limit=*/false);
         dt_stream->writePrefix();
     }

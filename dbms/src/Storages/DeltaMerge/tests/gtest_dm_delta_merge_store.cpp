@@ -9,11 +9,14 @@
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <gtest/gtest.h>
 
 #include <memory>
 
 #include "dm_basic_include.h"
+
+#define private public
+#include <Storages/DeltaMerge/DeltaMergeStore.h>
+#undef private
 
 namespace DB
 {
@@ -28,6 +31,13 @@ extern const char force_triggle_foreground_flush[];
 
 namespace DM
 {
+extern DMFilePtr writeIntoNewDMFile(DMContext &                 dm_context, //
+                                    const ColumnDefinesPtr &    schema_snap,
+                                    const BlockInputStreamPtr & input_stream,
+                                    UInt64                      file_id,
+                                    const String &              parent_path,
+                                    bool                        need_rate_limit);
+
 namespace tests
 {
 
@@ -839,6 +849,138 @@ try
         in->readSuffix();
         EXPECT_EQ(num_rows_read, 0UL);
     }
+}
+CATCH
+
+TEST_P(DeltaMergeStore_test, Ingest)
+try
+{
+    const UInt64 tso1                   = 4;
+    const size_t num_rows_before_ingest = 128;
+    // Write to store [0, 128)
+    {
+        Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_before_ingest, false, tso1);
+        store->write(*context, context->getSettingsRef(), block);
+    }
+
+    const UInt64 tso2       = 10;
+    const UInt64 tso3       = 18;
+    String       ingest_dir = DB::tests::TiFlashTestEnv::getTemporaryPath() + "dt_store_ingest";
+    if (Poco::File f(ingest_dir); f.exists())
+        f.remove(true);
+    {
+        // Prepare DTFiles for ingesting
+        auto dm_context  = store->newDMContext(*context, context->getSettingsRef());
+        auto schema_snap = store->getStoreColumns();
+
+        UInt64 file_id = 0;
+        writeIntoNewDMFile(*dm_context,
+                           schema_snap,
+                           /*stream=*/std::make_shared<OneBlockInputStream>(DMTestEnv::prepareSimpleWriteBlock(0, 32, false, tso2)),
+                           ++file_id,
+                           ingest_dir,
+                           false);
+
+        writeIntoNewDMFile(*dm_context,
+                           schema_snap,
+                           /*stream=*/std::make_shared<OneBlockInputStream>(DMTestEnv::prepareSimpleWriteBlock(64, 256, false, tso3)),
+                           ++file_id,
+                           ingest_dir,
+                           false);
+    }
+
+    store->ingestFiles(*context, context->getSettingsRef(), ingest_dir, RowKeyRange::fromHandleRange(HandleRange{32, 256}));
+
+    // TODO After ingesting, the data in [32, 128) should be overwrite by the data in ingested files.
+#if 0
+    {
+        // Read all data <= tso1
+        const auto &      columns = store->getTableColumns();
+        BlockInputStreams ins     = store->read(*context,
+                                            context->getSettingsRef(),
+                                            columns,
+                                            {RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize())},
+                                            /* num_streams= */ 1,
+                                            /* max_version= */ tso1,
+                                            EMPTY_FILTER,
+                                            /* expected_block_size= */ 1024);
+        ASSERT_EQ(ins.size(), 1UL);
+        BlockInputStreamPtr in = ins[0];
+
+        size_t num_rows_read = 0;
+        in->readPrefix();
+        while (Block block = in->read())
+            num_rows_read += block.rows();
+        in->readSuffix();
+        EXPECT_EQ(num_rows_read, 0UL) << "All data before ingest should be erased";
+    }
+
+    {
+        // Read all data between [tso, tso2)
+        const auto &      columns = store->getTableColumns();
+        BlockInputStreams ins     = store->read(*context,
+                                            context->getSettingsRef(),
+                                            columns,
+                                            {RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize())},
+                                            /* num_streams= */ 1,
+                                            /* max_version= */ tso2 - 1,
+                                            EMPTY_FILTER,
+                                            /* expected_block_size= */ 1024);
+        ASSERT_EQ(ins.size(), 1UL);
+        BlockInputStreamPtr in = ins[0];
+
+        size_t num_rows_read = 0;
+        in->readPrefix();
+        while (Block block = in->read())
+            num_rows_read += block.rows();
+        in->readSuffix();
+        EXPECT_EQ(num_rows_read, 0UL) << "No data after ingest with tso less than: " << tso2;
+    }
+
+    {
+        // Read all data between [tso2, tso3)
+        const auto &      columns = store->getTableColumns();
+        BlockInputStreams ins     = store->read(*context,
+                                            context->getSettingsRef(),
+                                            columns,
+                                            {RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize())},
+                                            /* num_streams= */ 1,
+                                            /* max_version= */ tso3 - 1,
+                                            EMPTY_FILTER,
+                                            /* expected_block_size= */ 1024);
+        ASSERT_EQ(ins.size(), 1UL);
+        BlockInputStreamPtr in = ins[0];
+
+        size_t num_rows_read = 0;
+        in->readPrefix();
+        while (Block block = in->read())
+            num_rows_read += block.rows();
+        in->readSuffix();
+        EXPECT_EQ(num_rows_read, 32UL) << "The rows number after ingest with tso less than " << tso3 << " is not match";
+    }
+
+    {
+        // Read all data between [tso2, tso3)
+        const auto &      columns = store->getTableColumns();
+        BlockInputStreams ins     = store->read(*context,
+                                            context->getSettingsRef(),
+                                            columns,
+                                            {RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize())},
+                                            /* num_streams= */ 1,
+                                            /* max_version= */ std::numeric_limits<UInt64>::max(),
+                                            EMPTY_FILTER,
+                                            /* expected_block_size= */ 1024);
+        ASSERT_EQ(ins.size(), 1UL);
+        BlockInputStreamPtr in = ins[0];
+
+        size_t num_rows_read = 0;
+        in->readPrefix();
+        while (Block block = in->read())
+            num_rows_read += block.rows();
+        in->readSuffix();
+        EXPECT_EQ(num_rows_read, 256UL - 64 + 32) << "The rows number after ingest is not match";
+    }
+#endif
 }
 CATCH
 
