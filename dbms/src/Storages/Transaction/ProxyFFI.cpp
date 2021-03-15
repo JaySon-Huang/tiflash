@@ -227,12 +227,12 @@ struct PreHandledSnapshotWithBlock
 struct PreHandledSnapshotWithFiles
 {
     ~PreHandledSnapshotWithFiles() { CurrentMetrics::sub(CurrentMetrics::RaftNumSnapshotsPendingApply); }
-    PreHandledSnapshotWithFiles(const RegionPtr & region_, std::string && path_) : region(region_), path(std::move(path_))
+    PreHandledSnapshotWithFiles(const RegionPtr & region_, std::vector<UInt64> && ids_) : region(region_), ingest_ids(std::move(ids_))
     {
         CurrentMetrics::add(CurrentMetrics::RaftNumSnapshotsPendingApply);
     }
     RegionPtr region;
-    std::string path; // The path storing pre-handled files
+    std::vector<UInt64> ingest_ids; // The file_ids storing pre-handled files
 };
 
 RawCppPtr PreHandleSnapshot(
@@ -252,7 +252,7 @@ RawCppPtr PreHandleSnapshot(
         return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithBlock);
 #else
         // Pre-decode and save as DTFiles
-        auto save_path = kvstore->preHandleSnapshotToFiles(new_region, snaps, index, term, tmt);
+        auto ingest_ids = kvstore->preHandleSnapshotToFiles(new_region, snaps, index, term, tmt);
         auto res = new PreHandledSnapshotWithFiles{new_region, std::move(save_path)};
         return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithFiles);
 #endif
@@ -280,7 +280,7 @@ void ApplyPreHandledSnapshot(EngineStoreServerWrap * server, PreHandledSnapshot 
         }
         else if constexpr (std::is_same_v<PreHandledSnapshot, PreHandledSnapshotWithFiles>)
         {
-            kvstore->handlePreApplySnapshot(RegionPtrWithSnapshotFiles{snap->region, std::move(snap->path)}, *server->tmt);
+            kvstore->handlePreApplySnapshot(RegionPtrWithSnapshotFiles{snap->region, std::move(snap->ingest_ids)}, *server->tmt);
         }
     }
     catch (...)

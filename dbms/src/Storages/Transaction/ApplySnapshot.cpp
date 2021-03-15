@@ -159,7 +159,7 @@ void KVStore::onSnapshot(const RegionPtrWrap & new_region_wrap, RegionPtr old_re
                     if constexpr (std::is_same_v<RegionPtrWrap, RegionPtrWithSnapshotFiles>)
                     {
                         // Call `ingestFiles` to delete data for range and ingest external DTFiles.
-                        dm_storage->ingestFiles(key_range, new_region_wrap.snapshot_path, context.getSettingsRef());
+                        dm_storage->ingestFiles(key_range, new_region_wrap.ingest_ids, context.getSettingsRef());
                     }
                     else
                     {
@@ -237,7 +237,6 @@ void KVStore::onSnapshot(const RegionPtrWrap & new_region_wrap, RegionPtr old_re
 
 extern RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr &, Context &);
 
-
 /// `preHandleSnapshotToBlock` read data from SSTFiles and predoced the data as a block
 RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshotToBlock(
     RegionPtr new_region, const SSTViewVec snaps, uint64_t /*index*/, uint64_t /*term*/, TMTContext & tmt)
@@ -301,7 +300,8 @@ RegionPreDecodeBlockDataPtr KVStore::preHandleSnapshotToBlock(
 
 /// `preHandleSnapshotToFiles` read data from SSTFiles and generate DTFile(s) for commited data
 /// return the path of DTFile(s), the uncommited data will be inserted to `new_region`
-String KVStore::preHandleSnapshotToFiles(RegionPtr new_region, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
+std::vector<UInt64> KVStore::preHandleSnapshotToFiles(
+    RegionPtr new_region, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
 {
     size_t expected_block_size = DEFAULT_MERGE_BLOCK_SIZE;
 
@@ -313,7 +313,7 @@ String KVStore::preHandleSnapshotToFiles(RegionPtr new_region, const SSTViewVec 
     stream.write();
     stream.writeSuffix();
 
-    return stream.outputDir();
+    return stream.ingestIds();
 }
 
 template <typename RegionPtrWrap>

@@ -2,6 +2,8 @@
 
 #include <Common/Stopwatch.h>
 #include <RaftStoreProxyFFI/ColumnFamily.h>
+#include <Storages/Page/PageDefines.h>
+#include <Storages/StorageDeltaMerge.h>
 
 #include <memory>
 #include <string_view>
@@ -46,7 +48,7 @@ public:
     void writeSuffix();
     void write();
 
-    String outputDir() const { return snap_dir; }
+    PageIds ingestIds() const { return ingest_file_ids; }
 
 private:
     void scanCF(ColumnFamilyType cf, const std::string_view until = std::string_view{});
@@ -70,10 +72,12 @@ private:
     SSTReaderPtr default_reader;
     SSTReaderPtr lock_reader;
 
-    String                                   snap_dir;
-    UInt64                                   curr_file_id = 0;
+    std::shared_ptr<StorageDeltaMerge>       ingest_storage;
+    DM::ColumnDefinesPtr                     cur_schema;
     DMFilePtr                                dt_file;
     std::unique_ptr<DMFileBlockOutputStream> dt_stream;
+
+    PageIds ingest_file_ids;
 
     size_t    schema_sync_trigger_count = 0;
     size_t    process_keys              = 0;

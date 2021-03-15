@@ -83,7 +83,7 @@ public:
     void handleApplySnapshot(metapb::Region && region, uint64_t peer_id, const SSTViewVec, uint64_t index, uint64_t term, TMTContext & tmt);
     RegionPreDecodeBlockDataPtr preHandleSnapshotToBlock(
         RegionPtr new_region, const SSTViewVec, uint64_t index, uint64_t term, TMTContext & tmt);
-    String /*                */ preHandleSnapshotToFiles(
+    std::vector<UInt64> /*   */ preHandleSnapshotToFiles(
         RegionPtr new_region, const SSTViewVec, uint64_t index, uint64_t term, TMTContext & tmt);
     template <typename RegionPtrWrap>
     void handlePreApplySnapshot(const RegionPtrWrap &, TMTContext & tmt);

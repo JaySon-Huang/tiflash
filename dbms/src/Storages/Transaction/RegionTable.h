@@ -254,7 +254,7 @@ struct RegionPtrWithSnapshotFiles
     using Base = RegionPtr;
 
     /// can accept const ref of RegionPtr without cache
-    RegionPtrWithSnapshotFiles(const Base & base_, std::string path_ = String{}) : base(base_), snapshot_path(std::move(path_)) {}
+    RegionPtrWithSnapshotFiles(const Base & base_, std::vector<UInt64> ids_ = {}) : base(base_), ingest_ids(std::move(ids_)) {}
 
     /// to be compatible with usage as RegionPtr.
     Base::element_type * operator->() const { return base.operator->(); }
@@ -264,7 +264,7 @@ struct RegionPtrWithSnapshotFiles
     operator const Base &() const { return base; }
 
     const Base & base;
-    const std::string snapshot_path;
+    const std::vector<UInt64> ingest_ids;
 };
 
 } // namespace DB

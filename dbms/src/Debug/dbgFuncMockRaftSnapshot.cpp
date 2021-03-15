@@ -526,7 +526,7 @@ void MockRaftCommand::dbgFuncRegionSnapshotPreHandleDTFiles(Context & context, c
 {
     if (args.size() < 7 || args.size() > 8)
         throw Exception(
-            "Args not matched, should be: database_name, table_name region_id, start, end, schema_string, pk_name[, test-fields]",
+            "Args not matched, should be: database_name, table_name, region_id, start, end, schema_string, pk_name[, test-fields]",
             ErrorCodes::BAD_ARGUMENTS);
 
     const String & database_name = typeid_cast<const ASTIdentifier &>(*args[0]).name;
@@ -537,12 +537,12 @@ void MockRaftCommand::dbgFuncRegionSnapshotPreHandleDTFiles(Context & context, c
 
     const String schema_str = safeGet<String>(typeid_cast<const ASTLiteral &>(*args[5]).value);
     String handle_pk_name = safeGet<String>(typeid_cast<const ASTLiteral &>(*args[6]).value);
-    output(schema_str + " " + handle_pk_name);
 
     UInt64 test_fields = 1;
     if (args.size() > 7)
         test_fields = (UInt64)safeGet<UInt64>(typeid_cast<const ASTLiteral &>(*args[7]).value);
 
+    // Parse a TableInfo from `schema_str` to generate data with this schema
     TiDB::TableInfoPtr mocked_table_info;
     {
         ASTPtr columns_ast;
@@ -591,22 +591,13 @@ void MockRaftCommand::dbgFuncRegionSnapshotPreHandleDTFiles(Context & context, c
     // set block size so that we can test for schema-sync while decoding dt files
     FailPointHelper::enableFailPoint(FailPoints::force_set_prehandle_dtfile_block_size);
 
-    auto save_path = kvstore->preHandleSnapshotToFiles(
+    auto ingest_ids = kvstore->preHandleSnapshotToFiles(
         new_region, SSTViewVec{sst_views.data(), sst_views.size()}, index, MockTiKV::instance().getRaftTerm(region_id), tmt);
-    GLOBAL_REGION_MAP.insertRegionSnap(region_name, {new_region, save_path});
+    GLOBAL_REGION_MAP.insertRegionSnap(region_name, {new_region, ingest_ids});
 
     {
-        Poco::File snap_dir(save_path);
-        if (!snap_dir.exists() || !snap_dir.isDirectory())
-            throw Exception("The snapshot saved directory should be a directory [snap_dir=" + save_path + "]");
-
-        auto provider = context.getFileProvider();
-        auto dt_files = DM::DMFile::listAllInPath(provider, save_path, false);
-
-        Poco::Path path(save_path);
-
         std::stringstream ss;
-        ss << "Generate " << dt_files.size() << " files for [region_id=" << region_id << "]";
+        ss << "Generate " << ingest_ids.size() << " files for [region_id=" << region_id << "]";
         output(ss.str());
     }
 }
@@ -618,10 +609,10 @@ void MockRaftCommand::dbgFuncRegionSnapshotApplyDTFiles(Context & context, const
 
     RegionID region_id = (RegionID)safeGet<UInt64>(typeid_cast<const ASTLiteral &>(*args.front()).value);
     const auto region_name = "__snap_snap_" + std::to_string(region_id);
-    auto [new_region, save_path] = GLOBAL_REGION_MAP.popRegionSnap(region_name);
+    auto [new_region, ingest_ids] = GLOBAL_REGION_MAP.popRegionSnap(region_name);
     auto & tmt = context.getTMTContext();
     context.getTMTContext().getKVStore()->checkAndApplySnapshot<RegionPtrWithSnapshotFiles>(
-        RegionPtrWithSnapshotFiles{new_region, std::move(save_path)}, tmt);
+        RegionPtrWithSnapshotFiles{new_region, std::move(ingest_ids)}, tmt);
 
     std::stringstream ss;
     ss << "success apply region " << new_region->id() << " with dt files";

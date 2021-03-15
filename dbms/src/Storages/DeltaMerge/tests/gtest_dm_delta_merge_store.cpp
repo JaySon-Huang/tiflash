@@ -121,14 +121,12 @@ public:
 
     std::pair<RowKeyRange, std::vector<PageId>> genDMFile(DMContext & context, const Block & block)
     {
-        auto file_id      = context.storage_pool.newDataPageId();
-        auto input_stream = std::make_shared<OneBlockInputStream>(block);
-        auto delegate     = context.path_pool.getStableDiskDelegator();
-        auto store_path   = delegate.choosePath();
-        auto dmfile       = writeIntoNewDMFile(
+        auto input_stream          = std::make_shared<OneBlockInputStream>(block);
+        auto [store_path, file_id] = store->preAllocateIngestFile();
+        auto dmfile                = writeIntoNewDMFile(
             context, std::make_shared<ColumnDefines>(store->getTableColumns()), input_stream, file_id, store_path, false);
 
-        delegate.addDTFile(file_id, dmfile->getBytesOnDisk(), store_path);
+        store->preIngestFile(store_path, file_id, dmfile->getBytesOnDisk());
 
         auto &      pk_column = block.getByPosition(0).column;
         auto        min_pk    = pk_column->getInt(0);
@@ -269,7 +267,7 @@ try
         default: {
             auto dm_context        = store->newDMContext(*context, context->getSettingsRef());
             auto [range, file_ids] = genDMFile(*dm_context, block);
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
             break;
         }
         }
@@ -379,7 +377,7 @@ try
         default: {
             auto dm_context        = store->newDMContext(*context, context->getSettingsRef());
             auto [range, file_ids] = genDMFile(*dm_context, block);
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
             break;
         }
         }
@@ -482,7 +480,7 @@ try
             auto file_ids            = file_ids1;
             file_ids.insert(file_ids.cend(), file_ids2.begin(), file_ids2.end());
             file_ids.insert(file_ids.cend(), file_ids3.begin(), file_ids3.end());
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
             break;
         }
         case TestMode::V2_Mix: {
@@ -492,7 +490,7 @@ try
             auto range               = range1.merge(range3);
             auto file_ids            = file_ids1;
             file_ids.insert(file_ids.cend(), file_ids3.begin(), file_ids3.end());
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
 
             store->write(*context, context->getSettingsRef(), block2);
             break;
@@ -560,7 +558,7 @@ try
             auto file_ids            = file_ids1;
             file_ids.insert(file_ids.cend(), file_ids2.begin(), file_ids2.end());
             file_ids.insert(file_ids.cend(), file_ids3.begin(), file_ids3.end());
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
             break;
         }
         case TestMode::V2_Mix: {
@@ -572,7 +570,7 @@ try
             auto range               = range1.merge(range3);
             auto file_ids            = file_ids1;
             file_ids.insert(file_ids.cend(), file_ids3.begin(), file_ids3.end());
-            store->writeRegionSnapshot(dm_context, range, file_ids, false);
+            store->ingestFiles(dm_context, range, file_ids, false);
             break;
         }
         }
@@ -855,6 +853,9 @@ CATCH
 TEST_P(DeltaMergeStore_test, Ingest)
 try
 {
+    if (mode == TestMode::V1_BlockOnly)
+        return;
+
     const UInt64 tso1                   = 4;
     const size_t num_rows_before_ingest = 128;
     // Write to store [0, 128)
@@ -865,36 +866,29 @@ try
 
     const UInt64 tso2       = 10;
     const UInt64 tso3       = 18;
-    String       ingest_dir = DB::tests::TiFlashTestEnv::getTemporaryPath() + "dt_store_ingest";
-    if (Poco::File f(ingest_dir); f.exists())
-        f.remove(true);
+
     {
         // Prepare DTFiles for ingesting
         auto dm_context  = store->newDMContext(*context, context->getSettingsRef());
         auto schema_snap = store->getStoreColumns();
 
-        UInt64 file_id = 0;
-        writeIntoNewDMFile(*dm_context,
-                           schema_snap,
-                           /*stream=*/std::make_shared<OneBlockInputStream>(DMTestEnv::prepareSimpleWriteBlock(0, 32, false, tso2)),
-                           ++file_id,
-                           ingest_dir,
-                           false);
+        auto [range1, file_ids1] = genDMFile(*dm_context, DMTestEnv::prepareSimpleWriteBlock(32, 48, false, tso2));
+        auto [range2, file_ids2] = genDMFile(*dm_context, DMTestEnv::prepareSimpleWriteBlock(80, 256, false, tso3));
 
-        writeIntoNewDMFile(*dm_context,
-                           schema_snap,
-                           /*stream=*/std::make_shared<OneBlockInputStream>(DMTestEnv::prepareSimpleWriteBlock(64, 256, false, tso3)),
-                           ++file_id,
-                           ingest_dir,
-                           false);
+        auto file_ids = file_ids1;
+        file_ids.insert(file_ids.cend(), file_ids2.begin(), file_ids2.end());
+        auto ingest_range = RowKeyRange::fromHandleRange(HandleRange{32, 256});
+        // verify that ingest_range must not less than range1.merge(range2)
+        ASSERT_ROWKEY_RANGE_EQ(ingest_range, range1.merge(range2).merge(ingest_range));
+
+        store->ingestFiles(dm_context, ingest_range, file_ids, true);
     }
 
-    store->ingestFiles(*context, context->getSettingsRef(), ingest_dir, RowKeyRange::fromHandleRange(HandleRange{32, 256}));
 
-    // TODO After ingesting, the data in [32, 128) should be overwrite by the data in ingested files.
-#if 0
+    // After ingesting, the data in [32, 128) should be overwrite by the data in ingested files.
     {
         // Read all data <= tso1
+        // We can only get [0, 32) with tso1
         const auto &      columns = store->getTableColumns();
         BlockInputStreams ins     = store->read(*context,
                                             context->getSettingsRef(),
@@ -909,10 +903,24 @@ try
 
         size_t num_rows_read = 0;
         in->readPrefix();
+        Int64  expect_pk  = 0;
+        UInt64 expect_tso = tso1;
         while (Block block = in->read())
+        {
+            ASSERT_TRUE(block.has(DMTestEnv::pk_name));
+            ASSERT_TRUE(block.has(VERSION_COLUMN_NAME));
+            auto pk_c = block.getByName(DMTestEnv::pk_name);
+            auto v_c  = block.getByName(VERSION_COLUMN_NAME);
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                // std::cerr << "pk:" << pk_c.column->getInt(i) << ", ver:" << v_c.column->getInt(i) << std::endl;
+                ASSERT_EQ(pk_c.column->getInt(i), expect_pk++);
+                ASSERT_EQ(v_c.column->getUInt(i), expect_tso);
+            }
             num_rows_read += block.rows();
+        }
         in->readSuffix();
-        EXPECT_EQ(num_rows_read, 0UL) << "All data before ingest should be erased";
+        EXPECT_EQ(num_rows_read, 32UL) << "Data [32, 128) before ingest should be erased, should only get [0, 32)";
     }
 
     {
@@ -931,10 +939,25 @@ try
 
         size_t num_rows_read = 0;
         in->readPrefix();
+        Int64  expect_pk  = 0;
+        UInt64 expect_tso = tso1;
         while (Block block = in->read())
+        {
+            ASSERT_TRUE(block.has(DMTestEnv::pk_name));
+            ASSERT_TRUE(block.has(VERSION_COLUMN_NAME));
+            auto pk_c = block.getByName(DMTestEnv::pk_name);
+            auto v_c  = block.getByName(VERSION_COLUMN_NAME);
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                // std::cerr << "pk:" << pk_c.column->getInt(i) << ", ver:" << v_c.column->getInt(i) << std::endl;
+                ASSERT_EQ(pk_c.column->getInt(i), expect_pk++);
+                ASSERT_EQ(v_c.column->getUInt(i), expect_tso);
+            }
             num_rows_read += block.rows();
+        }
         in->readSuffix();
-        EXPECT_EQ(num_rows_read, 0UL) << "No data after ingest with tso less than: " << tso2;
+        EXPECT_EQ(num_rows_read, 32UL) << "Data [32, 128) after ingest with tso less than: " << tso2
+                                      << " are erased, should only get [0, 32)";
     }
 
     {
@@ -954,9 +977,11 @@ try
         size_t num_rows_read = 0;
         in->readPrefix();
         while (Block block = in->read())
+        {
             num_rows_read += block.rows();
+        }
         in->readSuffix();
-        EXPECT_EQ(num_rows_read, 32UL) << "The rows number after ingest with tso less than " << tso3 << " is not match";
+        EXPECT_EQ(num_rows_read, 32UL + 16) << "The rows number after ingest with tso less than " << tso3 << " is not match";
     }
 
     {
@@ -978,9 +1003,32 @@ try
         while (Block block = in->read())
             num_rows_read += block.rows();
         in->readSuffix();
-        EXPECT_EQ(num_rows_read, 256UL - 64 + 32) << "The rows number after ingest is not match";
+        EXPECT_EQ(num_rows_read, 32UL + (48 - 32) + (256UL - 80)) << "The rows number after ingest is not match";
     }
-#endif
+
+    {
+        // Read with two point get, issue 1616
+        auto              range0  = RowKeyRange::fromHandleRange(HandleRange(32, 33));
+        auto              range1  = RowKeyRange::fromHandleRange(HandleRange(40, 41));
+        const auto &      columns = store->getTableColumns();
+        BlockInputStreams ins     = store->read(*context,
+                                            context->getSettingsRef(),
+                                            columns,
+                                            {range0, range1},
+                                            /* num_streams= */ 1,
+                                            /* max_version= */ std::numeric_limits<UInt64>::max(),
+                                            EMPTY_FILTER,
+                                            /* expected_block_size= */ 1024);
+        ASSERT_EQ(ins.size(), 1UL);
+        BlockInputStreamPtr in = ins[0];
+
+        size_t num_rows_read = 0;
+        in->readPrefix();
+        while (Block block = in->read())
+            num_rows_read += block.rows();
+        in->readSuffix();
+        EXPECT_EQ(num_rows_read, 2) << "The rows number after ingest is not match";
+    }
 }
 CATCH
 
@@ -1009,7 +1057,7 @@ try
             auto write_as_file = [&]() {
                 auto dm_context        = store->newDMContext(*context, context->getSettingsRef());
                 auto [range, file_ids] = genDMFile(*dm_context, block);
-                store->writeRegionSnapshot(dm_context, range, file_ids, false);
+                store->ingestFiles(dm_context, range, file_ids, false);
             };
 
             switch (mode)

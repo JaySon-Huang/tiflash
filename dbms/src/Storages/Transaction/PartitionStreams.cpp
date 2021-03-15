@@ -422,16 +422,23 @@ RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & regio
 }
 
 /// Decode region data into block and belonging schema snapshot, remove committed data from `region`
-std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt)
+/// The return value is a tuple that:
+///  .0 -- The committed data scanned and removed from `region`
+///  .1 -- The storage we are ingesting data into
+///        It will be `nullptr` only if there is no committed data.
+///  .2 -- The latest schema of the storage we are ingesting data into.
+///        It will be `nullptr` only if there is no committed data.
+std::tuple<Block, std::shared_ptr<StorageDeltaMerge>, DM::ColumnDefinesPtr> //
+GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt)
 {
     auto data_list_read = ReadRegionCommitCache(region);
 
     Block res_block;
-    bool schema_sync_triggered = false;
+    std::shared_ptr<StorageDeltaMerge> dm_storage;
     DM::ColumnDefinesPtr schema_snap;
     // No committed data, just return
     if (!data_list_read)
-        return std::make_tuple(std::move(res_block), schema_sync_triggered, std::move(schema_snap));
+        return std::make_tuple(std::move(res_block), std::move(dm_storage), std::move(schema_snap));
 
     auto context = tmt.getContext();
     auto metrics = context.getTiFlashMetrics();
@@ -459,7 +466,7 @@ std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const
                     + "] [engine_type=" + DB::toString(static_cast<Int32>(storage->engineType())) + "]",
                 ErrorCodes::LOGICAL_ERROR);
         }
-        if (auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage); dm_storage != nullptr)
+        if (dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage); dm_storage != nullptr)
         {
             schema_snap = dm_storage->getStore()->getStoreColumns();
         }
@@ -472,7 +479,6 @@ std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const
     {
         GET_METRIC(metrics, tiflash_schema_trigger_count, type_raft_decode).Increment();
         tmt.getSchemaSyncer()->syncSchemas(context);
-        schema_sync_triggered = true;
 
         if (!atomicDecode(true))
             throw Exception("Pre-decode " + region->toString() + " cache to table " + DB::toString(table_id) + " block failed",
@@ -482,7 +488,10 @@ std::tuple<Block, bool, DM::ColumnDefinesPtr> GenRegionBlockDatawithSchema(const
     // Remove committed data
     RemoveRegionCommitCache(region, *data_list_read);
 
-    return std::make_tuple(std::move(res_block), schema_sync_triggered, std::move(schema_snap));
+    return std::make_tuple( //
+        std::move(res_block),
+        std::move(dm_storage),
+        std::move(schema_snap));
 }
 
 } // namespace DB

@@ -262,27 +262,26 @@ public:
 
     void write(const Context & db_context, const DB::Settings & db_settings, const Block & block);
 
-    void writeRegionSnapshot(const DMContextPtr & dm_context, //
-                             const RowKeyRange &  range,
-                             std::vector<PageId>  file_ids,
-                             bool                 clear_data_in_range);
-
-    void writeRegionSnapshot(const Context &      db_context, //
-                             const DB::Settings & db_settings,
-                             const RowKeyRange &  range,
-                             std::vector<PageId>  file_ids,
-                             bool                 clear_data_in_range)
-    {
-        auto dm_context = newDMContext(db_context, db_settings);
-        return writeRegionSnapshot(dm_context, range, file_ids, clear_data_in_range);
-    }
-
     void deleteRange(const Context & db_context, const DB::Settings & db_settings, const RowKeyRange & delete_range);
 
-    void ingestFiles(const Context &      db_context,
+    std::tuple<String, PageId> preAllocateIngestFile();
+
+    void preIngestFile(const String & parent_path, const PageId file_id, size_t file_size);
+
+    void ingestFiles(const DMContextPtr & dm_context, //
+                     const RowKeyRange &  range,
+                     std::vector<PageId>  file_ids,
+                     bool                 clear_data_in_range);
+
+    void ingestFiles(const Context &      db_context, //
                      const DB::Settings & db_settings,
-                     const String &       files_parent_dir,
-                     const RowKeyRange &  delete_range);
+                     const RowKeyRange &  range,
+                     std::vector<PageId>  file_ids,
+                     bool                 clear_data_in_range)
+    {
+        auto dm_context = newDMContext(db_context, db_settings);
+        return ingestFiles(dm_context, range, file_ids, clear_data_in_range);
+    }
 
     BlockInputStreams readRaw(const Context &       db_context,
                               const DB::Settings &  db_settings,

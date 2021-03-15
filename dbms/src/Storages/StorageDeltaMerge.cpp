@@ -655,11 +655,11 @@ void StorageDeltaMerge::deleteRange(const DM::RowKeyRange & range_to_delete, con
     return store->deleteRange(global_context, settings, range_to_delete);
 }
 
-void StorageDeltaMerge::ingestFiles(const DM::RowKeyRange & range_to_delete, const String & files_parent_dir, const Settings & settings)
+void StorageDeltaMerge::ingestFiles(const DM::RowKeyRange & range, const std::vector<UInt64> & file_ids, const Settings & settings)
 {
     auto metrics = global_context.getTiFlashMetrics();
     GET_METRIC(metrics, tiflash_storage_command_count, type_ingest).Increment();
-    return store->ingestFiles(global_context, settings, files_parent_dir, range_to_delete);
+    return store->ingestFiles(global_context, settings, range, file_ids, true);
 }
 
 size_t getRows(DM::DeltaMergeStorePtr & store, const Context & context, const DM::RowKeyRange & range)

@@ -510,13 +510,43 @@ void DeltaMergeStore::write(const Context & db_context, const DB::Settings & db_
         checkSegmentUpdate(dm_context, segment, ThreadType::Write);
 }
 
-void DeltaMergeStore::writeRegionSnapshot(const DMContextPtr & dm_context,
-                                          const RowKeyRange &  range,
-                                          std::vector<PageId>  file_ids,
-                                          bool                 clear_data_in_range)
+std::tuple<String, PageId> DeltaMergeStore::preAllocateIngestFile()
 {
+    if (shutdown_called.load(std::memory_order_relaxed))
+        return {};
+
+    auto delegator   = path_pool.getStableDiskDelegator();
+    auto parent_path = delegator.choosePath();
+    auto new_id      = storage_pool.newDataPageId();
+    return {parent_path, new_id};
+}
+
+void DeltaMergeStore::preIngestFile(const String & parent_path, const PageId file_id, size_t file_size)
+{
+    if (shutdown_called.load(std::memory_order_relaxed))
+        return;
+
+    auto delegator = path_pool.getStableDiskDelegator();
+    delegator.addDTFile(file_id, file_size, parent_path);
+}
+
+void DeltaMergeStore::ingestFiles(const DMContextPtr & dm_context,
+                                  const RowKeyRange &  range,
+                                  std::vector<PageId>  file_ids,
+                                  bool                 clear_data_in_range)
+{
+    if (unlikely(shutdown_called.load(std::memory_order_relaxed)))
+    {
+        std::stringstream stream;
+        stream << " try to ingest files into a shutdown table: " << db_name << "." << table_name;
+        auto msg = stream.str();
+        LOG_WARNING(log, __FUNCTION__ << msg);
+        throw Exception(msg);
+    }
+
     LOG_INFO(log, __FUNCTION__ << " table: " << db_name << "." << table_name << ", region range:" << range.toDebugString());
 
+    // TODO FIXME `DMDeleteRange`
     EventRecorder write_block_recorder(ProfileEvents::DMDeleteRange, ProfileEvents::DMDeleteRangeNS);
 
     auto delegate      = dm_context->path_pool.getStableDiskDelegator();
@@ -540,8 +570,8 @@ void DeltaMergeStore::writeRegionSnapshot(const DMContextPtr & dm_context,
     }
 
     LOG_DEBUG(log,
-              "[Write Region Snapshot] table: " << db_name << "." << table_name << ", rows: " << rows << ", bytes: " << bytes
-                                                << ", bytes on disk" << bytes_on_disk);
+              __FUNCTION__ << " table: " << db_name << "." << table_name << ", rows: " << rows << ", bytes: " << bytes << ", bytes on disk"
+                           << bytes_on_disk);
 
     Segments    updated_segments;
     RowKeyRange cur_range = range;
@@ -690,140 +720,6 @@ void DeltaMergeStore::deleteRange(const Context & db_context, const DB::Settings
 
         cur_range.setStart(segment_range.end);
         cur_range.setEnd(delete_range.end);
-    }
-
-    for (auto & segment : updated_segments)
-        checkSegmentUpdate(dm_context, segment, ThreadType::Write);
-}
-
-namespace details
-{
-void ingestExternalFile(const String &        old_parent_dir,
-                        UInt64                old_id,
-                        UInt64                new_id,
-                        StableDiskDelegator & delegator,
-                        FileProviderPtr &     file_provider,
-                        Poco::Logger *        log)
-{
-    const auto new_parent_dir = delegator.choosePath();
-    const auto old_path       = DMFile::getPathByStatus(old_parent_dir, old_id, DMFile::Status::READABLE);
-    const auto new_path       = DMFile::getPathByStatus(new_parent_dir, new_id, DMFile::Status::READABLE);
-    Poco::File file{old_path};
-    if (!file.exists())
-        throw Exception("The file to be ingested is not exists [path=" + old_path + "]");
-
-    size_t bytes_on_disk       = 0;
-    bool   is_single_file_mode = false;
-    {
-        auto dmfile         = DMFile::restore(file_provider, old_id, /* ref_id= */ 0, old_parent_dir, true);
-        bytes_on_disk       = dmfile->getBytesOnDisk();
-        is_single_file_mode = dmfile->isSingleFileMode();
-    }
-
-    // We need to create NGC file so that the file won't be GC-ed during ingesting.
-    if (is_single_file_mode)
-    {
-        // For single file mode, we create NGC file under the new_parent_dir before moving the file.
-        String new_ngc_path = DMFile::getNGCPath(new_parent_dir, new_id, DMFile::Status::READABLE, is_single_file_mode);
-        if (Poco::File ngc_file(new_ngc_path); likely(!ngc_file.exists()))
-            ngc_file.createFile();
-    }
-    else
-    {
-        // For folder mode, we create NGC file under the old folder, and move the whole directory to new_path.
-        String old_ngc_path = DMFile::getNGCPath(old_parent_dir, old_id, DMFile::Status::READABLE, is_single_file_mode);
-        if (Poco::File ngc_file(old_ngc_path); likely(!ngc_file.exists()))
-            ngc_file.createFile();
-    }
-
-    if (Poco::File file(new_path); file.exists())
-        file.remove(/*recursive=*/true);
-    file.moveTo(new_path);
-    delegator.addDTFile(new_id, bytes_on_disk, new_parent_dir);
-
-    LOG_INFO(log, "Ingest move file [from=" << old_path << "] [to=" << new_path << "]");
-}
-} // namespace details
-
-void DeltaMergeStore::ingestFiles(const Context &      db_context,
-                                  const DB::Settings & db_settings,
-                                  const String &       files_parent_dir,
-                                  const RowKeyRange &  delete_range)
-{
-    // 1. List all DTFiles under `files_parent_dir`, allocate IDs from StoragePool.
-    // 2. Move the files into StoragePool with new IDs.
-    // 3. Ingest files into segments.
-
-    // Note that if TiFlash crashes between step 2 and 3, we will re-generate DTFiles and try to ingest again.
-    // FIXME: The files have been moved into StoragePool will not be able to GC-ed.
-
-    std::set<UInt64> ingest_ids;
-    {
-        auto file_provider  = global_context.getFileProvider();
-        auto ingest_raw_ids = DMFile::listAllInPath(file_provider, files_parent_dir, /*can_gc*/ false);
-        LOG_INFO(log,
-                 "Ingest " << ingest_raw_ids.size() << " files into " << db_name << "." << table_name << " with delete range "
-                           << delete_range.toDebugString());
-
-        if (unlikely(ingest_raw_ids.empty()))
-            return;
-
-        // Move the files into StroagePool with new IDs.
-        auto delegator = path_pool.getStableDiskDelegator();
-        for (const auto & old_id : ingest_raw_ids)
-        {
-            auto new_id = storage_pool.newDataPageId();
-            details::ingestExternalFile(files_parent_dir, old_id, new_id, delegator, file_provider, log);
-            ingest_ids.emplace(new_id);
-        }
-    }
-
-    auto dm_context = newDMContext(db_context, db_settings);
-
-    Segments    updated_segments;
-    RowKeyRange cur_ingest_range = delete_range;
-    while (!cur_ingest_range.none())
-    {
-        RowKeyRange segment_range;
-        while (true)
-        {
-            SegmentPtr segment;
-            {
-                std::shared_lock lock(read_write_mutex);
-                auto             segment_it = segments.upper_bound(cur_ingest_range.getStart());
-                if (segment_it == segments.end())
-                {
-                    throw Exception("Failed to locate segment begin with start in range: " + cur_ingest_range.toDebugString(),
-                                    ErrorCodes::LOGICAL_ERROR);
-                }
-                segment = segment_it->second;
-            }
-
-            // TODO should we need to wait?
-            segment_range = segment->getRowKeyRange();
-
-            // Write could fail, because other threads could already updated the instance. Like split/merge, merge delta.
-#if 0
-            // TODO we should remove unrelated DMFile id for Segment::ingest
-            // TODO Segment::ingest should atomically write a DeleteRange and ingest related DMFiles. After the DMFiles are ingested, it should call `DMFile::enableGC`
-            if (segment->ingest(*dm_context, delete_range.shrink(segment_range), ingest_ids))
-            {
-                updated_segments.push_back(segment);
-                break;
-            }
-#else
-            break;
-#endif
-        }
-
-        cur_ingest_range.setStart(segment_range.end);
-        cur_ingest_range.setEnd(delete_range.end);
-    }
-
-    {
-        // Cleanup the directory of ingest files.
-        if (Poco::File f(files_parent_dir); f.exists())
-            f.remove(true);
     }
 
     for (auto & segment : updated_segments)
