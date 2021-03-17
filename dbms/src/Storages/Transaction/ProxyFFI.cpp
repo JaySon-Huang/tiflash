@@ -245,17 +245,26 @@ RawCppPtr PreHandleSnapshot(
         auto & tmt = *server->tmt;
         auto & kvstore = tmt.getKVStore();
         auto new_region = kvstore->genRegionPtr(std::move(region), peer_id, index, term);
-#if 1
-        // Pre-decode as a block
-        auto new_region_block_cache = kvstore->preHandleSnapshotToBlock(new_region, snaps, index, term, tmt);
-        auto res = new PreHandledSnapshotWithBlock{new_region, std::move(new_region_block_cache)};
-        return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithBlock);
-#else
-        // Pre-decode and save as DTFiles
-        auto ingest_ids = kvstore->preHandleSnapshotToFiles(new_region, snaps, index, term, tmt);
-        auto res = new PreHandledSnapshotWithFiles{new_region, std::move(save_path)};
-        return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithFiles);
-#endif
+        switch (kvstore->applyMethod())
+        {
+            case TiDB::SnapshotApplyMethod::Block:
+            {
+                // Pre-decode as a block
+                auto new_region_block_cache = kvstore->preHandleSnapshotToBlock(new_region, snaps, index, term, tmt);
+                auto res = new PreHandledSnapshotWithBlock{new_region, std::move(new_region_block_cache)};
+                return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithBlock);
+            }
+            case TiDB::SnapshotApplyMethod::DTFile_Directory:
+            case TiDB::SnapshotApplyMethod::DTFile_Single:
+            {
+                // Pre-decode and save as DTFiles
+                auto ingest_ids = kvstore->preHandleSnapshotToFiles(new_region, snaps, index, term, tmt);
+                auto res = new PreHandledSnapshotWithFiles{new_region, std::move(ingest_ids)};
+                return GenRawCppPtr(res, RawCppPtrTypeImpl::PreHandledSnapshotWithFiles);
+            }
+            default:
+                throw Exception("Unknow Region apply method: " + applyMethodToString(kvstore->applyMethod()));
+        }
     }
     catch (...)
     {

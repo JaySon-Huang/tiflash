@@ -864,8 +864,8 @@ try
         store->write(*context, context->getSettingsRef(), block);
     }
 
-    const UInt64 tso2       = 10;
-    const UInt64 tso3       = 18;
+    const UInt64 tso2 = 10;
+    const UInt64 tso3 = 18;
 
     {
         // Prepare DTFiles for ingesting
@@ -957,7 +957,7 @@ try
         }
         in->readSuffix();
         EXPECT_EQ(num_rows_read, 32UL) << "Data [32, 128) after ingest with tso less than: " << tso2
-                                      << " are erased, should only get [0, 32)";
+                                       << " are erased, should only get [0, 32)";
     }
 
     {

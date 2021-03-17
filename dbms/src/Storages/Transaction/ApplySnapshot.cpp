@@ -305,9 +305,10 @@ std::vector<UInt64> KVStore::preHandleSnapshotToFiles(
 {
     size_t expected_block_size = DEFAULT_MERGE_BLOCK_SIZE;
 
+    // Use failpoint to change the expected_block_size for some test cases
     fiu_do_on(FailPoints::force_set_prehandle_dtfile_block_size, { expected_block_size = 3; });
 
-    DM::SSTFilesToDTFilesOutputStream stream(new_region, snaps, index, term, proxy_helper, tmt, expected_block_size);
+    DM::SSTFilesToDTFilesOutputStream stream(new_region, snaps, index, term, snapshot_apply_method, proxy_helper, tmt, expected_block_size);
 
     stream.writePrefix();
     stream.write();
@@ -376,9 +377,10 @@ void KVStore::handleApplySnapshot(
     metapb::Region && region, uint64_t peer_id, const SSTViewVec snaps, uint64_t index, uint64_t term, TMTContext & tmt)
 {
     auto new_region = genRegionPtr(std::move(region), peer_id, index, term);
-    handlePreApplySnapshot(RegionPtrWithBlock{new_region, preHandleSnapshotToBlock(new_region, snaps, index, term, tmt)}, tmt);
-    // TODO enable pre handle to files by default
-    // handlePreApplySnapshot(RegionPtrWithSnapshotFiles{new_region, preHandleSnapshotToFiles(new_region, snaps, index, term, tmt)}, tmt);
+    if (snapshot_apply_method == TiDB::SnapshotApplyMethod::Block)
+        handlePreApplySnapshot(RegionPtrWithBlock{new_region, preHandleSnapshotToBlock(new_region, snaps, index, term, tmt)}, tmt);
+    else
+        handlePreApplySnapshot(RegionPtrWithSnapshotFiles{new_region, preHandleSnapshotToFiles(new_region, snaps, index, term, tmt)}, tmt);
 }
 
 EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec snaps, UInt64 index, UInt64 term, TMTContext & tmt)

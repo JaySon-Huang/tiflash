@@ -39,6 +39,7 @@ public:
                                   const SSTViewVec &             snaps_,
                                   uint64_t                       index_,
                                   uint64_t                       term_,
+                                  TiDB::SnapshotApplyMethod      method_,
                                   const TiFlashRaftProxyHelper * proxy_helper_,
                                   TMTContext &                   tmt_,
                                   size_t                         expected_size_ = DEFAULT_MERGE_BLOCK_SIZE);
@@ -58,14 +59,15 @@ private:
     void finishCurrDTFileStream();
 
 private:
-    RegionPtr                      region;
-    const SSTViewVec &             snaps;
-    const uint64_t                 snap_index;
-    const uint64_t                 snap_term;
-    const TiFlashRaftProxyHelper * proxy_helper{nullptr};
-    TMTContext &                   tmt;
-    size_t                         expected_size;
-    Poco::Logger *                 log;
+    RegionPtr                       region;
+    const SSTViewVec &              snaps;
+    const uint64_t                  snap_index;
+    const uint64_t                  snap_term;
+    const TiDB::SnapshotApplyMethod method;
+    const TiFlashRaftProxyHelper *  proxy_helper{nullptr};
+    TMTContext &                    tmt;
+    size_t                          expected_size;
+    Poco::Logger *                  log;
 
     using SSTReaderPtr = std::unique_ptr<SSTReader>;
     SSTReaderPtr write_reader;

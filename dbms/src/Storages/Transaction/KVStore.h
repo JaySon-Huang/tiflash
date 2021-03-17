@@ -4,6 +4,7 @@
 #include <Storages/Transaction/RegionManager.h>
 #include <Storages/Transaction/RegionPersister.h>
 #include <Storages/Transaction/RegionsRangeIndex.h>
+#include <Storages/Transaction/StorageEngineType.h>
 
 namespace DB
 {
@@ -52,7 +53,7 @@ using RegionPreDecodeBlockDataPtr = std::unique_ptr<RegionPreDecodeBlockData>;
 class KVStore final : private boost::noncopyable
 {
 public:
-    KVStore(Context & context);
+    KVStore(Context & context, TiDB::SnapshotApplyMethod snapshot_apply_method_);
     void restore(const TiFlashRaftProxyHelper *);
 
     RegionPtr getRegion(const RegionID region_id) const;
@@ -93,6 +94,8 @@ public:
     EngineStoreApplyRes handleIngestSST(UInt64 region_id, const SSTViewVec, UInt64 index, UInt64 term, TMTContext & tmt);
     RegionPtr genRegionPtr(metapb::Region && region, UInt64 peer_id, UInt64 index, UInt64 term);
     const TiFlashRaftProxyHelper * getProxyHelper() const { return proxy_helper; }
+
+    TiDB::SnapshotApplyMethod applyMethod() const { return snapshot_apply_method; }
 
 private:
     friend class MockTiDB;
@@ -145,6 +148,8 @@ private:
 
     // raft_cmd_res stores the result of applying raft cmd. It must be protected by task_mutex.
     std::unique_ptr<RaftCommandResult> raft_cmd_res;
+
+    TiDB::SnapshotApplyMethod snapshot_apply_method;
 
     Logger * log;
 
