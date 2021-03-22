@@ -261,7 +261,7 @@ try
         {
         case TestMode::V1_BlockOnly:
         case TestMode::V2_BlockOnly:
-            store->write(*context, context->getSettingsRef(), block);
+            store->write(*context, context->getSettingsRef(), std::move(block));
             break;
         default: {
             auto dm_context        = store->newDMContext(*context, context->getSettingsRef());
@@ -371,7 +371,7 @@ try
         {
         case TestMode::V1_BlockOnly:
         case TestMode::V2_BlockOnly:
-            store->write(*context, context->getSettingsRef(), block);
+            store->write(*context, context->getSettingsRef(), std::move(block));
             break;
         default: {
             auto dm_context        = store->newDMContext(*context, context->getSettingsRef());
@@ -465,9 +465,9 @@ try
         {
         case TestMode::V1_BlockOnly:
         case TestMode::V2_BlockOnly: {
-            store->write(*context, context->getSettingsRef(), block1);
-            store->write(*context, context->getSettingsRef(), block2);
-            store->write(*context, context->getSettingsRef(), block3);
+            store->write(*context, context->getSettingsRef(), std::move(block1));
+            store->write(*context, context->getSettingsRef(), std::move(block2));
+            store->write(*context, context->getSettingsRef(), std::move(block3));
             break;
         }
         case TestMode::V2_FileOnly: {
@@ -491,7 +491,7 @@ try
             file_ids.insert(file_ids.cend(), file_ids3.begin(), file_ids3.end());
             store->ingestFiles(dm_context, range, file_ids, false);
 
-            store->write(*context, context->getSettingsRef(), block2);
+            store->write(*context, context->getSettingsRef(), std::move(block2));
             break;
         }
         }
@@ -543,9 +543,9 @@ try
         {
         case TestMode::V1_BlockOnly:
         case TestMode::V2_BlockOnly: {
-            store->write(*context, context->getSettingsRef(), block1);
-            store->write(*context, context->getSettingsRef(), block2);
-            store->write(*context, context->getSettingsRef(), block3);
+            store->write(*context, context->getSettingsRef(), std::move(block1));
+            store->write(*context, context->getSettingsRef(), std::move(block2));
+            store->write(*context, context->getSettingsRef(), std::move(block3));
             break;
         }
         case TestMode::V2_FileOnly: {
@@ -561,7 +561,7 @@ try
             break;
         }
         case TestMode::V2_Mix: {
-            store->write(*context, context->getSettingsRef(), block2);
+            store->write(*context, context->getSettingsRef(), std::move(block2));
 
             auto dm_context          = store->newDMContext(*context, context->getSettingsRef());
             auto [range1, file_ids1] = genDMFile(*dm_context, block1);
@@ -661,7 +661,7 @@ try
     {
         // Write 7 rows that would not trigger a split
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, 8, false);
-        store->write(*context, settings, block);
+        store->write(*context, settings, std::move(block));
     }
 
     {
@@ -696,7 +696,7 @@ try
     {
         // Write rows that would trigger a split
         Block block = DMTestEnv::prepareSimpleWriteBlock(8, 9, false);
-        store->write(*context, settings, block);
+        store->write(*context, settings, std::move(block));
     }
 
     // Now there is 2 segments
@@ -748,7 +748,7 @@ try
     {
         // write to store
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_tso1, false, tso1);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     const UInt64 tso2          = 890;
@@ -756,7 +756,7 @@ try
     {
         // write to store
         Block block = DMTestEnv::prepareSimpleWriteBlock(num_rows_tso1, num_rows_tso1 + num_rows_tso2, false, tso2);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -860,7 +860,7 @@ try
     // Write to store [0, 128)
     {
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_before_ingest, false, tso1);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     const UInt64 tso2 = 10;
@@ -1026,7 +1026,7 @@ try
         while (Block block = in->read())
             num_rows_read += block.rows();
         in->readSuffix();
-        EXPECT_EQ(num_rows_read, 2) << "The rows number after ingest is not match";
+        EXPECT_EQ(num_rows_read, 2UL) << "The rows number of two point get is not match";
     }
 }
 CATCH
@@ -1063,7 +1063,7 @@ try
             {
             case TestMode::V1_BlockOnly:
             case TestMode::V2_BlockOnly:
-                store->write(*context, settings, block);
+                store->write(*context, settings, std::move(block));
                 break;
             case TestMode::V2_FileOnly:
                 write_as_file();
@@ -1071,7 +1071,7 @@ try
             case TestMode::V2_Mix: {
                 if ((std::rand() % 2) == 0)
                 {
-                    store->write(*context, settings, block);
+                    store->write(*context, settings, std::move(block));
                 }
                 else
                 {
@@ -1189,7 +1189,7 @@ try
             }
             block.insert(col2);
         }
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -1302,7 +1302,7 @@ try
             }
             block.insert(col2);
         }
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -1397,7 +1397,7 @@ try
             }
             block.insert(col1);
         }
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -1487,7 +1487,7 @@ try
     size_t num_rows_write = 1;
     {
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_write, false);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     // DDL add column f32 with default value
@@ -1561,7 +1561,7 @@ try
     // write some rows before DDL
     {
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, 1, false);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     // DDL add column date with default value
@@ -1666,7 +1666,7 @@ try
             }
             block.insert(col2);
         }
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -1776,7 +1776,7 @@ try
     {
         // write to store
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_write, false, /*tso=*/2, col_name_before_ddl, col_id_ddl, col_type);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -1863,7 +1863,7 @@ try
             // Then write new block with new pk name
             Block block = DMTestEnv::prepareSimpleWriteBlock(
                 num_rows_write, num_rows_write * 2, false, /*tso=*/2, col_name_after_ddl, col_id_ddl, col_type);
-            store->write(*context, context->getSettingsRef(), block);
+            store->write(*context, context->getSettingsRef(), std::move(block));
         }
         {
             // read all columns from store
@@ -1934,7 +1934,7 @@ try
         FailPointHelper::enableFailPoint(FailPoints::force_triggle_background_merge_delta);
 
         Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_write, false);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     // DDL add column f32 with default value
@@ -2013,7 +2013,7 @@ try
             f_col.column = std::move(m_col);
         }
         block.insert(f_col);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     // disable pause so that delta-merge can continue
@@ -2141,7 +2141,7 @@ try
             }
             block.insert(std::move(i8));
         }
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
 
     {
@@ -2271,9 +2271,9 @@ try
                                                           EXTRA_HANDLE_COLUMN_STRING_TYPE,
                                                           true,
                                                           rowkey_column_size);
-        store->write(*context, context->getSettingsRef(), block1);
-        store->write(*context, context->getSettingsRef(), block2);
-        store->write(*context, context->getSettingsRef(), block3);
+        store->write(*context, context->getSettingsRef(), std::move(block1));
+        store->write(*context, context->getSettingsRef(), std::move(block2));
+        store->write(*context, context->getSettingsRef(), std::move(block3));
 
         store->flushCache(*context, RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize()));
     }
@@ -2341,9 +2341,9 @@ try
                                                           EXTRA_HANDLE_COLUMN_STRING_TYPE,
                                                           true,
                                                           rowkey_column_size);
-        store->write(*context, context->getSettingsRef(), block1);
-        store->write(*context, context->getSettingsRef(), block2);
-        store->write(*context, context->getSettingsRef(), block3);
+        store->write(*context, context->getSettingsRef(), std::move(block1));
+        store->write(*context, context->getSettingsRef(), std::move(block2));
+        store->write(*context, context->getSettingsRef(), std::move(block3));
 
         store->flushCache(*context, RowKeyRange::newAll(store->isCommonHandle(), store->getRowKeyColumnSize()));
     }
@@ -2427,7 +2427,7 @@ try
 
         Block block = DMTestEnv::prepareSimpleWriteBlock(
             0, 128, false, 2, EXTRA_HANDLE_COLUMN_NAME, EXTRA_HANDLE_COLUMN_ID, EXTRA_HANDLE_COLUMN_STRING_TYPE, true, rowkey_column_size);
-        store->write(*context, context->getSettingsRef(), block);
+        store->write(*context, context->getSettingsRef(), std::move(block));
     }
     // Test Reading first
     {

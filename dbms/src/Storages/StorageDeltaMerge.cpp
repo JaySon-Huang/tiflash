@@ -343,7 +343,7 @@ public:
                     write_block.insert(ColumnWithTypeAndName(std::move(col), column.type, column.name, column.column_id));
                 }
 
-                store->write(db_context, db_settings, write_block);
+                store->write(db_context, db_settings, std::move(write_block));
             }
         }
     }
@@ -428,7 +428,7 @@ void StorageDeltaMerge::write(Block && block, const Settings & settings)
 
     FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::exception_during_write_to_storage);
 
-    store->write(global_context, settings, block);
+    store->write(global_context, settings, std::move(block));
 }
 
 std::unordered_set<UInt64> parseSegmentSet(const ASTPtr & ast)

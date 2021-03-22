@@ -398,13 +398,15 @@ void encodeRowV1(const TiDB::TableInfo & table_info, const std::vector<Field> & 
                 + std::to_string(fields.size() + table_info.pk_is_handle) + " values: ",
             ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t index = 0; index < std::min(table_info.columns.size(), fields.size()); ++index)
+    size_t encoded_fields_idx = 0;
+    for (auto & column_info : table_info.columns)
     {
-        auto & column_info = table_info.columns[index];
         if ((table_info.pk_is_handle || table_info.is_common_handle) && column_info.hasPriKeyFlag())
             continue;
         EncodeDatum(Field(column_info.id), TiDB::CodecFlagInt, ss);
-        EncodeDatumForRow(fields[index], column_info.getCodecFlag(), ss, column_info);
+        EncodeDatumForRow(fields[encoded_fields_idx++], column_info.getCodecFlag(), ss, column_info);
+        if (encoded_fields_idx == fields.size())
+            break;
     }
 }
 
@@ -428,7 +430,7 @@ struct RowEncoderV2
         size_t value_length = 0;
 
         /// Cache encoded individual columns.
-        for (size_t i_col = 0, i_val = 0; i_col < std::min(table_info.columns.size(), fields.size()); i_col++)
+        for (size_t i_col = 0, i_val = 0; i_col < table_info.columns.size(); i_col++)
         {
             const auto & column_info = table_info.columns[i_col];
             const auto & field = fields[i_val];
@@ -449,6 +451,9 @@ struct RowEncoderV2
                 null_column_ids.emplace(column_info.id);
             }
             i_val++;
+
+            if (i_val == fields.size())
+                break;
         }
         is_big = is_big || value_length > std::numeric_limits<RowV2::Types<false>::ValueOffsetType>::max();
 

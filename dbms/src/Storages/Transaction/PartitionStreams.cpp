@@ -454,10 +454,10 @@ GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt)
             return true;
         }
         auto lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-        auto [block, ok] = readRegionBlock(storage, *data_list_read, force_decode);
+        auto reader = RegionBlockReader(storage);
+        auto [block, ok] = reader.read(*data_list_read, force_decode);
         if (!ok)
             return false;
-        res_block = std::move(block);
 
         // Get schema snapshot
         if (unlikely(storage->engineType() != ::TiDB::StorageEngine::DT))
@@ -468,7 +468,10 @@ GenRegionBlockDatawithSchema(const RegionPtr & region, TMTContext & tmt)
         }
         if (dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage); dm_storage != nullptr)
         {
-            schema_snap = dm_storage->getStore()->getStoreColumns();
+            auto store = dm_storage->getStore();
+            schema_snap = store->getStoreColumns();
+            // For StorageDeltaMerge, we always store an extra column with column_id = -1
+            res_block = store->addExtraColumnIfNeed(context, std::move(block));
         }
 
         GET_METRIC(metrics, tiflash_raft_write_data_to_storage_duration_seconds, type_decode).Observe(watch.elapsedSeconds());

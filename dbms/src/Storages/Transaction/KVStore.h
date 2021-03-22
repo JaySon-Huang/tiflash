@@ -42,10 +42,6 @@ struct WriteCmdsView;
 enum class EngineStoreApplyRes : uint32_t;
 
 struct TiFlashRaftProxyHelper;
-<<<<<<< HEAD
-struct RegionPtrWithBlock;
-=======
->>>>>>> 607c4efae... Ingest files into StorageDeltaMerge
 struct RegionPreDecodeBlockData;
 using RegionPreDecodeBlockDataPtr = std::unique_ptr<RegionPreDecodeBlockData>;
 

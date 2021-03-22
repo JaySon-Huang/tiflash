@@ -554,7 +554,7 @@ void MockRaftCommand::dbgFuncRegionSnapshotPreHandleDTFiles(Context & context, c
             throw Exception("Invalid TiDB table schema", ErrorCodes::LOGICAL_ERROR);
         ColumnsDescription columns
             = InterpreterCreateQuery::getColumnsDescription(typeid_cast<const ASTExpressionList &>(*columns_ast), context);
-        mocked_table_info = MockTiDB::parseColumns(columns, handle_pk_name, "dt");
+        mocked_table_info = MockTiDB::parseColumns(table_name, columns, handle_pk_name, "dt");
     }
 
     MockTiDB::TablePtr table = MockTiDB::instance().getTableByName(database_name, table_name);
