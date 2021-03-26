@@ -1,9 +1,9 @@
+#include <Common/FailPoint.h>
 #include <Common/TiFlashMetrics.h>
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/MergeTree/TxnMergeTreeBlockOutputStream.h>
-#include <Storages/StorageDebugging.h>
 #include <Storages/StorageDeltaMerge.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/Transaction/LockException.h>
@@ -18,6 +18,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char pause_before_apply_raft_cmd[];
+extern const char pause_before_apply_raft_snapshot[];
+} // namespace FailPoints
 
 namespace ErrorCodes
 {
@@ -25,7 +30,8 @@ extern const int LOGICAL_ERROR;
 } // namespace ErrorCodes
 
 
-static void writeRegionDataToStorage(Context & context, const RegionPtrWrap & region, RegionDataReadInfoList & data_list_read, Logger * log)
+static void writeRegionDataToStorage(
+    Context & context, const RegionPtrWithBlock & region, RegionDataReadInfoList & data_list_read, Logger * log)
 {
     constexpr auto FUNCTION_NAME = __FUNCTION__;
     const auto & tmt = context.getTMTContext();
@@ -104,16 +110,6 @@ static void writeRegionDataToStorage(Context & context, const RegionPtrWrap & re
                 dm_storage->write(std::move(block), context.getSettingsRef());
                 break;
             }
-            case ::TiDB::StorageEngine::DEBUGGING_MEMORY:
-            {
-                auto debugging_storage = std::dynamic_pointer_cast<StorageDebugging>(storage);
-                ASTPtr query(new ASTInsertQuery(debugging_storage->getDatabaseName(), debugging_storage->getTableName(), true));
-                BlockOutputStreamPtr output = debugging_storage->write(query, context.getSettingsRef());
-                output->writePrefix();
-                output->write(block);
-                output->writeSuffix();
-                break;
-            }
             default:
                 throw Exception("Unknown StorageEngine: " + toString(static_cast<Int32>(storage->engineType())), ErrorCodes::LOGICAL_ERROR);
         }
@@ -125,6 +121,11 @@ static void writeRegionDataToStorage(Context & context, const RegionPtrWrap & re
                           << ", write part " << write_part_cost << "] ms");
         return true;
     };
+
+    /// In TiFlash, the actions between applying raft log and schema changes are not strictly synchronized.
+    /// There could be a chance that some raft logs come after a table gets tombstoned. Take care of it when
+    /// decoding data. Check the test case for more details.
+    FAIL_POINT_PAUSE(FailPoints::pause_before_apply_raft_cmd);
 
     /// Try read then write once.
     {
@@ -259,7 +260,7 @@ void RemoveRegionCommitCache(const RegionPtr & region, const RegionDataReadInfoL
 }
 
 void RegionTable::writeBlockByRegion(
-    Context & context, const RegionPtrWrap & region, RegionDataReadInfoList & data_list_to_remove, Logger * log, bool lock_region)
+    Context & context, const RegionPtrWithBlock & region, RegionDataReadInfoList & data_list_to_remove, Logger * log, bool lock_region)
 {
     std::optional<RegionDataReadInfoList> data_list_read = std::nullopt;
     if (region.pre_decode_cache)
@@ -365,7 +366,7 @@ RegionTable::ResolveLocksAndWriteRegionRes RegionTable::resolveLocksAndWriteRegi
 }
 
 /// pre-decode region data into block cache and remove
-RegionPtrWrap::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & region, Context & context)
+RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & region, Context & context)
 {
     auto data_list_read = ReadRegionCommitCache(region);
 
@@ -398,6 +399,11 @@ RegionPtrWrap::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & region, Co
         GET_METRIC(metrics, tiflash_raft_write_data_to_storage_duration_seconds, type_decode).Observe(watch.elapsedSeconds());
         return true;
     };
+
+    /// In TiFlash, the actions between applying raft log and schema changes are not strictly synchronized.
+    /// There could be a chance that some raft logs come after a table gets tombstoned. Take care of it when
+    /// decoding data. Check the test case for more details.
+    FAIL_POINT_PAUSE(FailPoints::pause_before_apply_raft_snapshot);
 
     if (!atomicDecode(false))
     {
