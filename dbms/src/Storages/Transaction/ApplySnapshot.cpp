@@ -401,6 +401,17 @@ EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec 
         return EngineStoreApplyRes::NotFound;
     }
 
+    if (snapshot_apply_method == TiDB::SnapshotApplyMethod::Block)
+        return handleIngestSSTByBlock(region, snaps, index, term, tmt);
+    else
+    {
+        return handleIngestSSTByDTFile(region, snaps, index, term, tmt);
+    }
+}
+
+EngineStoreApplyRes KVStore::handleIngestSSTByBlock(
+    const RegionPtr & region, const SSTViewVec snaps, UInt64 index, UInt64 term, TMTContext & tmt)
+{
     const auto func_try_flush = [&]() {
         if (!region->writeCFCount())
             return;
@@ -419,7 +430,6 @@ EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec 
 
     // try to flush remain data in memory.
     func_try_flush();
-    // TODO: handle `IngestSST` with `DM::SSTFilesToDTFilesOutputStream`
     region->handleIngestSST(snaps, index, term, tmt);
     func_try_flush();
 
@@ -434,5 +444,12 @@ EngineStoreApplyRes KVStore::handleIngestSST(UInt64 region_id, const SSTViewVec 
         return EngineStoreApplyRes::Persist;
     }
 }
+
+EngineStoreApplyRes KVStore::handleIngestSSTByDTFile(UInt64 region_id, const SSTViewVec, UInt64 index, UInt64 term, TMTContext & tmt)
+{
+    // TODO: handle `IngestSST` with `DM::SSTFilesToDTFilesOutputStream`
+
+}
+
 
 } // namespace DB

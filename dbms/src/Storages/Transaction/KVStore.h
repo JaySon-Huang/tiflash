@@ -109,6 +109,9 @@ private:
     template <typename RegionPtrWrap>
     void onSnapshot(const RegionPtrWrap &, RegionPtr old_region, UInt64 old_region_index, TMTContext & tmt);
 
+    EngineStoreApplyRes handleIngestSSTByBlock(UInt64 region_id, const SSTViewVec, UInt64 index, UInt64 term, TMTContext & tmt);
+    EngineStoreApplyRes handleIngestSSTByDTFile(UInt64 region_id, const SSTViewVec, UInt64 index, UInt64 term, TMTContext & tmt);
+
     // Remove region from this TiFlash node.
     // If region is destroy or moved to another node(change peer),
     // set `remove_data` true to remove obsolete data from storage.
