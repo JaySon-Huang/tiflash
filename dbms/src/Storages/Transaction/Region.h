@@ -162,6 +162,8 @@ public:
     /// Try to fill record with delmark if it exists in ch but has been remove by GC in leader.
     void compareAndCompleteSnapshot(HandleMap & handle_map, const Timestamp safe_point);
 
+    void tryCompactionFilter(const Timestamp safe_point);
+
     RegionRaftCommandDelegate & makeRaftCommandDelegate(const KVStoreTaskLock &);
     metapb::Region getMetaRegion() const;
     raft_serverpb::MergeState getMergeState() const;
@@ -171,6 +173,10 @@ public:
     void handleIngestSST(const SSTViewVec snaps, UInt64 index, UInt64 term, TMTContext & tmt);
 
     UInt64 getSnapshotEventFlag() const { return snapshot_event_flag; }
+
+    /// get approx rows, bytes info about mem cache.
+    std::pair<size_t, size_t> getApproxMemCacheInfo() const;
+    void cleanApproxMemCacheInfo() const;
 
 private:
     Region() = delete;
@@ -197,14 +203,15 @@ private:
 
     RegionMeta meta;
 
-    mutable std::atomic<Timepoint> last_compact_log_time = Timepoint::min();
-
     Logger * log;
 
     const TableID mapped_table_id;
 
     std::atomic<UInt64> snapshot_event_flag{1};
     const TiFlashRaftProxyHelper * proxy_helper{nullptr};
+    mutable std::atomic<Timepoint> last_compact_log_time = Timepoint::min();
+    mutable std::atomic<size_t> approx_mem_cache_rows{0};
+    mutable std::atomic<size_t> approx_mem_cache_bytes{0};
 };
 
 class RegionRaftCommandDelegate : public Region, private boost::noncopyable

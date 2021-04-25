@@ -158,7 +158,6 @@ try
 }
 CATCH
 
-
 TEST(StorageDeltaMerge_internal_test, GetMergedQueryRanges)
 {
     MvccQueryInfo::RegionsQueryInfo regions;
