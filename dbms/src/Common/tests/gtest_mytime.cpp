@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/MyTime.h>
+#include <Common/MyTimeParser.h>
 #include <DataTypes/DataTypeMyDateTime.h>
 #include <Functions/FunctionsTiDBConversion.h>
 #include <TestUtils/TiFlashTestBasic.h>

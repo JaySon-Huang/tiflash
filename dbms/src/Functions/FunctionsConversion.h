@@ -32,6 +32,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
+#include <Common/MyTimeParser.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>

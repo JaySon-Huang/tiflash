@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <common/DateLUTImpl.h>
 
-struct StringRef;
+class DateLUTImpl;
 namespace DB
 {
 
@@ -134,24 +133,6 @@ struct MyDateTimeFormatter
     }
 };
 
-struct MyDateTimeParser
-{
-    explicit MyDateTimeParser(String format_);
-
-    std::optional<UInt64> parseAsPackedUInt(const StringRef & str_view) const;
-
-    struct Context;
-
-private:
-    const String format;
-
-    // Parsing method. Parse from ctx.view[ctx.pos].
-    // If success, update `datetime`, `ctx` and return true.
-    // If fail, return false.
-    using ParserCallback = std::function<bool(MyDateTimeParser::Context & ctx, MyTimeBase & datetime)>;
-    std::vector<ParserCallback> parsers;
-};
-
 Field parseMyDateTime(const String & str, int8_t fsp = 6);
 
 void convertTimeZone(UInt64 from_time, UInt64 & to_time, const DateLUTImpl & time_zone_from, const DateLUTImpl & time_zone_to);
@@ -162,15 +143,11 @@ int calcDayNum(int year, int month, int day);
 
 size_t maxFormattedDateTimeStringLength(const String & format);
 
-
-
 bool isPunctuation(char c);
-
-bool isValidSeperator(char c, int previous_parts);
 
 // Build CoreTime value with checking overflow of internal bit fields, return true if input is invalid.
 // Note that this function will not check if the input is logically a valid datetime value.
 bool toCoreTimeChecked(const UInt64 & year, const UInt64 & month, const UInt64 & day, const UInt64 & hour, const UInt64 & minute,
-                     const UInt64 & second, const UInt64 & microsecond, MyDateTime & result);
+    const UInt64 & second, const UInt64 & microsecond, MyDateTime & result);
 
 } // namespace DB
