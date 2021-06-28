@@ -199,7 +199,7 @@ public:
         assert(ps != nullptr);
         try
         {
-            ps->gc();
+            ps->gc(nullptr);
         }
         catch (DB::Exception & e)
         {
@@ -313,11 +313,19 @@ int main(int argc, char ** argv)
     // create thread pool
     LOG_INFO(&Logger::get("root"),
              "start running with these threads: " //
+<<<<<<< HEAD
              "W:" << num_writers
                   << ",R:" << num_readers
                   << ",Gc:1" //
                      ", config.num_writer_slots:"
                   << num_writer_slots << ", timeout_s:" << timeout_s);
+=======
+             "W:"
+                 << num_writers << ",R:" << num_readers
+                 << ",Gc:1" //
+                    ", config.num_writer_slots:"
+                 << num_writer_slots << ", timeout_s:" << timeout_s);
+>>>>>>> Fix build targets for page storage
     Poco::ThreadPool pool(/* minCapacity= */ 1 + num_writers + num_readers, 1 + num_writers + num_readers);
 
     // start one writer thread

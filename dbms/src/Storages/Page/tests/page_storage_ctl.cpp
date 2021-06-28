@@ -198,7 +198,7 @@ try
         for (Int64 idx = 0; num_gc == -1 || idx < num_gc; ++idx)
         {
             LOG_INFO(logger, "Running GC, [round=" << (idx + 1) << "] [num_gc=" << num_gc << "]");
-            storage.gc(/*not_skip=*/true);
+            storage.gc(nullptr, /*not_skip=*/true);
             LOG_INFO(logger, "Run GC done, [round=" << (idx + 1) << "] [num_gc=" << num_gc << "]");
         }
         break;

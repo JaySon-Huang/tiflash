@@ -85,7 +85,7 @@ public:
 
         RandomAccessFilePtr data_file;
 
-        Clock::time_point last_read_time;
+        std::atomic<Clock::time_point> last_read_time;
     };
 
     // PageFile with type "Checkpoint" is smaller than other types.

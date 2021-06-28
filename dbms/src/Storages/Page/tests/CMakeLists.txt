@@ -15,6 +15,8 @@ target_compile_options(gtests_page_storage PRIVATE -Wno-unknown-pragmas)
 target_compile_definitions(gtests_page_storage PRIVATE DBMS_PUBLIC_GTEST)
 add_check(gtests_page_storage)
 
+add_library(global-libs INTERFACE)
+target_link_libraries(global-libs INTERFACE "-Wl,-static -ltsan -Wl,-Bdynamic")
 # non googletest
 add_executable(page_stress_testing stress_page_stroage.cpp)
 target_link_libraries(page_stress_testing page_storage)

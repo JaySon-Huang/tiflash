@@ -9,6 +9,7 @@ namespace cpptoml
 {
 class table;
 }
+
 namespace DB
 {
 

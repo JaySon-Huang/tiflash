@@ -595,7 +595,7 @@ PageMap PageFile::Reader::read(PageIdAndEntries & to_read)
     if (unlikely(pos != data_buf + buf_size))
         throw Exception("pos not match", ErrorCodes::LOGICAL_ERROR);
 
-    last_read_time = Clock::now();
+    last_read_time.store(Clock::now());
 
     return page_map;
 }
@@ -654,7 +654,7 @@ void PageFile::Reader::read(PageIdAndEntries & to_read, const PageHandler & hand
         handler(page_id, page);
     }
 
-    last_read_time = Clock::now();
+    last_read_time.store(Clock::now());
 }
 
 PageMap PageFile::Reader::read(PageFile::Reader::FieldReadInfos & to_read)
@@ -736,7 +736,7 @@ PageMap PageFile::Reader::read(PageFile::Reader::FieldReadInfos & to_read)
         throw Exception("Pos not match, expect to read " + DB::toString(buf_size) + " bytes, but only " + DB::toString(pos - data_buf),
                         ErrorCodes::LOGICAL_ERROR);
 
-    last_read_time = Clock::now();
+    last_read_time.store(Clock::now());
 
     return page_map;
 }
@@ -745,7 +745,7 @@ bool PageFile::Reader::isIdle(const Seconds & max_idle_time)
 {
     if (max_idle_time.count() == 0)
         return false;
-    return (Clock::now() - last_read_time >= max_idle_time);
+    return (Clock::now() - last_read_time.load() >= max_idle_time);
 }
 
 // =========================================================
