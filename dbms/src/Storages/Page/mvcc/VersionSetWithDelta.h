@@ -309,7 +309,7 @@ protected:
         if (tail->shouldCompactToBase(config))
         {
             ProfileEvents::increment(ProfileEvents::PSMVCCCompactOnBase);
-            auto old_base = std::atomic_load(&tail->prev);
+            VersionPtr old_base = std::atomic_load(&tail->prev);
             assert(old_base != nullptr);
             VersionPtr new_base = VersionType::compactDeltaAndBase(old_base, tail);
             // replace nodes [head, tail] -> new_base

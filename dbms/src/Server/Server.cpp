@@ -81,7 +81,6 @@
 #if USE_MIMALLOC
 #include <Poco/JSON/Parser.h>
 #include <mimalloc.h>
-
 #include <fstream>
 #endif
 

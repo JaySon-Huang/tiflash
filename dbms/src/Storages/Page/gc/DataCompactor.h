@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/Context.h>
 #include <Storages/Page/PageStorage.h>
 
 #include <boost/core/noncopyable.hpp>

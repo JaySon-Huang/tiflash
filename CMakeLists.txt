@@ -209,7 +209,44 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
+# Global libraries
+# See:
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
+
 include (cmake/sanitize.cmake)
+
+if (OS_LINUX OR OS_ANDROID)
+    add_library(global-group INTERFACE)
+    target_link_libraries(global-group INTERFACE
+        -Wl,--start-group
+        $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
+        -Wl,--end-group
+    )
+    link_libraries(global-group)
+    # FIXME: remove when all contribs will get custom cmake lists
+    install(
+        TARGETS global-group global-libs
+        EXPORT global
+    )
+    install (EXPORT global DESTINATION cmake)
+elseif (OS_DARWIN)
+    add_library(global-group INTERFACE)
+    target_link_libraries(global-group INTERFACE
+        $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
+    )
+    link_libraries(global-group)
+    # FIXME: remove when all contribs will get custom cmake lists
+    install(
+        TARGETS global-group global-libs
+        EXPORT global
+    )
+    install (EXPORT global DESTINATION cmake)
+endif ()
+
+######################################
+### Add targets below this comment ###
+######################################
 
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
