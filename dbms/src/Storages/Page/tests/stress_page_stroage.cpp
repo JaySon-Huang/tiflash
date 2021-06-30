@@ -1,9 +1,4 @@
-#include <atomic>
-#include <chrono>
-#include <iostream>
-#include <memory>
-#include <random>
-
+#include <Encryption/MockKeyManager.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/File.h>
@@ -13,11 +8,15 @@
 #include <Poco/Runnable.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/Timer.h>
+#include <Storages/Page/PageStorage.h>
+#include <Storages/Page/tests/MockDiskDelegator.h>
 #include <common/logger_useful.h>
 
-#include <IO/ReadBufferFromMemory.h>
-#include <Storages/Page/PageStorage.h>
-#include <common/logger_useful.h>
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <memory>
+#include <random>
 
 using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
@@ -25,12 +24,25 @@ using std::chrono::milliseconds;
 using PSPtr = std::shared_ptr<DB::PageStorage>;
 
 const DB::PageId MAX_PAGE_ID = 1000;
+std::int64_t     GLOBAL_VARS = 0;
 
 std::atomic<bool> running_without_exception = true;
 std::atomic<bool> running_without_timeout   = true;
 
 size_t                  num_writer_slots     = 1;
 std::atomic<DB::UInt64> write_batch_sequence = 0;
+
+/* some exported global vars */
+namespace DB
+{
+#if __APPLE__ && __clang__
+__thread bool is_background_thread = false;
+#else
+thread_local bool is_background_thread = false;
+#endif
+} // namespace DB
+/* some exported global vars */
+
 
 class PSWriter : public Poco::Runnable
 {
@@ -71,7 +83,7 @@ public:
 
             DB::WriteBatch wb;
             wb.putPage(pageId, 0, buff, buff->buffer().size());
-            ps->write(wb);
+            ps->write(std::move(wb));
             if (pageId % 100 == 0)
                 LOG_INFO(&Logger::get("root"), "writer wrote page" + DB::toString(pageId));
         }
@@ -84,6 +96,7 @@ public:
     {
         while (running_without_exception && running_without_timeout)
         {
+            GLOBAL_VARS++;
             assert(ps != nullptr);
             std::normal_distribution<> d{MAX_PAGE_ID / 2, 150};
             const DB::PageId           pageId = static_cast<DB::PageId>(std::round(d(gen))) % MAX_PAGE_ID;
@@ -94,7 +107,7 @@ public:
 
             DB::WriteBatch wb;
             wb.putPage(pageId, 0, buff, buff->buffer().size());
-            ps->write(wb);
+            ps->write(std::move(wb));
             ++pages_written;
             bytes_written += buff->buffer().size();
             // LOG_INFO(&Logger::get("root"), "writer[" + DB::toString(index) + "] wrote page" + DB::toString(pageId));
@@ -124,6 +137,7 @@ public:
     {
         while (running_without_exception && running_without_timeout)
         {
+            GLOBAL_VARS--;
             {
                 // sleep [0~10) ms
                 const uint32_t micro_seconds_to_sleep = random() % 10;
@@ -239,7 +253,6 @@ int main(int argc, char ** argv)
             num_readers = strtoul(argv[4], nullptr, 10);
         if (argc >= 6)
         {
-            // 2 by default.
             size_t page_mb = strtoul(argv[5], nullptr, 10);
             page_mb        = std::max(page_mb, 1UL);
             PSWriter::setApproxPageSize(page_mb);
@@ -272,8 +285,11 @@ int main(int argc, char ** argv)
 
     // create PageStorage
     DB::PageStorage::Config config;
-    config.num_write_slots = num_writer_slots;
-    PSPtr ps               = std::make_shared<DB::PageStorage>("stress_test", path, config);
+    config.num_write_slots               = num_writer_slots;
+    DB::KeyManagerPtr      key_manager   = std::make_shared<DB::MockKeyManager>(false);
+    DB::FileProviderPtr    file_provider = std::make_shared<DB::FileProvider>(key_manager, false);
+    DB::PSDiskDelegatorPtr delegator     = std::make_shared<MockDiskDelegator>(path);
+    PSPtr                  ps            = std::make_shared<DB::PageStorage>("stress_test", delegator, config, file_provider);
     ps->restore();
     {
         size_t num_of_pages = 0;
@@ -286,15 +302,22 @@ int main(int argc, char ** argv)
     }
 
     // init all pages in PageStorage
-    PSWriter::fillAllPages(ps);
-    LOG_INFO(&Logger::get("root"), "All pages have been init.");
+    if (drop_before_run)
+    {
+        PSWriter::fillAllPages(ps);
+        LOG_INFO(&Logger::get("root"), "All pages have been init.");
+    }
 
     high_resolution_clock::time_point beginTime = high_resolution_clock::now();
 
     // create thread pool
     LOG_INFO(&Logger::get("root"),
-             "start running with these threads: W:" + DB::toString(num_writers) + ",R:" + DB::toString(num_readers)
-                 + ",Gc:1, config.num_writer_slots:" + DB::toString(num_writer_slots));
+             "start running with these threads: " //
+             "W:" << num_writers
+                  << ",R:" << num_readers
+                  << ",Gc:1" //
+                     ", config.num_writer_slots:"
+                  << num_writer_slots << ", timeout_s:" << timeout_s);
     Poco::ThreadPool pool(/* minCapacity= */ 1 + num_writers + num_readers, 1 + num_writers + num_readers);
 
     // start one writer thread

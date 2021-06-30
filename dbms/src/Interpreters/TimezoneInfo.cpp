@@ -4,6 +4,7 @@
 #include <tipb/select.pb.h>
 #pragma GCC diagnostic pop
 
+
 namespace DB
 {
 void TimezoneInfo::resetByDAGRequest(const tipb::DAGRequest & rqst)
