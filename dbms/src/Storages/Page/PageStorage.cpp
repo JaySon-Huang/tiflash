@@ -797,6 +797,16 @@ struct GcContext
     size_t num_files_archive_in_compact_legacy = 0;
     size_t num_bytes_written_in_compact_legacy = 0;
 
+    double observed_compact_legacy  = 0.0;
+    double observed_compact_data    = 0.0;
+    double observed_gc_apply        = 0.0;
+    double observed_remove_obsolete = 0.0;
+
+    double elpasedCompactLegacy() const { return observed_compact_legacy; }
+    double elpasedCompactData() const { return observed_compact_data - observed_compact_legacy; }
+    double elpasedGcApply() const { return observed_gc_apply - observed_compact_data; }
+    double elpasedRemoveObsolete() const { return observed_remove_obsolete - observed_gc_apply; }
+
     DataCompactor<PageStorage::SnapshotPtr>::Result compact_result;
 
     // bytes written during gc
