@@ -83,6 +83,10 @@ DataCompactor<SnapshotPtr>::selectCandidateFiles( // keep readable indent
     const ValidPages &                   files_valid_pages,
     const std::set<PageFileIdAndLevel> & writing_file_ids) const
 {
+#ifdef PAGE_STORAGE_UTIL_DEBUGGGING
+    LOG_TRACE(log, storage_name << " input size of candidates: " << page_files.size());
+#endif
+
     PageFileSet candidates;
     size_t      candidate_total_size = 0;
     size_t      num_migrate_pages    = 0;
@@ -110,8 +114,8 @@ DataCompactor<SnapshotPtr>::selectCandidateFiles( // keep readable indent
         bool is_candidate = (writing_file_ids.count(page_file.fileIdLevel()) == 0)
             && (valid_rate < config.gc_max_valid_rate //
                 || file_size < config.file_small_size //
-                || config.gc_max_valid_rate >= 1.0 // all page file will be picked
-                );
+                || config.gc_max_valid_rate >= 1.0    // all page file will be picked
+            );
 #ifdef PAGE_STORAGE_UTIL_DEBUGGGING
         LOG_TRACE(log,
                   storage_name << " " << page_file.toString() << " [valid rate=" << DB::toString(valid_rate, 2)
