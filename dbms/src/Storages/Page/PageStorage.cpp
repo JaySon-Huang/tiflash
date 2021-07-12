@@ -249,6 +249,7 @@ void PageStorage::restore()
             reader->moveNext();
             merging_queue.push(std::move(reader));
         }
+        // else the file doesn't contain any valid meta, just skip it.
     }
 
     StatisticsInfo restore_info;

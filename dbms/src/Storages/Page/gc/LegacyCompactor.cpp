@@ -140,7 +140,8 @@ LegacyCompactor::collectPageFilesToCompact(const PageFileSet & page_files, const
             reader->moveNext();
             merging_queue.push(std::move(reader));
         }
-        // else if the file doesn't contain any valid meta, just skip it.
+        // else the file doesn't contain any valid meta, just skip it. Or the compaction will be
+        // stopped by a writable file that contains no valid meta.
     }
 
     std::optional<PageFile>               old_checkpoint_file;
