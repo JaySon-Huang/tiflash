@@ -218,18 +218,32 @@ DataCompactor<SnapshotPtr>::migratePages( //
     //   Some how PageFile_1000_0 don't get deleted (maybe there is a snapshot that need to read Pages inside it) and
     //   we start a new round of GC. PageFile_998_0(again), PageFile_999_0(new), PageFile_1000_0(again) are picked into
     //   candidates and 1000_0 is the largest file_id.
-    const String pf_parent_path = delegator->choosePath(migrate_file_id);
-    if (PageFile::isPageFileExist(migrate_file_id, pf_parent_path, file_provider, PageFile::Type::Formal, page_file_log)
-        || PageFile::isPageFileExist(migrate_file_id, pf_parent_path, file_provider, PageFile::Type::Legacy, page_file_log))
     {
-        LOG_INFO(log,
-                 storage_name << " GC migration to PageFile_" //
-                              << migrate_file_id.first << "_" << migrate_file_id.second << " is done before.");
-        return {PageEntriesEdit{}, 0};
+        // We need to check existence for multi disks deployment, or we may generate the same file id
+        // among different disks, some of them will be ignored by the PageFileSet because of duplicated
+        // file id while restoring from disk
+        // TODO: Add test case
+        bool       not_exist = true;
+        const auto paths     = delegator->listPaths();
+        for (const auto & pf_parent_path : paths)
+        {
+            if (PageFile::isPageFileExist(migrate_file_id, pf_parent_path, file_provider, PageFile::Type::Formal, page_file_log)
+                || PageFile::isPageFileExist(migrate_file_id, pf_parent_path, file_provider, PageFile::Type::Legacy, page_file_log))
+            {
+                LOG_INFO(log,
+                         storage_name << " GC migration to PageFile_" //
+                                      << migrate_file_id.first << "_" << migrate_file_id.second << " is done before.");
+                not_exist = false;
+                break;
+            }
+        }
+        if (!not_exist)
+            return {PageEntriesEdit{}, 0};
     }
 
     // Create a tmp PageFile for migration
-    PageFile gc_file = PageFile::newPageFile(
+    const String pf_parent_path = delegator->choosePath(migrate_file_id);
+    PageFile     gc_file        = PageFile::newPageFile(
         migrate_file_id.first, migrate_file_id.second, pf_parent_path, file_provider, PageFile::Type::Temp, page_file_log);
     LOG_INFO(log,
              storage_name << " GC decide to migrate " << candidates.size() << " files, containing " << migrate_page_count
