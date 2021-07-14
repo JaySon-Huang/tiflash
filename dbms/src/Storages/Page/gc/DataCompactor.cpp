@@ -103,7 +103,7 @@ DataCompactor<SnapshotPtr>::selectCandidateFiles( // keep readable indent
      * * new design for better handling for this situation
      */
 
-    static constexpr double HIGH_RATE_THRESHOLD = 0.7;
+    static constexpr double HIGH_RATE_THRESHOLD = 0.65;
 
     PageFileSet candidates;
     size_t      candidate_total_size                 = 0;
