@@ -80,6 +80,11 @@ private:
     friend class RWLock;
 };
 
+RWLock::OwnerQueryIds RWLock::getQueryIds() const
+{
+    std::unique_lock state_lock(internal_state_mtx);
+    return owner_queries;
+}
 
 /** General algorithm:
   *   Step 1. Try the FastPath (for both Reads/Writes)
@@ -94,8 +99,7 @@ private:
   *
   * Note: "SM" in the commentaries below stands for STATE MODIFICATION
   */
-RWLock::LockHolder RWLock::getLock(
-    RWLock::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms)
+RWLock::LockHolder RWLock::getLock(RWLock::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms)
 {
     const auto lock_deadline_tp = (lock_timeout_ms == std::chrono::milliseconds(0))
         ? std::chrono::time_point<std::chrono::steady_clock>::max()
@@ -228,7 +232,7 @@ RWLock::LockHolder RWLock::getLock(
   */
 void RWLock::unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept
 {
-    std::lock_guard state_lock(internal_state_mtx);
+    std::unique_lock state_lock(internal_state_mtx);
 
     /// All of these are Undefined behavior and nothing we can do!
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())

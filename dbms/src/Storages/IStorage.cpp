@@ -15,13 +15,36 @@ RWLock::LockHolder IStorage::tryLockTimed(
     const RWLockPtr & rwlock, RWLock::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
-    if (!lock_holder)
+    if (unlikely(!lock_holder))
     {
+        std::stringstream ss;
+        constexpr size_t DROP_LOCK = 0;
+        constexpr size_t ALTER_LOCK = 1;
+        auto getQueries = [&](const size_t lock_type) -> void {
+            RWLock::OwnerQueryIds queries;
+            if (lock_type == DROP_LOCK)
+                queries = drop_lock->getQueryIds();
+            else
+                queries = alter_lock->getQueryIds();
+            ss << " queries on " << (lock_type == DROP_LOCK ? "drop" : "alter") << ":[";
+            bool is_first = true;
+            for (const auto & iter : queries)
+            {
+                ss << "[\"" << iter.first << "\"," << iter.second << "]" << (is_first ? "" : ",");
+                is_first = false;
+            }
+            ss << "]";
+        };
+
+        getQueries(DROP_LOCK);
+        getQueries(ALTER_LOCK);
+
         const String type_str = type == RWLock::Type::Read ? "READ" : "WRITE";
-        throw Exception(type_str + " locking attempt on \"" + getTableName() + "\" has timed out! ("
+        throw Exception(type_str + " locking attempt on \"" + getTableName() + "\" for " + query_id + " has timed out! ("
                 + std::to_string(acquire_timeout.count())
                 + "ms) "
-                  "Possible deadlock avoided. Client should retry.",
+                  "Possible deadlock avoided."
+                + ss.str(),
             ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;

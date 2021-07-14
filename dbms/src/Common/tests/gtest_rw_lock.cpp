@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <common/ThreadPool.h>
+#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -13,15 +14,15 @@
 #include <thread>
 
 
-using namespace DB;
+using namespace std::chrono_literals;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
 extern const int DEADLOCK_AVOIDED;
 }
-} // namespace DB
 
 
 TEST(Common, RWLock1)
@@ -216,6 +217,240 @@ TEST(Common, RWLockDeadlock)
     t4.join();
 }
 
+#define CURR_TEST_CASE_NAME ::testing::UnitTest::GetInstance()->current_test_info()->name()
+
+TEST(Common, RWLockReadWithSameIDNonBlock)
+{
+    auto log = &Poco::Logger::get(CURR_TEST_CASE_NAME);
+
+    auto lock1 = RWLock::create();
+    std::thread t_r1([&]() {
+        LOG_INFO(log, "r1 start");
+        auto holder = lock1->getLock(RWLock::Read, "q1");
+        LOG_INFO(log, "r1 acquire read lock");
+        std::this_thread::sleep_for(1000ms); // 1000ms
+        LOG_INFO(log, "r1 exit");
+    });
+
+    std::thread t_w1([&]() {
+        std::this_thread::sleep_for(10ms); // 10ms
+        LOG_INFO(log, "w1 start");
+        auto holder = lock1->getLock(RWLock::Write, "q2");
+        LOG_INFO(log, "w1 acquire write lock");
+        std::this_thread::sleep_for(600ms); // 800ms
+        LOG_INFO(log, "w1 exit");
+    });
+
+    std::atomic<bool> blocked = false;
+    std::thread t_r2([&]() {
+        std::this_thread::sleep_for(50ms); // 50ms
+        LOG_INFO(log, "r2 start");
+        // if we reuse "q1", the it will join the previouse read group
+        if (auto holder = lock1->getLock(RWLock::Read, "q1", 500ms); //
+            holder != nullptr)
+        {
+            LOG_INFO(log, "r2 acquire read lock & exit");
+            blocked = false;
+        }
+        else
+        {
+            LOG_INFO(log, "r2 timeout");
+            blocked = true;
+        }
+    });
+
+    t_r1.join();
+    t_w1.join();
+    t_r2.join();
+
+    ASSERT_FALSE(blocked.load());
+}
+
+TEST(Common, RWLockReadBlockByRead)
+{
+    auto log = &Poco::Logger::get(CURR_TEST_CASE_NAME);
+
+    auto lock1 = RWLock::create();
+    std::thread t_r1([&]() {
+        LOG_INFO(log, "r1 start");
+        auto holder = lock1->getLock(RWLock::Read, "q1");
+        LOG_INFO(log, "r1 acquire read lock");
+        std::this_thread::sleep_for(1000ms); // 1000ms
+        LOG_INFO(log, "r1 exit");
+    });
+
+    std::thread t_w1([&]() {
+        std::this_thread::sleep_for(10ms); // 10ms
+        LOG_INFO(log, "w1 start");
+        auto holder = lock1->getLock(RWLock::Write, "q2");
+        LOG_INFO(log, "w1 acquire write lock");
+        std::this_thread::sleep_for(600ms); // 800ms
+        LOG_INFO(log, "w1 exit");
+    });
+
+    std::atomic<bool> blocked = false;
+    std::thread t_r2([&]() {
+        std::this_thread::sleep_for(50ms); // 50ms
+        LOG_INFO(log, "r2 start");
+        // if we use "q3", then it will wait until these two lock released
+        // * the read lock on "q1"
+        // * the write lock on "q2"
+        if (auto holder = lock1->getLock(RWLock::Read, "q3", 500ms); //
+            holder != nullptr)
+        {
+            LOG_INFO(log, "r2 acquire read lock & exit");
+        }
+        else
+        {
+            LOG_INFO(log, "r2 timeout");
+            blocked = true;
+        }
+    });
+
+    t_r1.join();
+    t_w1.join();
+    t_r2.join();
+
+    ASSERT_TRUE(blocked.load());
+}
+
+TEST(Common, RWLockReadBlockByRead2)
+{
+    auto log = &Poco::Logger::get(CURR_TEST_CASE_NAME);
+
+    auto lock1 = RWLock::create();
+    std::thread t_r1([&]() {
+        LOG_INFO(log, "r1 start");
+        auto holder = lock1->getLock(RWLock::Read, "q1");
+        LOG_INFO(log, "r1 acquire read lock");
+        std::this_thread::sleep_for(1000ms); // 1000ms
+        LOG_INFO(log, "r1 exit");
+    });
+
+    std::atomic<bool> w1_timeout = false;
+    std::thread t_w1([&]() {
+        std::this_thread::sleep_for(10ms); // 10ms
+        LOG_INFO(log, "w1 start");
+        if (auto holder = lock1->getLock(RWLock::Write, "q2", 500ms); //
+            holder != nullptr)
+        {
+            w1_timeout = false;
+            LOG_INFO(log, "w1 acquire write lock & exit");
+        }
+        else
+        {
+            w1_timeout = true;
+            LOG_INFO(log, "w1 timeout");
+        }
+    });
+
+    std::atomic<bool> blocked = false;
+    std::thread t_r2([&]() {
+        std::this_thread::sleep_for(50ms); // 50ms
+        LOG_INFO(log, "r2 start");
+        // if we use "q3", then it will wait until these two lock released
+        // * the read lock on "q1"
+        // * the write lock on "q2"
+        // * even the write lock "q2" timeout, "q3" need to wait for "q1" finished
+        if (auto holder = lock1->getLock(RWLock::Read, "q3", 600ms); //
+            holder != nullptr)
+        {
+            blocked = false;
+            LOG_INFO(log, "r2 acquire read lock & exit");
+        }
+        else
+        {
+            blocked = true;
+            LOG_INFO(log, "r2 timeout");
+        }
+    });
+
+    t_r1.join();
+    t_w1.join();
+    t_r2.join();
+
+    ASSERT_TRUE(w1_timeout.load());
+    ASSERT_TRUE(blocked.load());
+}
+
+TEST(Common, RWLockReadRejoinWithMultReadGroups)
+{
+    auto log = &Poco::Logger::get(CURR_TEST_CASE_NAME);
+
+    auto lock1 = RWLock::create();
+    std::thread t_r1([&]() {
+        LOG_INFO(log, "r1 start");
+        auto holder = lock1->getLock(RWLock::Read, "q1");
+        LOG_INFO(log, "r1 acquire read lock");
+        std::this_thread::sleep_for(2000ms); // 2000ms
+        LOG_INFO(log, "r1 exit");
+    });
+
+    std::atomic<bool> w1_timeout = false;
+    std::thread t_w1([&]() {
+        std::this_thread::sleep_for(10ms); // 10ms
+        LOG_INFO(log, "w1 start");
+        if (auto holder = lock1->getLock(RWLock::Write, "q2", 500ms); //
+            holder != nullptr)
+        {
+            w1_timeout = false;
+            LOG_INFO(log, "w1 acquire write lock & exit");
+        }
+        else
+        {
+            w1_timeout = true;
+            LOG_INFO(log, "w1 timeout");
+        }
+    });
+
+    std::atomic<bool> blocked = false;
+    std::thread t_r2([&]() {
+        std::this_thread::sleep_for(50ms); // 50ms
+        LOG_INFO(log, "r2 start");
+        // if we use "q3", then it will wait until these two lock released
+        // * the read lock on "q1"
+        // * the write lock on "q2"
+        // * even the write lock "q2" timeout, "q3" need to wait for "q1" finished
+        if (auto holder = lock1->getLock(RWLock::Read, "q3", 600ms); //
+            holder != nullptr)
+        {
+            blocked = false;
+            LOG_INFO(log, "r2 acquire read lock & exit");
+        }
+        else
+        {
+            blocked = true;
+            LOG_INFO(log, "r2 timeout");
+        }
+    });
+
+    std::atomic<bool> r3_blocked = false;
+    std::thread t_r3([&]() {
+        std::this_thread::sleep_for(600ms); // 600ms
+        LOG_INFO(log, "r3 start");
+        // if we use "q4", then it will wait until "q1" lock released
+        if (auto holder = lock1->getLock(RWLock::Read, "q4", 600ms); //
+            holder != nullptr)
+        {
+            r3_blocked = false;
+            LOG_INFO(log, "r3 acquire read lock & exit");
+        }
+        else
+        {
+            r3_blocked = true;
+            LOG_INFO(log, "r3 timeout");
+        }
+    });
+
+    t_r1.join();
+    t_w1.join();
+    t_r2.join();
+    t_r3.join();
+
+    ASSERT_TRUE(w1_timeout.load());
+    ASSERT_TRUE(blocked.load());
+    ASSERT_TRUE(r3_blocked.load());
+}
 
 TEST(Common, RWLockPerfTestReaders)
 {
@@ -268,3 +503,5 @@ TEST(Common, RWLockPerfTestReaders)
         std::cout << "Threads " << pool_size << ", total_time " << std::setprecision(2) << total_time << "\n";
     }
 }
+
+} // namespace DB
