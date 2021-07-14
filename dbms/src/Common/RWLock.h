@@ -54,6 +54,9 @@ public:
     LockHolder getLock(
         Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms = std::chrono::milliseconds(0));
 
+    using OwnerQueryIds = std::unordered_map<String, size_t>;
+    OwnerQueryIds getQueryIds() const;
+
     /// Use as query_id to acquire a lock outside the query context.
     inline static const String NO_QUERY = String();
     inline static const auto default_locking_timeout_ms = std::chrono::milliseconds(120000);
@@ -72,7 +75,6 @@ private:
     };
 
     using GroupsContainer = std::list<Group>;
-    using OwnerQueryIds = std::unordered_map<String, size_t>;
 
 private:
     mutable std::mutex internal_state_mtx;

@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int TABLE_IS_DROPPED;
+extern const int DEADLOCK_AVOIDED;
 }
 
 template <typename TargetType>
@@ -103,13 +104,18 @@ bool shouldOptimizeTable(const TableID table_id, TMTContext & tmt, Logger * log,
         return false;
     try
     {
-        auto lock = storage->lockStructureForShare(RWLock::NO_QUERY);
+        auto lock = storage->lockStructureForShare(RWLock::NO_QUERY, std::chrono::milliseconds(1 * 1000));
     }
     catch (DB::Exception & e)
     {
         // We can ignore if storage is dropped.
         if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
             return false;
+        else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+        {
+            LOG_WARNING(log, "Check optimize table on table_id " << table_id << " is skipped, reason: " << e.displayText());
+            return false;
+        }
         else
             throw;
     }

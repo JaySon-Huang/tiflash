@@ -20,6 +20,7 @@ extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_TABLE;
 extern const int ILLFORMAT_RAFT_ROW;
 extern const int TABLE_IS_DROPPED;
+extern const int DEADLOCK_AVOIDED;
 } // namespace ErrorCodes
 
 RegionTable::Table & RegionTable::getOrCreateTable(const TableID table_id)
@@ -227,8 +228,10 @@ namespace
 {
 /// Remove obsolete data for table after data of `handle_range` is removed from this TiFlash node.
 /// Note that this function will try to acquire lock by `IStorage->lockForShare`
-void removeObsoleteDataInStorage(
-    Context * const context, const TableID table_id, const std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> & handle_range)
+void removeObsoleteDataInStorage(Context * const context,
+    const TableID table_id,
+    const std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> & handle_range,
+    Poco::Logger * log)
 {
     TMTContext & tmt = context->getTMTContext();
     auto storage = tmt.getStorages().get(table_id);
@@ -236,26 +239,38 @@ void removeObsoleteDataInStorage(
     if (!storage || storage->engineType() != TiDB::StorageEngine::DT)
         return;
 
-    try
+    while (true)
     {
-        // Acquire a `drop_lock` so that no other threads can drop the `storage`
-        auto storage_lock = storage->lockForShare(getThreadName());
+        try
+        {
+            // Acquire a `drop_lock` so that no other threads can drop the `storage`
+            auto storage_lock = storage->lockForShare(getThreadName(), std::chrono::milliseconds(500));
 
-        auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
-        if (dm_storage == nullptr)
+            auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
+            if (dm_storage == nullptr)
+                return;
+
+            /// Now we assume that these won't block for long time.
+            auto rowkey_range = DM::RowKeyRange::fromRegionRange(
+                handle_range, table_id, table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
+            dm_storage->deleteRange(rowkey_range, context->getSettingsRef());
+            dm_storage->flushCache(*context, rowkey_range); // flush to disk
             return;
-
-        /// Now we assume that these won't block for long time.
-        auto rowkey_range
-            = DM::RowKeyRange::fromRegionRange(handle_range, table_id, table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
-        dm_storage->deleteRange(rowkey_range, context->getSettingsRef());
-        dm_storage->flushCache(*context, rowkey_range); // flush to disk
-    }
-    catch (DB::Exception & e)
-    {
-        // We can ignore if the storage is already dropped.
-        if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
-            throw;
+        }
+        catch (DB::Exception & e)
+        {
+            // We can ignore if the storage is already dropped.
+            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                return;
+            else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+            {
+                LOG_WARNING(
+                    log, __FUNCTION__ << ": timed out, try again to write delete range on table " << table_id << ", " << e.displayText());
+                continue;
+            }
+            else
+                throw;
+        }
     }
 }
 } // namespace
@@ -302,7 +317,7 @@ void RegionTable::removeRegion(const RegionID region_id, bool remove_data, const
         // But caller(KVStore) should ensure that no new data write into this handle_range
         // before `removeObsoleteDataInStorage` is done. (by param `RegionTaskLock`)
         // And this is expected not to block for long time.
-        removeObsoleteDataInStorage(context, table_id, handle_range);
+        removeObsoleteDataInStorage(context, table_id, handle_range, log);
         LOG_INFO(log, __FUNCTION__ << ": remove region [" << region_id << "] in storage done");
     }
 }
