@@ -104,7 +104,7 @@ bool shouldOptimizeTable(const TableID table_id, TMTContext & tmt, Logger * log,
         return false;
     try
     {
-        auto lock = storage->lockStructureForShare(RWLock::NO_QUERY, std::chrono::milliseconds(1 * 1000));
+        auto lock = storage->lockStructureForShare(RWLock::NO_QUERY, std::chrono::milliseconds(1000));
     }
     catch (DB::Exception & e)
     {

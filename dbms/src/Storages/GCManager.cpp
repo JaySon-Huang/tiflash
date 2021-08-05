@@ -46,7 +46,7 @@ bool GCManager::work()
 
         try
         {
-            TableLockHolder table_read_lock = storage->lockForShare(RWLock::NO_QUERY);
+            TableLockHolder table_read_lock = storage->lockForShare(RWLock::NO_QUERY, std::chrono::milliseconds(500));
             // Block this thread and do GC on the storage
             // It is OK if any schema changes is apply to the storage while doing GC, so we
             // do not acquire structure lock on the storage.

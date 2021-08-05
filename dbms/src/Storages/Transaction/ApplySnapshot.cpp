@@ -37,6 +37,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int TABLE_IS_DROPPED;
 extern const int REGION_DATA_SCHEMA_UPDATED;
+extern const int DEADLOCK_AVOIDED;
 } // namespace ErrorCodes
 
 template <typename RegionPtrWrap>
@@ -146,15 +147,16 @@ void KVStore::onSnapshot(const RegionPtrWrap & new_region_wrap, RegionPtr old_re
 {
     RegionID region_id = new_region_wrap->id();
 
+    auto table_id = new_region_wrap->getMappedTableID();
+    if (auto storage = tmt.getStorages().get(table_id); storage && storage->engineType() == TiDB::StorageEngine::DT)
     {
-        auto table_id = new_region_wrap->getMappedTableID();
-        if (auto storage = tmt.getStorages().get(table_id); storage && storage->engineType() == TiDB::StorageEngine::DT)
+        auto & context = tmt.getContext();
+        while (true)
         {
             try
             {
-                auto & context = tmt.getContext();
                 // Acquire `drop_lock` so that no other threads can drop the storage. `alter_lock` is not required.
-                auto table_lock = storage->lockForShare(getThreadName());
+                auto table_lock = storage->lockForShare(getThreadName(), std::chrono::milliseconds(500));
                 auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
                 auto key_range = DM::RowKeyRange::fromRegionRange(
                     new_region_wrap->getRange(), table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
@@ -171,9 +173,18 @@ void KVStore::onSnapshot(const RegionPtrWrap & new_region_wrap, RegionPtr old_re
             }
             catch (DB::Exception & e)
             {
-                // We can ignore if storage is dropped.
-                if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
-                    throw;
+                // We can ignore if the storage has been physically dropped.
+                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                    return;
+                else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(log,
+                        __FUNCTION__ << ": timed out, try again to ingestSST on table " << table_id << " " << new_region_wrap->toString()
+                                     << " error:" << e.displayText());
+                    continue;
+                }
+                // other Exception, throw
+                throw;
             }
         }
     }
@@ -582,24 +593,35 @@ RegionPtr KVStore::handleIngestSSTByDTFile(const RegionPtr & region, const SSTVi
         {
             // Ingest DTFiles into DeltaMerge storage
             auto & context = tmt.getContext();
-            try
+            while (true)
             {
-                // Acquire `drop_lock` so that no other threads can drop the storage. `alter_lock` is not required.
-                auto table_lock = storage->lockForShare(getThreadName());
-                auto key_range = DM::RowKeyRange::fromRegionRange(
-                    region->getRange(), table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
-                // Call `ingestFiles` to ingest external DTFiles.
-                // Note that ingest sst won't remove the data in the key range
-                auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
-                dm_storage->ingestFiles(key_range, ingest_ids, /*clear_data_in_range=*/false, context.getSettingsRef());
-            }
-            catch (DB::Exception & e)
-            {
-                // We can ignore if storage is dropped.
-                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                    return nullptr;
-                else
-                    throw;
+                try
+                {
+                    // Acquire `drop_lock` so that no other threads can drop the storage. `alter_lock` is not required.
+                    auto table_lock = storage->lockForShare(getThreadName(), std::chrono::milliseconds(500));
+                    auto key_range = DM::RowKeyRange::fromRegionRange(
+                        region->getRange(), table_id, storage->isCommonHandle(), storage->getRowKeyColumnSize());
+                    // Call `ingestFiles` to ingest external DTFiles.
+                    // Note that ingest sst won't remove the data in the key range
+                    auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
+                    dm_storage->ingestFiles(key_range, ingest_ids, /*clear_data_in_range=*/false, context.getSettingsRef());
+                    break;
+                }
+                catch (DB::Exception & e)
+                {
+                    // We can ignore if storage is dropped.
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        return nullptr;
+                    else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                    {
+                        LOG_WARNING(log,
+                            __FUNCTION__ << ": timed out, try again to ingestSST on table " << table_id << " " << region->toString()
+                                         << " error:" << e.displayText());
+                        continue;
+                    }
+                    else
+                        throw;
+                }
             }
         }
     }

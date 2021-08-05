@@ -114,7 +114,7 @@ void tryOptimizeStorageFinal(Context & context, TableID table_id)
 
     try
     {
-        auto table_lock = managed_storage->lockStructureForShare(RWLock::NO_QUERY, std::chrono::milliseconds(1 * 1000));
+        auto table_lock = managed_storage->lockStructureForShare(RWLock::NO_QUERY, std::chrono::milliseconds(1000));
     }
     catch (DB::Exception & e)
     {

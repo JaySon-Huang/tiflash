@@ -34,6 +34,7 @@ extern const int LOGICAL_ERROR;
 extern const int REGION_DATA_SCHEMA_UPDATED;
 extern const int ILLFORMAT_RAFT_ROW;
 extern const int TABLE_IS_DROPPED;
+extern const int DEADLOCK_AVOIDED;
 } // namespace ErrorCodes
 
 
@@ -60,17 +61,28 @@ static void writeRegionDataToStorage(
 
         /// Get a structure read lock throughout decode, during which schema must not change.
         TableStructureLockHolder lock;
-        try
+        while (true)
         {
-            lock = storage->lockStructureForShare(getThreadName());
-        }
-        catch (DB::Exception & e)
-        {
-            // If the storage is physical dropped (but not removed from `ManagedStorages`) when we want to write raft data into it, consider the write done.
-            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                return true;
-            else
-                throw;
+            try
+            {
+                lock = storage->lockStructureForShare(getThreadName(), std::chrono::milliseconds(100));
+                break;
+            }
+            catch (DB::Exception & e)
+            {
+                // If the storage is physical dropped (but not removed from `ManagedStorages`) when we want to write raft data into it, consider the write done.
+                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                    return true;
+                else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(log,
+                        __PRETTY_FUNCTION__ << ": timed out, try again to write data on table " << table_id << " " << region->toString()
+                                            << " error:" << e.displayText());
+                    continue;
+                }
+                else
+                    throw;
+            }
         }
 
         Block block;
@@ -437,17 +449,28 @@ RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & regio
 
         /// Get a structure read lock throughout decode, during which schema must not change.
         TableStructureLockHolder lock;
-        try
+        while (true)
         {
-            lock = storage->lockStructureForShare(getThreadName());
-        }
-        catch (DB::Exception & e)
-        {
-            // If the storage is physical dropped (but not removed from `ManagedStorages`) when we want to decode snapshot, consider the decode done.
-            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                return true;
-            else
-                throw;
+            try
+            {
+                lock = storage->lockStructureForShare(getThreadName(), std::chrono::milliseconds(100));
+                break;
+            }
+            catch (DB::Exception & e)
+            {
+                // If the storage is physical dropped (but not removed from `ManagedStorages`) when we want to decode snapshot, consider the decode done.
+                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                    return true;
+                else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(&Logger::get(__PRETTY_FUNCTION__),
+                        "timed out, try again to predecode data on table " << table_id << " " << region->toString()
+                                                                           << " error:" << e.displayText());
+                    continue;
+                }
+                else
+                    throw;
+            }
         }
         auto reader = RegionBlockReader(storage);
         auto [block, ok] = reader.read(*data_list_read, force_decode);
@@ -500,7 +523,27 @@ AtomicGetStorageSchema(const RegionPtr & region, TMTContext & tmt)
         }
         // Get a structure read lock. It will throw exception if the table has been dropped,
         // the caller should handle this situation.
-        auto table_lock = storage->lockStructureForShare(getThreadName());
+        TableStructureLockHolder table_lock;
+        while (true)
+        {
+            try
+            {
+                table_lock = storage->lockStructureForShare(getThreadName(), std::chrono::milliseconds(100));
+                break;
+            }
+            catch (DB::Exception & e)
+            {
+                if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(&Logger::get(__PRETTY_FUNCTION__),
+                        "timed out, try again to get storage schema on table " << table_id << " " << region->toString()
+                                                                               << ", error:" << e.displayText());
+                    continue;
+                }
+                // if the table has been dropped, the caller should handle this situation.
+                throw;
+            }
+        }
         schema_snapshot.is_common_handle = storage->isCommonHandle();
         schema_snapshot.table_info = storage->getTableInfo();
         schema_snapshot.columns = storage->getColumns();

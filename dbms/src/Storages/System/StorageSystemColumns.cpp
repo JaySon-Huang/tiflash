@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int TABLE_IS_DROPPED;
+extern const int DEADLOCK_AVOIDED;
 } // namespace ErrorCodes
 
 StorageSystemColumns::StorageSystemColumns(const std::string & name_) : name(name_)
@@ -122,7 +123,7 @@ BlockInputStreams StorageSystemColumns::read(const Names & column_names,
 
             try
             {
-                table_lock = storage->lockStructureForShare(context.getCurrentQueryId());
+                table_lock = storage->lockStructureForShare(context.getCurrentQueryId(), std::chrono::milliseconds(500));
             }
             catch (const Exception & e)
             {
@@ -133,6 +134,12 @@ BlockInputStreams StorageSystemColumns::read(const Names & column_names,
                   */
                 if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
                     continue;
+                else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(&Poco::Logger::get("StorageSystemColumns"),
+                        __FUNCTION__ << ": timed out on table `" << database_name << "`.`" << table_name << "` " << e.displayText());
+                    continue;
+                }
                 else
                     throw;
             }

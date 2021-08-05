@@ -247,7 +247,7 @@ void removeObsoleteDataInStorage(Context * const context,
             auto storage_lock = storage->lockForShare(getThreadName(), std::chrono::milliseconds(500));
 
             auto dm_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
-            if (dm_storage == nullptr)
+            if (unlikely(dm_storage == nullptr))
                 return;
 
             /// Now we assume that these won't block for long time.

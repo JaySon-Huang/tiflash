@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int TABLE_IS_DROPPED;
+extern const int DEADLOCK_AVOIDED;
 } // namespace ErrorCodes
 
 KVStore::KVStore(Context & context, TiDB::SnapshotApplyMethod snapshot_apply_method_)
@@ -107,19 +108,32 @@ void KVStore::tryFlushRegionCacheInStorage(TMTContext & tmt, const Region & regi
             return;
         }
 
-        try
+        while (true)
         {
-            // Acquire `drop_lock` so that no other threads can drop the storage during `flushCache`. `alter_lock` is not required.
-            auto storage_lock = storage->lockForShare(getThreadName());
-            auto rowkey_range = DM::RowKeyRange::fromRegionRange(
-                region.getRange(), region.getRange()->getMappedTableID(), storage->isCommonHandle(), storage->getRowKeyColumnSize());
-            storage->flushCache(tmt.getContext(), rowkey_range);
-        }
-        catch (DB::Exception & e)
-        {
-            // We can ignore if storage is already dropped.
-            if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
+            try
+            {
+                // Acquire `drop_lock` so that no other threads can drop the storage during `flushCache`. `alter_lock` is not required.
+                auto storage_lock = storage->lockForShare(getThreadName(), std::chrono::milliseconds(100));
+                auto rowkey_range = DM::RowKeyRange::fromRegionRange(
+                    region.getRange(), region.getRange()->getMappedTableID(), storage->isCommonHandle(), storage->getRowKeyColumnSize());
+                storage->flushCache(tmt.getContext(), rowkey_range);
+                break;
+            }
+            catch (DB::Exception & e)
+            {
+                // We can ignore if storage is already dropped.
+                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                    return;
+                else if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                {
+                    LOG_WARNING(log,
+                        __FUNCTION__ << ": timed out, try again to flush region cache on table " << table_id << " " << region.toString()
+                                     << " error:" << e.displayText());
+                    continue;
+                }
+                // other Exception, throw
                 throw;
+            }
         }
     }
 }
