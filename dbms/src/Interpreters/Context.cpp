@@ -1520,10 +1520,10 @@ void Context::createTMTContext(const TiFlashRaftConfig & raft_config, pingcap::C
     shared->tmt_context = std::make_shared<TMTContext>(*this, raft_config, cluster_config);
 }
 
-void Context::initializePathCapacityMetric( //
-    size_t global_capacity_quota, //
+void Context::initializePathCapacityMetric(
+    size_t global_capacity_quota,
     const Strings & main_data_paths,
-    const std::vector<size_t> & main_capacity_quota, //
+    const std::vector<size_t> & main_capacity_quota,
     const Strings & latest_data_paths,
     const std::vector<size_t> & latest_capacity_quota)
 {

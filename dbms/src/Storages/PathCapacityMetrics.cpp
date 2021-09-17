@@ -6,6 +6,7 @@
 #include <Storages/PathCapacityMetrics.h>
 #include <Storages/Transaction/ProxyFFI.h>
 #include <common/logger_useful.h>
+#include <fmt/format.h>
 #include <sys/statvfs.h>
 
 #include <map>
@@ -21,16 +22,21 @@ extern const Metric StoreSizeUsed;
 
 namespace DB
 {
-
-inline size_t safeGetQuota(const std::vector<size_t> & quotas, size_t idx) { return idx < quotas.size() ? quotas[idx] : 0; }
-
-PathCapacityMetrics::PathCapacityMetrics(                                        //
-    const size_t capacity_quota_,                                                // will be ignored if `main_capacity_quota` is not empty
-    const Strings & main_paths_, const std::vector<size_t> main_capacity_quota_, //
-    const Strings & latest_paths_, const std::vector<size_t> latest_capacity_quota_)
-    : capacity_quota(capacity_quota_), log(&Poco::Logger::get("PathCapacityMetrics"))
+inline size_t safeGetQuota(const std::vector<size_t> & quotas, size_t idx)
 {
-    if (main_capacity_quota_.empty())
+    return idx < quotas.size() ? quotas[idx] : 0;
+}
+
+PathCapacityMetrics::PathCapacityMetrics(
+    const size_t capacity_quota_, // will be ignored if `main_capacity_quota` is not empty
+    const Strings & main_paths_,
+    const std::vector<size_t> main_capacity_quota_,
+    const Strings & latest_paths_,
+    const std::vector<size_t> latest_capacity_quota_)
+    : capacity_quota(capacity_quota_)
+    , log(&Poco::Logger::get("PathCapacityMetrics"))
+{
+    if (!main_capacity_quota_.empty())
     {
         // The `capacity_quota_` is left for backward compatibility.
         // If `main_capacity_quota_` is not empty, use the capacity for each path instead of global capacity.
@@ -95,12 +101,12 @@ void PathCapacityMetrics::freeUsedSize(std::string_view file_path, size_t used_b
 std::map<FSID, DiskCapacity> PathCapacityMetrics::getDiskStats()
 {
     std::map<FSID, DiskCapacity> disk_stats_map;
-    for (size_t i = 0; i < path_infos.size(); ++i)
+    for (const auto & path_info : path_infos)
     {
         struct statvfs vfs;
         FsStats path_stat;
 
-        std::tie(path_stat, vfs) = path_infos[i].getStats(log);
+        std::tie(path_stat, vfs) = path_info.getStats(log);
         if (!path_stat.ok)
         {
             // Disk may be hot remove, Ignore this disk.
@@ -171,10 +177,13 @@ FsStats PathCapacityMetrics::getFsStats()
     // Default threshold "schedule.low-space-ratio" in PD is 0.8, log warning message if avail ratio is low.
     if (avail_rate <= 0.2)
         LOG_WARNING(log,
-            "Available space is only " << DB::toString(avail_rate * 100.0, 2)
-                                       << "% of capacity size. Avail size: " << formatReadableSizeWithBinarySuffix(total_stat.avail_size)
-                                       << ", used size: " << formatReadableSizeWithBinarySuffix(total_stat.used_size)
-                                       << ", capacity size: " << formatReadableSizeWithBinarySuffix(total_stat.capacity_size));
+                    fmt::format(
+                        "Available space is only {:.2f}% of capacity size."
+                        " Avail size: {}, used size: {}, capacity size: {}",
+                        avail_rate * 100.0,
+                        formatReadableSizeWithBinarySuffix(total_stat.avail_size),
+                        formatReadableSizeWithBinarySuffix(total_stat.used_size),
+                        formatReadableSizeWithBinarySuffix(total_stat.capacity_size)));
     total_stat.ok = 1;
 
     CurrentMetrics::set(CurrentMetrics::StoreSizeCapacity, total_stat.capacity_size);
@@ -260,8 +269,11 @@ std::tuple<FsStats, struct statvfs> PathCapacityMetrics::CapacityInfo::getStats(
         avail = capacity - res.used_size;
     else if (log)
         LOG_WARNING(log,
-            "No available space for path: " << path << ", capacity: " << formatReadableSizeWithBinarySuffix(capacity) //
-                                            << ", used: " << formatReadableSizeWithBinarySuffix(used_bytes));
+                    fmt::format(
+                        "No available space for path: {}, capacity: {}, used: {}",
+                        path,
+                        formatReadableSizeWithBinarySuffix(capacity),
+                        formatReadableSizeWithBinarySuffix(used_bytes)));
 
     const uint64_t disk_free_bytes = vfs.f_bavail * vfs.f_frsize;
     if (avail > disk_free_bytes)

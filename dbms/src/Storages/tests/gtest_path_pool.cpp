@@ -12,11 +12,12 @@ namespace DB
 {
 namespace tests
 {
-
 class PathPool_test : public ::testing::Test
 {
 public:
-    PathPool_test() : log(&Poco::Logger::get("PathPool_test")) {}
+    PathPool_test()
+        : log(&Poco::Logger::get("PathPool_test"))
+    {}
 
     static void SetUpTestCase() {}
 
@@ -326,8 +327,12 @@ CATCH
 class MockPathCapacityMetrics : public PathCapacityMetrics
 {
 public:
-    MockPathCapacityMetrics(const size_t capacity_quota_, const Strings & main_paths_, const std::vector<size_t> main_capacity_quota_, //
-        const Strings & latest_paths_, const std::vector<size_t> latest_capacity_quota_)
+    MockPathCapacityMetrics(
+        const size_t capacity_quota_,
+        const Strings & main_paths_,
+        const std::vector<size_t> main_capacity_quota_,
+        const Strings & latest_paths_,
+        const std::vector<size_t> latest_capacity_quota_)
         : PathCapacityMetrics(capacity_quota_, main_paths_, main_capacity_quota_, latest_paths_, latest_capacity_quota_)
     {}
 
@@ -339,7 +344,7 @@ private:
     std::map<FSID, DiskCapacity> disk_stats_map;
 };
 
-class PathCapcatity : public DB::base::TiFlashStorageTestBasic
+class PathCapcatityTest : public DB::base::TiFlashStorageTestBasic
 {
     void SetUp() override
     {
@@ -369,7 +374,44 @@ protected:
     std::string lastest_data_path;
 };
 
-TEST_F(PathCapcatity, SingleDiskSinglePathTest)
+TEST_F(PathCapcatityTest, Quota)
+{
+    constexpr size_t mb = 1024 * 1024;
+    constexpr size_t gb = 1024 * mb;
+    size_t total_quota = 5 * gb;
+    auto capacity = PathCapacityMetrics(total_quota, {main_data_path}, {}, {lastest_data_path}, {});
+    {
+        auto stats = capacity.getFsStats();
+        ASSERT_EQ(stats.capacity_size, total_quota);
+        ASSERT_EQ(stats.avail_size, total_quota);
+    }
+
+    {
+        capacity.addUsedSize(main_data_path, 3 * gb);
+        capacity.addUsedSize(lastest_data_path, 1 * gb);
+        auto stats = capacity.getFsStats();
+        ASSERT_EQ(stats.capacity_size, total_quota);
+        ASSERT_EQ(stats.used_size, 4 * gb);
+        ASSERT_EQ(stats.avail_size, 1 * gb);
+
+        capacity.freeUsedSize(main_data_path, 3 * gb);
+        capacity.freeUsedSize(lastest_data_path, 1 * gb);
+    }
+
+    {
+        capacity.addUsedSize(main_data_path, 3 * gb);
+        capacity.addUsedSize(lastest_data_path, 3 * gb);
+        auto stats = capacity.getFsStats();
+        ASSERT_EQ(stats.capacity_size, total_quota);
+        ASSERT_EQ(stats.used_size, 6 * gb);
+        ASSERT_EQ(stats.avail_size, 0);
+
+        capacity.freeUsedSize(main_data_path, 3 * gb);
+        capacity.freeUsedSize(lastest_data_path, 3 * gb);
+    }
+}
+
+TEST_F(PathCapcatityTest, SingleDiskSinglePathTest)
 {
     size_t capactity = 100;
     size_t used = 10;
@@ -405,8 +447,7 @@ TEST_F(PathCapcatity, SingleDiskSinglePathTest)
         createIfNotExist(lastest_data_path1);
 
         // Not use the capacity limit
-        auto capacity = PathCapacityMetrics(0, {main_data_path, main_data_path1}, {capactity * 2, capactity * 2},
-            {lastest_data_path, lastest_data_path1}, {capactity, capactity});
+        auto capacity = PathCapacityMetrics(0, {main_data_path, main_data_path1}, {capactity * 2, capactity * 2}, {lastest_data_path, lastest_data_path1}, {capactity, capactity});
 
         capacity.addUsedSize(main_data_path, used);
         capacity.addUsedSize(main_data_path1, used);
@@ -422,7 +463,7 @@ TEST_F(PathCapcatity, SingleDiskSinglePathTest)
     }
 }
 
-TEST_F(PathCapcatity, MultiDiskMultiPathTest)
+TEST_F(PathCapcatityTest, MultiDiskMultiPathTest)
 {
     MockPathCapacityMetrics capacity = MockPathCapacityMetrics(0, {main_data_path}, {100}, {lastest_data_path}, {100});
 
@@ -446,7 +487,8 @@ TEST_F(PathCapcatity, MultiDiskMultiPathTest)
     fake_vfs.f_bavail = 50;
     fake_vfs.f_frsize = 1;
 
-    disk_capacity_map[100] = {.vfs_info = fake_vfs,
+    disk_capacity_map[100] = {
+        .vfs_info = fake_vfs,
         .path_stats = {
             {.used_size = 4, .avail_size = 50, .capacity_size = 100, .ok = 1},
             {.used_size = 12, .avail_size = 50, .capacity_size = 1000, .ok = 1},
@@ -470,7 +512,8 @@ TEST_F(PathCapcatity, MultiDiskMultiPathTest)
     ///             - capacity size : 50
     ///             - used size     : 12
     ///             - avail size    : 38  // min(capacity size - used size, disk avail size);
-    disk_capacity_map[101] = {.vfs_info = fake_vfs,
+    disk_capacity_map[101] = {
+        .vfs_info = fake_vfs,
         .path_stats = {
             {.used_size = 40, .avail_size = 8, .capacity_size = 48, .ok = 1},
             {.used_size = 12, .avail_size = 38, .capacity_size = 50, .ok = 1},
