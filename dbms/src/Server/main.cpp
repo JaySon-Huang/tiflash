@@ -81,7 +81,7 @@ int mainExportError(int argc, char ** argv)
     {
         // RAII
         DB::ErrorExporter exporter(wb);
-        for (auto error : all_errors)
+        for (const auto & error : all_errors)
         {
             exporter.writeError(error);
         }
@@ -91,7 +91,6 @@ int mainExportError(int argc, char ** argv)
 
 namespace
 {
-
 using MainFunc = int (*)(int, char **);
 
 
@@ -113,16 +112,20 @@ std::pair<const char *, MainFunc> clickhouse_applications[] = {
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
 #if ENABLE_CLICKHOUSE_TOOLS
-    {"extract-from-config", mainEntryClickHouseExtractFromConfig}, {"compressor", mainEntryClickHouseCompressor},
+    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+    {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
 #endif
 #if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
 #endif
 #if USE_EMBEDDED_COMPILER
-    {"clang", mainEntryClickHouseClang}, {"clang++", mainEntryClickHouseClang}, {"lld", mainEntryClickHouseLLD},
+    {"clang", mainEntryClickHouseClang},
+    {"clang++", mainEntryClickHouseClang},
+    {"lld", mainEntryClickHouseLLD},
 #endif
-    {"version", mainEntryVersion}, {"errgen", mainExportError}};
+    {"version", mainEntryVersion},
+    {"errgen", mainExportError}};
 
 
 int printHelp(int, char **)
