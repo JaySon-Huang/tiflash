@@ -249,7 +249,8 @@ public:
     enum Signals : int
     {
         StdTerminate = -1,
-        StopThread = -2
+        StopThread = -2,
+        SanitizerTrap = -3,
     };
 
     explicit SignalListener(BaseDaemon & daemon_)
@@ -299,13 +300,25 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
+                StackTrace stack_trace(NoCapture{});
                 ThreadNumber thread_num;
+                std::string query_id;
+                // DB::ThreadStatus * thread_ptr = nullptr; // TODO: 
 
-                DB::readPODBinary(info, in);
-                DB::readPODBinary(context, in);
+                if (sig != SanitizerTrap)
+                {
+                    DB::readPODBinary(info, in);
+                    DB::readPODBinary(context, in);
+                }
+
+                DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
+                DB::readBinary(query_id, in);
+                // DB::readPODBinary(thread_ptr, in);
 
-                onFault(sig, info, context, thread_num);
+                /// This allows to receive more signals if failure happens inside onFault function.
+                /// Example: segfault while symbolizing stack trace.
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
             }
         }
     }
@@ -320,232 +333,100 @@ private:
         LOG_ERROR(log, "(from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
+    void onFault(
+        int sig,
+        const siginfo_t & info,
+        const ucontext_t & context,
+        const StackTrace & stack_trace,
+        UInt32 thread_num,
+        const std::string & query_id) const
     {
+        // DB::ThreadStatus thread_status;
+
+        /// Send logs from this thread to client if possible.
+        /// It will allow client to see failure messages directly.
+        if (thread_ptr)
+        {
+            if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+                DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+        }
+
         LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(from thread " << thread_num << ") "
-                                       << "Received signal " << strsignal(sig) << " (" << sig << ")"
-                                       << ".");
 
-        void * caller_address = nullptr;
-
-#if defined(__x86_64__)
-/// Get the address at the time the signal was raised from the RIP (x86-64)
-#if defined(__FreeBSD__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-#elif defined(__APPLE__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
-#else
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
-        auto err_mask = context.uc_mcontext.gregs[REG_ERR];
-#endif
-#elif defined(__aarch64__)
-#if defined(__arm64__) || defined(__arm64) /// Apple arm cpu
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
-#else /// arm server
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
-#endif
-#endif
-
-        switch (sig)
+        if (query_id.empty())
         {
-        case SIGSEGV:
+            LOG_ERROR(log, fmt::format("(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})", VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, strsignal(sig), sig));
+        }
+        else
         {
-            /// Print info about address and reason.
-            if (nullptr == info.si_addr)
-                LOG_ERROR(log, "Address: NULL pointer.");
-            else
-                LOG_ERROR(log, "Address: " << info.si_addr);
-
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
-            if ((err_mask & 0x02))
-                LOG_ERROR(log, "Access: write.");
-            else
-                LOG_ERROR(log, "Access: read.");
-#endif
-
-            switch (info.si_code)
-            {
-            case SEGV_ACCERR:
-                LOG_ERROR(log, "Attempted access has violated the permissions assigned to the memory area.");
-                break;
-            case SEGV_MAPERR:
-                LOG_ERROR(log, "Address not mapped to object.");
-                break;
-            default:
-                LOG_ERROR(log, "Unknown si_code.");
-                break;
-            }
-            break;
+            LOG_ERROR(log, fmt::format("(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})", VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, query_id, strsignal(sig), sig));
         }
 
-        case SIGBUS:
+        String error_message;
+
+        if (sig != SanitizerTrap)
+            error_message = signalToErrorMessage(sig, info, context);
+        else
+            error_message = "Sanitizer trap.";
+
+        LOG_ERROR(log, error_message);
+
+        if (stack_trace.getSize())
         {
-            switch (info.si_code)
-            {
-            case BUS_ADRALN:
-                LOG_ERROR(log, "Invalid address alignment.");
-                break;
-            case BUS_ADRERR:
-                LOG_ERROR(log, "Non-existant physical address.");
-                break;
-            case BUS_OBJERR:
-                LOG_ERROR(log, "Object specific hardware error.");
-                break;
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
 
-                // Linux specific
-#if defined(BUS_MCEERR_AR)
-            case BUS_MCEERR_AR:
-                LOG_ERROR(log, "Hardware memory error: action required.");
-                break;
-#endif
-#if defined(BUS_MCEERR_AO)
-            case BUS_MCEERR_AO:
-                LOG_ERROR(log, "Hardware memory error: action optional.");
-                break;
-#endif
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
-            default:
-                LOG_ERROR(log, "Unknown si_code.");
-                break;
-            }
-            break;
+            LOG_ERROR(log, bare_stacktrace.str());
         }
 
-        case SIGILL:
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_ERROR(log, s); });
+
+#if defined(OS_LINUX)
+        /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+        if (daemon.stored_binary_hash.empty())
         {
-            switch (info.si_code)
-            {
-            case ILL_ILLOPC:
-                LOG_ERROR(log, "Illegal opcode.");
-                break;
-            case ILL_ILLOPN:
-                LOG_ERROR(log, "Illegal operand.");
-                break;
-            case ILL_ILLADR:
-                LOG_ERROR(log, "Illegal addressing mode.");
-                break;
-            case ILL_ILLTRP:
-                LOG_ERROR(log, "Illegal trap.");
-                break;
-            case ILL_PRVOPC:
-                LOG_ERROR(log, "Privileged opcode.");
-                break;
-            case ILL_PRVREG:
-                LOG_ERROR(log, "Privileged register.");
-                break;
-            case ILL_COPROC:
-                LOG_ERROR(log, "Coprocessor error.");
-                break;
-            case ILL_BADSTK:
-                LOG_ERROR(log, "Internal stack error.");
-                break;
-            default:
-                LOG_ERROR(log, "Unknown si_code.");
-                break;
-            }
-            break;
+            LOG_ERROR(log, "Calculated checksum of the binary: {}."
+                           " There is no information about the reference checksum.",
+                      calculated_binary_hash);
         }
-
-        case SIGFPE:
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
         {
-            switch (info.si_code)
-            {
-            case FPE_INTDIV:
-                LOG_ERROR(log, "Integer divide by zero.");
-                break;
-            case FPE_INTOVF:
-                LOG_ERROR(log, "Integer overflow.");
-                break;
-            case FPE_FLTDIV:
-                LOG_ERROR(log, "Floating point divide by zero.");
-                break;
-            case FPE_FLTOVF:
-                LOG_ERROR(log, "Floating point overflow.");
-                break;
-            case FPE_FLTUND:
-                LOG_ERROR(log, "Floating point underflow.");
-                break;
-            case FPE_FLTRES:
-                LOG_ERROR(log, "Floating point inexact result.");
-                break;
-            case FPE_FLTINV:
-                LOG_ERROR(log, "Floating point invalid operation.");
-                break;
-            case FPE_FLTSUB:
-                LOG_ERROR(log, "Subscript out of range.");
-                break;
-            default:
-                LOG_ERROR(log, "Unknown si_code.");
-                break;
-            }
-            break;
+            LOG_ERROR(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
         }
+        else
+        {
+            LOG_ERROR(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                           " to the reference checksum stored in the binary ({1})."
+                           " It may indicate one of the following:"
+                           " - the file was changed just after startup;"
+                           " - the file is damaged on disk due to faulty hardware;"
+                           " - the loaded executable is damaged in memory due to faulty hardware;"
+                           " - the file was intentionally modified;"
+                           " - logical error in code.",
+                      calculated_binary_hash,
+                      daemon.stored_binary_hash);
         }
-
-        if (already_printed_stack_trace)
-            return;
-
-        static const int max_frames = 50;
-        void * frames[max_frames];
-
-#if USE_UNWIND
-        int frames_size = backtraceLibUnwind(frames, max_frames, context);
-
-        if (frames_size)
-        {
-#else
-        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
-        /// So at least print the function where the signal happened.
-        if (caller_address)
-        {
-            frames[0] = caller_address;
-            int frames_size = 1;
 #endif
 
-            char ** symbols = backtrace_symbols(frames, frames_size);
+        /// Write crash to system.crash_log table if available.
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
 
-            if (!symbols)
-            {
-                if (caller_address)
-                    LOG_ERROR(log, "Caller address: " << caller_address);
-            }
-            else
-            {
-                for (int i = 0; i < frames_size; ++i)
-                {
-                    /// Perform demangling of names. Name is in parentheses, before '+' character.
+        /// Send crash report to developers (if configured)
+        if (sig != SanitizerTrap)
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
-                    char * name_start = nullptr;
-                    char * name_end = nullptr;
-                    char * demangled_name = nullptr;
-                    int status = 0;
-
-                    if (nullptr != (name_start = strchr(symbols[i], '('))
-                        && nullptr != (name_end = strchr(name_start, '+')))
-                    {
-                        ++name_start;
-                        *name_end = '\0';
-                        demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
-                        *name_end = '+';
-                    }
-
-                    std::stringstream res;
-
-                    res << i << ". ";
-
-                    if (nullptr != demangled_name && 0 == status)
-                    {
-                        res.write(symbols[i], name_start - symbols[i]);
-                        res << demangled_name << name_end;
-                    }
-                    else
-                        res << symbols[i];
-
-                    LOG_ERROR(log, res.rdbuf());
-                }
-            }
-        }
+        /// When everything is done, we will try to send these error messages to client.
+        if (thread_ptr)
+            thread_ptr->onFatalError();
     }
 };
 

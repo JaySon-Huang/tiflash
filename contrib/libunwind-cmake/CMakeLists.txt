@@ -1,154 +1,67 @@
-enable_language(ASM)
+include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
 
 set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
-if(ARCH_LINUX)
-    set(UNWIND_OS "linux")
-elseif(ARCH_FREEBSD)
-    set(UNWIND_OS "freebsd")
-endif()
 
-if(ARCH_AARCH64)
-    set(UNWIND_ARCH "aarch64")
-    file(GLOB UNWIND_ARCH_SRC
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lapply_reg_state.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lcreate_addr_space.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_proc_info.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_save_loc.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lglobal.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_local.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_remote.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lis_signal_frame.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lreg_states_iterate.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lregs.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lresume.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstash_frame.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstep.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Ltrace.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/gen-offsets.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/getcontext.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/is_fpreg.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/longjmp.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/regname.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/siglongjmp.S)
-elseif(ARCH_ARM)
-    set(UNWIND_ARCH "arm")
-    file(GLOB UNWIND_ARCH_SRC
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lapply_reg_state.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lcreate_addr_space.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lex_tables.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_proc_info.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_save_loc.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lglobal.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_local.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_remote.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lis_signal_frame.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Los-${UNWIND_OS}.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lreg_states_iterate.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lregs.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lresume.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstash_frame.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstep.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Ltrace.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/gen-offsets.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/getcontext.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/is_fpreg.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/longjmp.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/regname.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/siglongjmp.S)
-elseif(ARCH_I386)
-    set(UNWIND_ARCH "x86")
-    file(GLOB UNWIND_ARCH_SRC
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lapply_reg_state.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lcreate_addr_space.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_proc_info.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_save_loc.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lglobal.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_local.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_remote.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Los-${UNWIND_OS}.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lreg_states_iterate.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lregs.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lresume.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstep.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/is_fpreg.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/longjmp.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/regname.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/siglongjmp.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/getcontext-${UNWIND_OS}.S)
+set(LIBUNWIND_CXX_SOURCES
+    "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
+    "${LIBUNWIND_SOURCE_DIR}/src/Unwind-EHABI.cpp"
+    "${LIBUNWIND_SOURCE_DIR}/src/Unwind-seh.cpp")
+if (APPLE)
+    set(LIBUNWIND_CXX_SOURCES ${LIBUNWIND_CXX_SOURCES} "${LIBUNWIND_SOURCE_DIR}/src/Unwind_AppleExtras.cpp")
+endif ()
+
+set(LIBUNWIND_C_SOURCES
+    "${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1.c"
+    "${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1-gcc-ext.c"
+    "${LIBUNWIND_SOURCE_DIR}/src/Unwind-sjlj.c"
+    # Use unw_backtrace to override libgcc's backtrace symbol for better ABI compatibility
+    unwind-override.c)
+set_source_files_properties(${LIBUNWIND_C_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c99")
+
+set(LIBUNWIND_ASM_SOURCES
+    "${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersRestore.S"
+    "${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersSave.S")
+
+# CMake doesn't pass the correct architecture for Apple prior to CMake 3.19 [1]
+# Workaround these two issues by compiling as C.
+#
+#   [1]: https://gitlab.kitware.com/cmake/cmake/-/issues/20771
+if (APPLE AND CMAKE_VERSION VERSION_LESS 3.19)
+    set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
 else()
-    set(UNWIND_ARCH "x86_64")
-    file(GLOB UNWIND_ARCH_SRC
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/is_fpreg.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/regname.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/setcontext.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lcreate_addr_space.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_save_loc.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lglobal.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_local.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Linit_remote.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lget_proc_info.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lregs.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lresume.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstash_frame.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Lstep.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Ltrace.c
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/getcontext.S
-    ${LIBUNWIND_SOURCE_DIR}/src/${UNWIND_ARCH}/Los-${UNWIND_OS}.c)
+    enable_language(ASM)
 endif()
 
+set(LIBUNWIND_SOURCES
+    ${LIBUNWIND_CXX_SOURCES}
+    ${LIBUNWIND_C_SOURCES}
+    ${LIBUNWIND_ASM_SOURCES})
 
-file(GLOB UNWIND_COMMON_SRC
-${LIBUNWIND_SOURCE_DIR}/src/mi/init.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/flush_cache.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/mempool.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/strerror.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/_ReadULEB.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/_ReadSLEB.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/backtrace.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/dyn-cancel.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/dyn-info-list.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/dyn-register.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Ldyn-extract.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lfind_dynamic_proc_info.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lget_accessors.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lget_proc_info_by_ip.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lget_proc_name.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lput_dynamic_unwind_info.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Ldestroy_addr_space.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lget_reg.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lset_reg.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lget_fpreg.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lset_fpreg.c
-${LIBUNWIND_SOURCE_DIR}/src/mi/Lset_caching_policy.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/Lexpr.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/Lfde.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/Lfind_proc_info-lsb.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/Lparser.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/Lpe.c
-${LIBUNWIND_SOURCE_DIR}/src/dwarf/global.c
-${LIBUNWIND_SOURCE_DIR}/src/elf64.c
-${LIBUNWIND_SOURCE_DIR}/src/os-${UNWIND_OS}.c
-)
+add_library(unwind ${LIBUNWIND_SOURCES})
 
+target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY -D__STDC_FORMAT_MACROS)
+target_compile_options(unwind PRIVATE -fno-exceptions -funwind-tables -fno-sanitize=all $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++ -fno-rtti>)
 
-add_library(unwind ${UNWIND_COMMON_SRC} ${UNWIND_ARCH_SRC})
+check_c_compiler_flag(-Wunused-but-set-variable HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
+if (HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
+    target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
+endif ()
 
-add_definitions(-DHAVE_CONFIG_H -DHAVE_LINK_H -D_GNU_SOURCE)
-find_file (HAVE_ATOMIC_OPS_H "atomic_ops.h")
+check_cxx_compiler_flag(-Wmissing-attributes HAVE_WARNING_MISSING_ATTRIBUTES)
+if (HAVE_WARNING_MISSING_ATTRIBUTES)
+    target_compile_options(unwind PRIVATE -Wno-missing-attributes)
+endif ()
 
-configure_file(${LIBUNWIND_SOURCE_DIR}/include/config.h.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/include/config.h)
-configure_file(${LIBUNWIND_SOURCE_DIR}/include/libunwind-common.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/libunwind-common.h)
-configure_file(${LIBUNWIND_SOURCE_DIR}/include/libunwind.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/libunwind.h)
-configure_file(${LIBUNWIND_SOURCE_DIR}/include/tdep/libunwind_i.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/tdep/libunwind_i.h)
+check_cxx_compiler_flag(-Wmaybe-uninitialized HAVE_WARNING_MAYBE_UNINITIALIZED)
+if (HAVE_WARNING_MAYBE_UNINITIALIZED)
+    target_compile_options(unwind PRIVATE -Wno-maybe-uninitialized)
+endif ()
 
-target_compile_definitions (unwind PRIVATE HAVE_CONFIG_H=1 _XOPEN_SOURCE _GNU_SOURCE)
-target_compile_options (unwind PRIVATE -Wno-visibility -Wno-header-guard -Wno-incompatible-pointer-types -Wno-format)
-
-target_include_directories (unwind PUBLIC ${LIBUNWIND_SOURCE_DIR}/include)
-target_include_directories (unwind PRIVATE ${LIBUNWIND_SOURCE_DIR}/include/tdep)
-target_include_directories (unwind PRIVATE ${LIBUNWIND_SOURCE_DIR}/src)
-target_include_directories (unwind PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+# The library is using register variables that are bound to specific registers
+# Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
+check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
+if (HAVE_WARNING_REGISTER)
+    target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
+endif ()
