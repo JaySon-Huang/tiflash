@@ -40,6 +40,7 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
 include (cmake/arch.cmake)
+include (cmake/target.cmake)
 
 if (ARCH_AMD64)
     option(TIFLASH_ENABLE_AVX_SUPPORT "enable AVX and AVX2 support" ON)
@@ -236,6 +237,12 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
+# Global libraries
+# See:
+# - default_libs.cmake
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
+
 include (cmake/sanitize.cmake)
 
 # Using "include-what-you-use" tool.
@@ -272,6 +279,23 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 
+
+if (OS_LINUX OR OS_ANDROID)
+    include(cmake/linux/default_libs.cmake)
+elseif (OS_DARWIN)
+    include(cmake/darwin/default_libs.cmake)
+elseif (OS_FREEBSD)
+    include(cmake/freebsd/default_libs.cmake)
+endif ()
+
+######################################
+### Add targets below this comment ###
+######################################
+
+if (TARGET global-group)
+    install (EXPORT global DESTINATION cmake)
+endif ()
+
 # openssl, zlib before poco
 include (cmake/find_ssl.cmake)
 if (NOT OPENSSL_FOUND)
@@ -302,7 +326,7 @@ include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
-include (cmake/find_re2.cmake)
+include (cmake/find/re2.cmake)
 include (cmake/find_llvm.cmake)
 include (cmake/find_grpc.cmake)
 include (cmake/find_kvproto.cmake)
@@ -347,7 +371,7 @@ else ()
 endif ()
 option (ENABLE_TESTS "Enables unit tests" ${ENABLE_TESTS_DEFAULT})
 
-add_subdirectory (contrib) # Should be done after option ENABLE_TESTS, cause we will disable tests under contrib/
+add_subdirectory (contrib EXCLUDE_FROM_ALL) # Should be done after option ENABLE_TESTS, cause we will disable tests under contrib/
 
 # Enable failpoints injection by default when ENABLE_TESTS is turn ON.
 if (ENABLE_TESTS)

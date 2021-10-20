@@ -65,3 +65,10 @@ check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
 if (HAVE_WARNING_REGISTER)
     target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
 endif ()
+
+install(
+    TARGETS unwind
+    EXPORT global
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)

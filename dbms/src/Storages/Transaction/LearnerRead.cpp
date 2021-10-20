@@ -57,7 +57,7 @@ struct UnavailableRegions : public LockWrap
     void setRegionLock(RegionID region_id_, LockInfoPtr && region_lock_)
     {
         auto lock = genLockGuard();
-        region_lock = std::pair(region_id_, std::move(region_lock_));
+        region_lock = std::make_pair(region_id_, std::move(region_lock_));
         doAdd(region_id_);
     }
 

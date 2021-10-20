@@ -1,13 +1,8 @@
-add_subdirectory (kvproto/cpp)
 # -----
+# disable ENABLE_TESTS for contrib
 set (_save ${ENABLE_TESTS})
 set (ENABLE_TESTS 0)
-# disable ENABLE_TESTS for client-c
-# GTest package conflicts with CH's GTest, so we have to disable test compilation in ch.
-add_subdirectory (client-c)
-set (ENABLE_TESTS ${_save})
 # -------
-add_subdirectory (tipb/cpp)
 
 if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
@@ -149,3 +144,13 @@ target_include_directories(cpptoml INTERFACE
 SET (BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable google-benchmark testing")
 SET (BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Disable google-benchmark testing")
 add_subdirectory(benchmark)
+
+include (${ClickHouse_SOURCE_DIR}/cmake/find_kvproto.cmake) # after grpc
+include (${ClickHouse_SOURCE_DIR}/cmake/find_tipb.cmake) # after grpc
+add_subdirectory (kvproto/cpp) # after grpc
+add_subdirectory (client-c) # after grpc
+add_subdirectory (tipb/cpp) # after grpc
+
+# ------- restore
+set (ENABLE_TESTS ${_save})
+# -------
