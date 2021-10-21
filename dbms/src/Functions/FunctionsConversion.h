@@ -1119,7 +1119,7 @@ public:
 private:
     void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (!arguments.size())
+        if (arguments.empty())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
                             ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
@@ -1377,7 +1377,7 @@ public:
     {
         const auto & column = block.getByPosition(arguments[0]).column;
 
-        if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
+        if (const auto * const column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto column_fixed = ColumnFixedString::create(n);
 
@@ -1399,7 +1399,7 @@ public:
 
             block.getByPosition(result).column = std::move(column_fixed);
         }
-        else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const auto * const column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
@@ -1429,7 +1429,7 @@ class FunctionFromUnixTime : public IFunction
 public:
     static constexpr auto name = "fromUnixTime";
     static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionFromUnixTime>(context_); };
-    FunctionFromUnixTime(const Context & context_)
+    explicit FunctionFromUnixTime(const Context & context_)
         : context(context_){};
 
     String getName() const override
@@ -1565,7 +1565,7 @@ public:
                 handle_func(decimal, i);
             }
         }
-        else if (auto const_decimal_col = checkAndGetColumn<ColumnConst>(input_col.get()))
+        else if (const auto * const_decimal_col = checkAndGetColumn<ColumnConst>(input_col.get()))
         {
             const auto decimal_value = const_decimal_col->getValue<T>();
             for (size_t i = 0; i < const_decimal_col->size(); i++)
@@ -1604,9 +1604,9 @@ public:
         auto null_column = ColumnUInt8::create();
 
         auto & datetime_res = datetime_column->getData();
-        datetime_res.assign(rows, (UInt64)0);
+        datetime_res.assign(rows, static_cast<UInt64>(0));
         auto & null_res = null_column->getData();
-        null_res.assign(rows, (UInt8)0);
+        null_res.assign(rows, static_cast<UInt8>(0));
         if (input_column->isColumnNullable())
         {
             for (size_t i = 0; i < rows; i++)
@@ -1783,7 +1783,7 @@ public:
         const ColumnString * input_raw_col = nullptr;
         if (input_column->isColumnNullable())
         {
-            auto null_input_column = checkAndGetColumn<ColumnNullable>(input_column.get());
+            const auto * null_input_column = checkAndGetColumn<ColumnNullable>(input_column.get());
             input_raw_col = checkAndGetColumn<ColumnString>(null_input_column->getNestedColumnPtr().get());
         }
         else
@@ -1833,7 +1833,7 @@ public:
             const ColumnString * format_raw_col = nullptr;
             if (format_column->isColumnNullable())
             {
-                auto null_format_column = checkAndGetColumn<ColumnNullable>(format_column.get());
+                const auto * null_format_column = checkAndGetColumn<ColumnNullable>(format_column.get());
                 format_raw_col = checkAndGetColumn<ColumnString>(null_format_column->getNestedColumnPtr().get());
             }
             else
@@ -2437,7 +2437,7 @@ private:
 
         DataTypePtr from_nested_type;
         DataTypePtr to_nested_type;
-        auto from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
+        const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
 
         /// get the most nested type
         if (from_type && to_type)
@@ -2490,7 +2490,7 @@ private:
             };
         }
 
-        const auto from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
+        const auto * const from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
         if (!from_type)
             throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
@@ -2510,7 +2510,7 @@ private:
             element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types](Block & block, const ColumnNumbers & arguments, const size_t result) {
-            const auto col = block.getByPosition(arguments.front()).column.get();
+            const auto * const col = block.getByPosition(arguments.front()).column.get();
 
             /// copy tuple elements to a separate block
             Block element_block;
@@ -2547,9 +2547,9 @@ private:
         using EnumType = DataTypeEnum<FieldType>;
         using Function = typename FunctionTo<EnumType>::Type;
 
-        if (const auto from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
+        if (const auto * const from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
             checkEnumToEnumConversion(from_enum8, to_type);
-        else if (const auto from_enum16 = checkAndGetDataType<DataTypeEnum16>(from_type.get()))
+        else if (const auto * const from_enum16 = checkAndGetDataType<DataTypeEnum16>(from_type.get()))
             checkEnumToEnumConversion(from_enum16, to_type);
 
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -2600,12 +2600,12 @@ private:
     {
         const char * function_name = name;
         return [function_name](Block & block, const ColumnNumbers & arguments, const size_t result) {
-            const auto first_col = block.getByPosition(arguments.front()).column.get();
+            const auto * const first_col = block.getByPosition(arguments.front()).column.get();
 
             auto & col_with_type_and_name = block.getByPosition(result);
             const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
 
-            if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
+            if (const auto * const col = typeid_cast<const ColumnStringType *>(first_col))
             {
                 const auto size = col->size();
 
@@ -2624,14 +2624,14 @@ private:
         };
     }
 
-    WrapperType createIdentityWrapper(const DataTypePtr &) const
+    static WrapperType createIdentityWrapper(const DataTypePtr &)
     {
         return [](Block & block, const ColumnNumbers & arguments, const size_t result) {
             block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
         };
     }
 
-    WrapperType createNothingWrapper(const IDataType * to_type) const
+    static WrapperType createNothingWrapper(const IDataType * to_type)
     {
         ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
         return [res](Block & block, const ColumnNumbers &, const size_t result) {
@@ -2745,53 +2745,53 @@ private:
             return createIdentityWrapper(from_type);
         else if (checkDataType<DataTypeNothing>(from_type.get()))
             return createNothingWrapper(to_type.get());
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto decimal_type = checkAndGetDataType<DataTypeDecimal32>(to_type.get()))
+        else if (const auto * const decimal_type = checkAndGetDataType<DataTypeDecimal32>(to_type.get()))
             return createDecimalWrapper<Decimal32>(decimal_type->getPrec(), decimal_type->getScale());
-        else if (const auto decimal_type = checkAndGetDataType<DataTypeDecimal64>(to_type.get()))
+        else if (const auto * const decimal_type = checkAndGetDataType<DataTypeDecimal64>(to_type.get()))
             return createDecimalWrapper<Decimal64>(decimal_type->getPrec(), decimal_type->getScale());
-        else if (const auto decimal_type = checkAndGetDataType<DataTypeDecimal128>(to_type.get()))
+        else if (const auto * const decimal_type = checkAndGetDataType<DataTypeDecimal128>(to_type.get()))
             return createDecimalWrapper<Decimal128>(decimal_type->getPrec(), decimal_type->getScale());
-        else if (const auto decimal_type = checkAndGetDataType<DataTypeDecimal256>(to_type.get()))
+        else if (const auto * const decimal_type = checkAndGetDataType<DataTypeDecimal256>(to_type.get()))
             return createDecimalWrapper<Decimal256>(decimal_type->getPrec(), decimal_type->getScale());
         //        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type.get()))
         //            return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeMyDate>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeMyDate>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeMyDateTime>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeMyDateTime>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
+        else if (const auto * const to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
+        else if (const auto * const type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
             return createFixedStringWrapper(from_type, type_fixed_string->getN());
-        else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))
+        else if (const auto * const type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))
             return createArrayWrapper(from_type, type_array);
-        else if (const auto type_tuple = checkAndGetDataType<DataTypeTuple>(to_type.get()))
+        else if (const auto * const type_tuple = checkAndGetDataType<DataTypeTuple>(to_type.get()))
             return createTupleWrapper(from_type, type_tuple);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum8>(to_type.get()))
+        else if (const auto * const type_enum = checkAndGetDataType<DataTypeEnum8>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum16>(to_type.get()))
+        else if (const auto * const type_enum = checkAndGetDataType<DataTypeEnum16>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
 
         /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
@@ -2809,7 +2809,7 @@ public:
     static constexpr auto name = "CAST";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
 
-    FunctionBuilderCast(const Context & context)
+    explicit FunctionBuilderCast(const Context & context)
         : context(context)
     {}
 
@@ -2835,7 +2835,7 @@ protected:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
+        const auto * const type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)
             throw Exception("Second argument to " + getName() + " must be a constant string describing type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -2851,39 +2851,39 @@ private:
         return FunctionTo<DataType>::Type::Monotonic::get;
     }
 
-    MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type) const
+    static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
+        if (const auto * const type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeUInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeUInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeFloat64>(to_type))
             return monotonicityForType(type);
         //        else if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
         //            return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeDateTime>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
+        else if (const auto * const type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
         else if (from_type->isEnum())
         {
-            if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
+            if (const auto * const type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);
-            else if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            else if (const auto * const type = checkAndGetDataType<DataTypeEnum16>(to_type))
                 return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
