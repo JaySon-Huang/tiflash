@@ -1,4 +1,4 @@
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
+option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ON)
 
 if (NOT USE_LIBCXX)
     if (USE_INTERNAL_LIBCXX_LIBRARY)
@@ -28,6 +28,10 @@ endif()
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
 
 if (NOT USE_INTERNAL_LIBCXX_LIBRARY)
+    if (CXX_ROOT_DIR)
+        list(INSERT CMAKE_SYSTEM_PREFIX_PATH 0 ${CXX_ROOT_DIR})
+        message(STATUS "Add ${CXX_ROOT_DIR} to search path for libcxx && libcxxabi")
+    endif()
     find_library (LIBCXX_LIBRARY c++)
     find_library (LIBCXXFS_LIBRARY c++fs)
     find_library (LIBCXXABI_LIBRARY c++abi)

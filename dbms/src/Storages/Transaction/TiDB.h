@@ -314,6 +314,7 @@ struct TableInfo
     TableInfo() = default;
 
     TableInfo(const TableInfo &) = default;
+    TableInfo& operator=(const TableInfo &) = default;
 
     TableInfo & operator=(const TableInfo &) = default;
 

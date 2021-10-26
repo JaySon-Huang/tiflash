@@ -239,6 +239,7 @@ struct MockSSTReader
         Data & operator=(const Data &) = delete;
         Data(Data &&) = default;
         Data & operator=(Data &&) = default;
+
         Data() = default;
     };
 
