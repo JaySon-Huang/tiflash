@@ -47,10 +47,6 @@ if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
 endif ()
 
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind-cmake)
-endif ()
-
 if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # todo: make pull to Dead2/zlib-ng and remove:
