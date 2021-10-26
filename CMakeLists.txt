@@ -322,8 +322,6 @@ find_contrib_lib(double-conversion)
 
 # Find libunwind, must be before jemalloc
 option (ENABLE_UNWIND "Enable libunwind (better stacktraces)" ON)
-include (libs/libdaemon/cmake/find_unwind.cmake)
-
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
