@@ -328,7 +328,6 @@ inline void readDecimalText(Decimal<T> & x, ReadBuffer & buf, PrecType precision
         value = -value;
     x.value = static_cast<T>(value);
     checkDecimalOverflow(x, precision);
-    return;
 }
 
 template <typename T, typename ReturnType = void>
@@ -513,7 +512,7 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
   */
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
+void readCSVString(String & s, ReadBuffer & buf,  char delimiter = ',');
 
 
 /// Read and append result to array of characters.
@@ -536,7 +535,7 @@ template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',');
+void readCSVStringInto(Vector & s, ReadBuffer & buf,  char delimiter = ',');
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
@@ -552,14 +551,14 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 struct NullSink
 {
     void append(const char *, size_t){};
-    void push_back(char){};
+    void push_back(char){}; // NOLINT(readability-identifier-naming)
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
 void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst,  size_t num_bytes);
 
 template <typename ReturnType = void>
 ReturnType readMyDateTextImpl(UInt64 & date, ReadBuffer & buf)

@@ -1,11 +1,16 @@
 #include <Common/FieldVisitors.h>
 #include <Functions/FunctionsConversion.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/DeltaMerge/SchemaUpdate.h>
 #include <Storages/Transaction/TiDB.h>
 #include <common/logger_useful.h>
+#include <fmt/format.h>
+
+#include "Core/Field.h"
+#include "Core/Types.h"
 
 namespace DB
 {
@@ -80,6 +85,7 @@ void setColumnDefineDefaultValue(const AlterCommand & command, ColumnDefine & de
             readDateTimeText(time, buf);
             return toField((Int64)time);
         }
+#if 1
         case TypeIndex::Decimal32:
         {
             auto v = safeGet<DecimalField<Decimal32>>(value);
@@ -100,6 +106,55 @@ void setColumnDefineDefaultValue(const AlterCommand & command, ColumnDefine & de
             auto v = safeGet<DecimalField<Decimal256>>(value);
             return v;
         }
+#else
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 invalid_prec_or_scale = 255;
+            auto prec = getDecimalPrecision(*define.type, invalid_prec_or_scale);
+            auto scale = getDecimalScale(*define.type, invalid_prec_or_scale);
+            if (prec == invalid_prec_or_scale || scale == invalid_prec_or_scale)
+            {
+                throw Exception(fmt::format("Unexpected prec, scale from data type. [prec={}] [scale={}] [type={}]",
+                                            prec,
+                                            scale,
+                                            define.type->getName()));
+            }
+            auto text = safeGet<String>(value);
+            ReadBufferFromMemory buf(text.data(), text.size());
+            switch (type->getTypeId())
+            {
+            case DB::TypeIndex::Decimal32:
+            {
+                DB::Decimal32 result;
+                readDecimalText(result, buf, prec, scale);
+                return DecimalField<Decimal32>(result, scale);
+            }
+            case TypeIndex::Decimal64:
+            {
+                DB::Decimal64 result;
+                readDecimalText(result, buf, prec, scale);
+                return DecimalField<Decimal64>(result, scale);
+            }
+            case TypeIndex::Decimal128:
+            {
+                DB::Decimal128 result;
+                readDecimalText(result, buf, prec, scale);
+                return DecimalField<Decimal128>(result, scale);
+            }
+            case TypeIndex::Decimal256:
+            {
+                DB::Decimal256 result;
+                readDecimalText(result, buf, prec, scale);
+                return DecimalField<Decimal256>(result, scale);
+            }
+            default:
+                throw Exception("Unexpected data type: " + define.type->getName());
+            }
+        }
+#endif
         case TypeIndex::Enum16:
         {
             // According to `Storages/Transaction/TiDB.h` and MySQL 5.7
@@ -146,14 +201,14 @@ void setColumnDefineDefaultValue(const AlterCommand & command, ColumnDefine & de
             else if (auto default_cast_expr = typeid_cast<const ASTFunction *>(command.default_expression.get());
                      default_cast_expr && default_cast_expr->name == "CAST" /* ParserCastExpression::name */)
             {
-                // eg. CAST('1.234' AS Float32); CAST(999 AS Int32)
+                // eg. CAST('1.234' AS Float32); CAST(999 AS Int32), CAST('0.050000001' AS Decimal(1,1))
                 if (default_cast_expr->arguments->children.size() != 2)
                 {
                     throw Exception("Unknown CAST expression in default expr", ErrorCodes::NOT_IMPLEMENTED);
                 }
 
-                auto default_literal_in_cast = typeid_cast<const ASTLiteral *>(default_cast_expr->arguments->children[0].get());
-                if (default_literal_in_cast)
+                if (auto default_literal_in_cast = typeid_cast<const ASTLiteral *>(default_cast_expr->arguments->children[0].get());
+                    default_literal_in_cast)
                 {
                     Field default_value = castDefaultValue(default_literal_in_cast->value, define.type);
                     define.default_value = default_value;
@@ -170,23 +225,22 @@ void setColumnDefineDefaultValue(const AlterCommand & command, ColumnDefine & de
         }
         catch (DB::Exception & e)
         {
-            e.addMessage("(in setColumnDefineDefaultValue for default_expression:" + astToDebugString(command.default_expression.get())
-                         + ")");
+            e.addMessage(fmt::format("(in setColumnDefineDefaultValue for default_expression: {})", astToDebugString(command.default_expression.get())));
             throw;
         }
         catch (const Poco::Exception & e)
         {
             DB::Exception ex(e);
-            ex.addMessage("(in setColumnDefineDefaultValue for default_expression:" + astToDebugString(command.default_expression.get())
-                          + ")");
+            ex.addMessage(fmt::format("(in setColumnDefineDefaultValue for default_expression: {})", astToDebugString(command.default_expression.get())));
             throw ex;
         }
         catch (std::exception & e)
         {
-            std::stringstream ss;
-            ss << "std::exception: " << e.what()
-               << " (in setColumnDefineDefaultValue for default_expression:" + astToDebugString(command.default_expression.get()) << ")";
-            DB::Exception ex(ss.str(), ErrorCodes::LOGICAL_ERROR);
+            DB::Exception ex(
+                fmt::format("std::exception: {} (in setColumnDefineDefaultValue for default_expression: {})",
+                            e.what(),
+                            astToDebugString(command.default_expression.get())),
+                ErrorCodes::LOGICAL_ERROR);
             throw ex;
         }
     }
@@ -275,7 +329,9 @@ void applyAlter(ColumnDefines & table_columns,
     else if (command.type == AlterCommand::DROP_COLUMN)
     {
         table_columns.erase(
-            std::remove_if(table_columns.begin(), table_columns.end(), [&](const ColumnDefine & c) { return c.id == command.column_id; }),
+            std::remove_if(table_columns.begin(),
+                           table_columns.end(),
+                           [&](const ColumnDefine & c) { return c.id == command.column_id; }),
             table_columns.end());
     }
     else if (command.type == AlterCommand::RENAME_COLUMN)

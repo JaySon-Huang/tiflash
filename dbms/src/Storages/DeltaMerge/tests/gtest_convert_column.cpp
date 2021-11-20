@@ -13,7 +13,7 @@ namespace DM
 {
 namespace tests
 {
-TEST(ConvertColumnType_test, CastNumeric)
+TEST(ConvertColumnTypeTest, CastNumeric)
 {
     {
         const Strings to_types = {"UInt8", "UInt16", "UInt32", "UInt64"};
@@ -29,9 +29,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             UInt64 val1 = memory_column->getUInt(0);
-            ASSERT_EQ(val1, 15UL);
+            ASSERT_EQ(val1, 15);
             UInt64 val2 = memory_column->getUInt(1);
-            ASSERT_EQ(val2, 255UL);
+            ASSERT_EQ(val2, 255);
         }
     }
 
@@ -49,9 +49,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             UInt64 val1 = memory_column->getUInt(0);
-            ASSERT_EQ(val1, 15UL);
+            ASSERT_EQ(val1, 15);
             UInt64 val2 = memory_column->getUInt(1);
-            ASSERT_EQ(val2, 255UL);
+            ASSERT_EQ(val2, 255);
         }
     }
 
@@ -69,9 +69,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             UInt64 val1 = memory_column->getUInt(0);
-            ASSERT_EQ(val1, 15UL);
+            ASSERT_EQ(val1, 15);
             UInt64 val2 = memory_column->getUInt(1);
-            ASSERT_EQ(val2, 255UL);
+            ASSERT_EQ(val2, 255);
         }
     }
 
@@ -89,9 +89,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             Int64 val1 = memory_column->getInt(0);
-            ASSERT_EQ(val1, 127L);
+            ASSERT_EQ(val1, 127);
             Int64 val2 = memory_column->getInt(1);
-            ASSERT_EQ(val2, -1L);
+            ASSERT_EQ(val2, -1);
         }
     }
 
@@ -109,9 +109,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             Int64 val1 = memory_column->getInt(0);
-            ASSERT_EQ(val1, 127L);
+            ASSERT_EQ(val1, 127);
             Int64 val2 = memory_column->getInt(1);
-            ASSERT_EQ(val2, -1L);
+            ASSERT_EQ(val2, -1);
         }
     }
 
@@ -129,9 +129,9 @@ TEST(ConvertColumnType_test, CastNumeric)
             auto memory_column = convertColumnByColumnDefineIfNeed(disk_data_type, disk_col->getPtr(), read_define);
 
             Int64 val1 = memory_column->getInt(0);
-            ASSERT_EQ(val1, 127L);
+            ASSERT_EQ(val1, 127);
             Int64 val2 = memory_column->getInt(1);
-            ASSERT_EQ(val2, -1L);
+            ASSERT_EQ(val2, -1);
         }
     }
 
@@ -165,7 +165,7 @@ TEST(ConvertColumnType_test, CastNumeric)
     }
 }
 
-TEST(ConvertColumnType_test, CastNullableToNotNull)
+TEST(ConvertColumnTypeTest, CastNullableToNotNull)
 {
     const Strings to_types = {"Int8", "Int16", "Int32", "Int64"};
 
@@ -184,13 +184,13 @@ TEST(ConvertColumnType_test, CastNullableToNotNull)
         Int64 val1 = memory_column->getInt(0);
         ASSERT_EQ(val1, 99); // "NULL" value is cast to default value
         Int64 val2 = memory_column->getInt(1);
-        ASSERT_EQ(val2, 127L);
+        ASSERT_EQ(val2, 127);
         Int64 val3 = memory_column->getUInt(2);
-        ASSERT_EQ(val3, -1L);
+        ASSERT_EQ(val3, -1);
     }
 }
 
-TEST(ConvertColumnType_test, CastNullableToNotNullWithNonZeroDefaultValue)
+TEST(ConvertColumnTypeTest, CastNullableToNotNullWithNonZeroDefaultValue)
 {
     const Strings to_types = {"Int8", "Int16", "Int32", "Int64"};
 
@@ -209,13 +209,13 @@ TEST(ConvertColumnType_test, CastNullableToNotNullWithNonZeroDefaultValue)
         Int64 val1 = memory_column->getInt(0);
         ASSERT_EQ(val1, 5); // "NULL" value is cast to default value (5)
         Int64 val2 = memory_column->getInt(1);
-        ASSERT_EQ(val2, 127L);
+        ASSERT_EQ(val2, 127);
         Int64 val3 = memory_column->getUInt(2);
-        ASSERT_EQ(val3, -1L);
+        ASSERT_EQ(val3, -1);
     }
 }
 
-TEST(ConvertColumnType_test, CastNullableToNullable)
+TEST(ConvertColumnTypeTest, CastNullableToNullable)
 {
     const Strings to_types = {"Nullable(Int8)", "Nullable(Int16)", "Nullable(Int32)", "Nullable(Int64)"};
 
@@ -237,16 +237,16 @@ TEST(ConvertColumnType_test, CastNullableToNullable)
         ASSERT_FALSE(memory_column->isNullAt(1));
         f = (*memory_column)[1];
         ASSERT_EQ(f.getType(), Field::Types::Int64);
-        ASSERT_EQ(f.get<Int64>(), 127L);
+        ASSERT_EQ(f.get<Int64>(), 127);
 
         ASSERT_FALSE(memory_column->isNullAt(2));
         f = (*memory_column)[2];
         ASSERT_EQ(f.getType(), Field::Types::Int64);
-        ASSERT_EQ(f.get<Int64>(), -1L);
+        ASSERT_EQ(f.get<Int64>(), -1);
     }
 }
 
-TEST(ConvertColumnType_test, CastNotNullToNullable)
+TEST(ConvertColumnTypeTest, CastNotNullToNullable)
 {
     const Strings to_types = {"Nullable(Int8)", "Nullable(Int16)", "Nullable(Int32)", "Nullable(Int64)"};
 
@@ -263,20 +263,26 @@ TEST(ConvertColumnType_test, CastNotNullToNullable)
         ASSERT_FALSE(memory_column->isNullAt(0));
         Field f = (*memory_column)[0];
         ASSERT_EQ(f.getType(), Field::Types::Int64);
-        ASSERT_EQ(f.get<Int64>(), 127L);
+        ASSERT_EQ(f.get<Int64>(), 127);
 
         ASSERT_FALSE(memory_column->isNullAt(1));
         f = (*memory_column)[1];
         ASSERT_EQ(f.getType(), Field::Types::Int64);
-        ASSERT_EQ(f.get<Int64>(), -1L);
+        ASSERT_EQ(f.get<Int64>(), -1);
     }
 }
 
-TEST(ConvertColumnType_test, GetDefaultValue)
+TEST(ConvertColumnTypeTest, GetDefaultValue)
 try
 {
-    const String json_table_info
-        = R"json({"cols":[{"comment":"","default":null,"default_bit":null,"id":1,"name":{"L":"a","O":"a"},"offset":0,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":4099,"Flen":768,"Tp":15}},{"comment":"","default":"3.14","default_bit":null,"id":2,"name":{"L":"f","O":"f"},"offset":1,"origin_default":"3.14","state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":-1,"Elems":null,"Flag":0,"Flen":12,"Tp":4}},{"comment":"","default":"3.14","default_bit":null,"id":3,"name":{"L":"f2","O":"f2"},"offset":2,"origin_default":"3.14","state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":-1,"Elems":null,"Flag":1,"Flen":12,"Tp":4}}],"comment":"","id":627,"name":{"L":"t","O":"t"},"partition":null,"pk_is_handle":false,"schema_version":252,"state":5,"tiflash_replica":{"Count":0},"update_timestamp":422031263342264329})json";
+    const String json_table_info = R"json({
+    "cols":[
+        {"comment":"","default":null,"default_bit":null,"id":1,"name":{"L":"a","O":"a"},"offset":0,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":4099,"Flen":768,"Tp":15}},
+        {"comment":"","default":"3.14","default_bit":null,"id":2,"name":{"L":"f","O":"f"},"offset":1,"origin_default":"3.14","state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":-1,"Elems":null,"Flag":0,"Flen":12,"Tp":4}},
+        {"comment":"","default":"3.14","default_bit":null,"id":3,"name":{"L":"f2","O":"f2"},"offset":2,"origin_default":"3.14","state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":-1,"Elems":null,"Flag":1,"Flen":12,"Tp":4}}
+    ],
+    "comment":"","id":627,"name":{"L":"t","O":"t"},"partition":null,"pk_is_handle":false,"schema_version":252,"state":5,"tiflash_replica":{"Count":0},"update_timestamp":422031263342264329
+})json";
 
     TiDB::TableInfo table_info(json_table_info);
     const auto & columns = table_info.columns;

@@ -3,7 +3,7 @@
 
 >> drop table if exists test
 
->> create table test (i Int64, d decimal(1, 0) default 7) engine = MutableMergeTree((i), 8192)
+>> create table test (i Int64, d decimal(1, 0) default 7) engine = DeltaMerge(i)
 
 >> insert into test (i) values (0)
 
