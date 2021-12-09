@@ -1,6 +1,7 @@
 #include <Common/UnifiedLogPatternFormatter.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteIntText.h>
 #include <Poco/Channel.h>
 #include <Poco/Ext/ThreadNumber.h>
 #include <fmt/core.h>
@@ -9,83 +10,46 @@
 #include <boost/algorithm/string.hpp>
 #include <chrono>
 #include <cstring>
-#include <sstream>
 #include <vector>
 
 namespace DB
 {
-void UnifiedLogPatternFormatter::format(const Poco::Message & msg, std::string & text)
-{
-    DB::WriteBufferFromString wb(text);
-
-    std::string timestamp_str = getTimestamp();
-
-    auto prio = msg.getPriority();
-    std::string prio_str = getPriorityString(prio);
-
-    std::string source_str = "<unknown>";
-    if (msg.getSourceFile())
-        source_str = std::string(msg.getSourceFile()) + ":" + std::to_string(msg.getSourceLine());
-
-    std::string message;
-    const std::string & source = msg.getSource();
-    if (!source.empty())
-        message = fmt::format("{0}:{1}", source, msg.getText());
-    else
-        message = msg.getText();
-
-    std::string thread_id_str = "thread_id=" + std::to_string(Poco::ThreadNumber::get());
-
-    // std::vector<std::string> params{timestamp_str, prio_str, source_str, message, thread_id_str};
-
-    DB::writeString("[", wb);
-    DB::writeString(timestamp_str, wb);
-    DB::writeString("] ", wb);
-
-    DB::writeString("[", wb);
-    DB::writeString(prio_str, wb);
-    DB::writeString("] ", wb);
-
-    DB::writeString("[", wb);
-    DB::writeString(source_str, wb);
-    DB::writeString("] ", wb);
-
-    DB::writeString("[", wb);
-    writeEscapedString(wb, message);
-    DB::writeString("] ", wb);
-
-    DB::writeString("[", wb);
-    DB::writeString(thread_id_str, wb);
-    DB::writeString("]", wb);
-}
-
-std::string UnifiedLogPatternFormatter::getPriorityString(const Poco::Message::Priority & priority)
+static void writePriorityString(const Poco::Message::Priority & priority, DB::WriteBuffer & wb)
 {
     switch (priority)
     {
     case Poco::Message::Priority::PRIO_TRACE:
-        return "TRACE";
+        writeCString("TRACE", wb);
+        break;
     case Poco::Message::Priority::PRIO_DEBUG:
-        return "DEBUG";
+        writeCString("DEBUG", wb);
+        break;
     case Poco::Message::Priority::PRIO_INFORMATION:
-        return "INFO";
+        writeCString("INFO", wb);
+        break;
     case Poco::Message::Priority::PRIO_WARNING:
-        return "WARN";
+        writeCString("WARN", wb);
+        break;
     case Poco::Message::Priority::PRIO_ERROR:
-        return "ERROR";
+        writeCString("ERROR", wb);
+        break;
     case Poco::Message::Priority::PRIO_FATAL:
-        return "FATAL";
+        writeCString("FATAL", wb);
+        break;
     case Poco::Message::Priority::PRIO_CRITICAL:
-        return "CRITICAL";
+        writeCString("CRITICAL", wb);
+        break;
     case Poco::Message::Priority::PRIO_NOTICE:
-        return "NOTICE";
+        writeCString("NOTICE", wb);
+        break;
 
     default:
-        return "UNKNOWN";
+        writeCString("UNKNOWN", wb);
+        break;
     }
 }
 
-std::string UnifiedLogPatternFormatter::getTimestamp()
+static void getTimestamp(DB::WriteBuffer & wb)
 {
     // The format is "yyyy/MM/dd HH:mm:ss.SSS ZZZZZ"
     auto time_point = std::chrono::system_clock::now();
@@ -102,11 +66,7 @@ std::string UnifiedLogPatternFormatter::getTimestamp()
 
     int zone_offset = local_tm->tm_gmtoff;
 
-    std::string buffer
-        = fmt::format("{0:04d}/{1:02d}/{2:02d} {3:02d}:{4:02d}:{5:02d}.{6:03d}", year, month, day, hour, minute, second, milliseconds);
-
-    std::stringstream ss;
-    ss << buffer << " ";
+    DB::writeString(fmt::format("{0:04d}/{1:02d}/{2:02d} {3:02d}:{4:02d}:{5:02d}.{6:03d} ", year, month, day, hour, minute, second, milliseconds), wb);
 
     // Handle time zone section
     int offset_value = std::abs(zone_offset);
@@ -114,31 +74,12 @@ std::string UnifiedLogPatternFormatter::getTimestamp()
     auto offset_tp = std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>(offset_seconds);
     auto offset_tt = std::chrono::system_clock::to_time_t(offset_tp);
     std::tm * offset_tm = std::gmtime(&offset_tt);
-    if (zone_offset < 0)
-        ss << "-";
-    else
-        ss << "+";
-    buffer = fmt::format("{0:02d}:{1:02d}", offset_tm->tm_hour, offset_tm->tm_min);
 
-    ss << buffer;
-
-    std::string result = ss.str();
-    return result;
+    DB::writeChar(zone_offset < 0 ? '-' : '+', wb);
+    DB::writeString(fmt::format("{0:02d}:{1:02d}", offset_tm->tm_hour, offset_tm->tm_min), wb);
 }
 
-void UnifiedLogPatternFormatter::writeEscapedString(DB::WriteBuffer & wb, const std::string & str)
-{
-    if (!needJsonEncode(str))
-    {
-        DB::writeString(str, wb);
-    }
-    else
-    {
-        writeJSONString(wb, str);
-    }
-}
-
-bool UnifiedLogPatternFormatter::needJsonEncode(const std::string & src)
+static bool needJsonEncode(const std::string & src)
 {
     for (const uint8_t byte : src)
     {
@@ -149,7 +90,7 @@ bool UnifiedLogPatternFormatter::needJsonEncode(const std::string & src)
 }
 
 /// Copied from `IO/WriteHelpers.h`, without escaping `/`
-void UnifiedLogPatternFormatter::writeJSONString(WriteBuffer & buf, const std::string & str)
+static void writeJSONString(WriteBuffer & buf, const std::string & str)
 {
     writeChar('"', buf);
 
@@ -225,4 +166,60 @@ void UnifiedLogPatternFormatter::writeJSONString(WriteBuffer & buf, const std::s
     writeChar('"', buf);
 }
 
+static void writeEscapedString(DB::WriteBuffer & wb, const std::string & str)
+{
+    if (!needJsonEncode(str))
+    {
+        DB::writeString(str, wb);
+    }
+    else
+    {
+        writeJSONString(wb, str);
+    }
+}
+
+void UnifiedLogPatternFormatter::format(const Poco::Message & msg, std::string & text)
+{
+    DB::WriteBufferFromString wb(text);
+
+    // std::vector<std::string> params{timestamp_str, prio_str, source_str, message, thread_id_str};
+
+    DB::writeChar('[', wb);
+    getTimestamp(wb);
+    writeCString("] ", wb);
+
+    DB::writeChar('[', wb);
+    writePriorityString(msg.getPriority(), wb);
+    writeCString("] ", wb);
+
+    DB::writeChar('[', wb);
+    if (msg.getSourceFile())
+    {
+        DB::writeString(msg.getSourceFile(), wb);
+        DB::writeChar(':', wb);
+        DB::writeIntText(msg.getSourceLine(), wb);
+    }
+    else
+    {
+        writeCString("<unknown>", wb);
+    }
+    writeCString("] ", wb);
+
+    {
+        DB::writeChar('[', wb);
+        if (const std::string & source = msg.getSource(); !source.empty())
+        {
+            writeEscapedString(wb, fmt::format("{}:{}", source, msg.getText()));
+        }
+        else
+        {
+            writeEscapedString(wb, msg.getText());
+        }
+        writeCString("] ", wb);
+    }
+
+    writeCString("[thread_id=", wb);
+    DB::writeIntText(Poco::ThreadNumber::get(), wb);
+    writeCString("]", wb);
+}
 } // namespace DB
