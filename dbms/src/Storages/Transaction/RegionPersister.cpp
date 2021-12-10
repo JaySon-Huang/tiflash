@@ -80,7 +80,7 @@ void RegionPersister::doPersist(RegionCacheWriteElement & region_write_buffer, c
 
     if (page_storage)
     {
-        auto entry = page_storage->getEntry(region_id);
+        auto entry = page_storage->getEntry(region_id, nullptr);
         if (entry.isValid() && entry.tag > applied_index)
             return;
     }
@@ -183,7 +183,7 @@ RegionMap RegionPersister::restore(const TiFlashRaftProxyHelper * proxy_helper, 
                 throw Exception("region id and page id not match!", ErrorCodes::LOGICAL_ERROR);
             regions.emplace(page.page_id, region);
         };
-        page_storage->traverse(acceptor);
+        page_storage->traverse(acceptor, nullptr);
     }
     else
     {
@@ -206,7 +206,7 @@ bool RegionPersister::gc()
     {
         PS::V2::PageStorage::Config config = getConfigFromSettings(global_context.getSettingsRef());
         page_storage->reloadSettings(config);
-        return page_storage->gc();
+        return page_storage->gc(false, nullptr, nullptr);
     }
     else
         return stable_page_storage->gc();
