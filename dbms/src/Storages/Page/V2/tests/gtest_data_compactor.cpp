@@ -1,10 +1,12 @@
 // Only enable these tests under debug mode because we need some classes under `MockUtils.h`
+#include "gtest/internal/gtest-internal.h"
 #ifndef NDEBUG
 
 #include <Common/FailPoint.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/Page/Page.h>
+#include <Storages/Page/PageDefines.h>
 #include <Storages/Page/V2/PageStorage.h>
 #include <Storages/Page/V2/gc/DataCompactor.h>
 #include <Storages/Page/V2/mock/MockUtils.h>
@@ -24,6 +26,38 @@ extern const char force_legacy_or_checkpoint_page_file_exists[];
 namespace PS::V2::tests
 {
 // #define GENERATE_TEST_DATA
+
+String entryToString(const PageEntry & entry)
+{
+    return fmt::format("PageEntry{{file_id_lvl: <{},{}>, offset: {}, size: {}}}", entry.file_id, entry.level, entry.offset, entry.size);
+}
+
+
+::testing::AssertionResult checkEntryNotExist(const char *snap_expr, const char * page_id_expr, PageStorage::ConcreteSnapshotPtr & snap, PageId pid)
+{
+    auto entry = snap->version()->find(pid);
+    if (!entry)
+        return ::testing::AssertionSuccess();
+    auto error = fmt::format("Expect entry {}->getEntry({}) not existed, but existed", snap_expr, page_id_expr);
+    return ::testing::AssertionFailure(::testing::Message(error.c_str()));
+}
+#define EXPECT_NO_ENTRY(snap, page_id) EXPECT_PRED_FORMAT2(checkEntryNotExist, snap, page_id);
+
+::testing::AssertionResult checkEntryAt(const char * snap_expr, const char * page_id_expr, const char * id_lvl_expr, PageStorage::ConcreteSnapshotPtr & snap, PageId pid, const DB::PageFileIdAndLevel & input_id_lvl)
+{
+    auto entry = snap->version()->find(pid);
+    if (!entry)
+    {
+        auto error = fmt::format("Expect found entry from {}->getEntry({}), but not existed!", snap_expr, page_id_expr);
+        return ::testing::AssertionFailure(::testing::Message(error.c_str()));
+    }
+    if ((*entry).fileIdLevel() == input_id_lvl)
+        return ::testing::AssertionSuccess();
+    auto expect_expr = fmt::format("{}->getEntry({}).fileIdLevel", snap_expr, page_id_expr);
+    return ::testing::internal::EqFailure(expect_expr.c_str(), id_lvl_expr, fmt::format("<{},{}>", entry->file_id, entry->level), fmt::format("<{},{}>", input_id_lvl.first, input_id_lvl.second), false);
+}
+
+#define EXPECT_ENTRY_EXIST(snap, page_id, expected_entry) EXPECT_PRED_FORMAT3(checkEntryAt, snap, page_id, expected_entry)
 
 TEST(DataCompactorTest, MigratePages)
 try
@@ -164,26 +198,21 @@ try
         PageStorage ps("data_compact_test", delegate, config, file_provider);
         ps.restore();
         // Page 1, 2 have been migrated to PageFile_2_1
-        PageEntry entry = ps.getEntry(1);
-        EXPECT_EQ(entry.fileIdLevel(), target_id_lvl);
-
-        entry = ps.getEntry(2);
-        EXPECT_EQ(entry.fileIdLevel(), target_id_lvl);
+        auto snap = ps.getConcreteSnapshot();
+        EXPECT_ENTRY_EXIST(snap, 1, target_id_lvl);
+        EXPECT_ENTRY_EXIST(snap, 2, target_id_lvl);
 
         // Page 5 -ref-> 2
-        auto entry5 = ps.getEntry(5);
-        EXPECT_EQ(entry5, entry);
+        auto entry2 = snap->version()->find(2);
+        auto entry5 = snap->version()->find(5);
+        EXPECT_EQ(*entry2, *entry5);
 
         // Page 3, 4 are deleted
-        entry = ps.getEntry(3);
-        ASSERT_FALSE(entry.isValid());
-
-        entry = ps.getEntry(4);
-        ASSERT_FALSE(entry.isValid());
+        EXPECT_NO_ENTRY(snap, 3);
+        EXPECT_NO_ENTRY(snap, 4);
 
         // Page 6 have been migrated to PageFile_2_1
-        entry = ps.getEntry(6);
-        EXPECT_EQ(entry.fileIdLevel(), target_id_lvl);
+        EXPECT_ENTRY_EXIST(snap, 6, target_id_lvl);
     }
 }
 CATCH

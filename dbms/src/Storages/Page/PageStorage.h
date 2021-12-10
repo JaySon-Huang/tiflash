@@ -242,16 +242,6 @@ public:
         return storage->getNormalPageId(page_id, snap);
     }
 
-    UInt64 getPageChecksum(PageId page_id) const
-    {
-        return storage->getEntry(page_id, snap).checksum;
-    }
-
-    PageEntry getPageEntry(PageId page_id) const
-    {
-        return storage->getEntry(page_id, snap);
-    }
-
 #ifndef DBMS_PUBLIC_GTEST
 private:
 #endif
