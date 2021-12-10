@@ -27,10 +27,10 @@ namespace DB::PS::V2::tests
 {
 using PSPtr = std::shared_ptr<PageStorage>;
 
-class PageStorageMultiWriters_test : public DB::base::TiFlashStorageTestBasic
+class PageStorageMultiWritersTest : public DB::base::TiFlashStorageTestBasic
 {
 public:
-    PageStorageMultiWriters_test()
+    PageStorageMultiWritersTest()
         : storage()
         , file_provider{DB::tests::TiFlashTestEnv::getContext().getFileProvider()}
     {}
@@ -346,7 +346,7 @@ struct Suit
     StressTimeout cancel_runner;
 };
 
-TEST_F(PageStorageMultiWriters_test, DISABLED_MultiWriteReadRestore)
+TEST_F(PageStorageMultiWritersTest, DISABLED_MultiWriteReadRestore)
 try
 {
     size_t num_writers = 4;
@@ -384,13 +384,15 @@ try
 
     for (const auto & page_id : old_valid_pages)
     {
-        auto old_entry = old_storage->getEntry(page_id, old_snapshot);
-        auto entry = storage->getEntry(page_id, snapshot);
-        ASSERT_EQ(old_entry.fileIdLevel(), entry.fileIdLevel()) << "of Page[" << page_id << "]";
-        ASSERT_EQ(old_entry.offset, entry.offset) << "of Page[" << page_id << "]";
-        ASSERT_EQ(old_entry.size, entry.size) << "of Page[" << page_id << "]";
-        ASSERT_EQ(old_entry.tag, entry.tag) << "of Page[" << page_id << "]";
-        ASSERT_EQ(old_entry.checksum, entry.checksum) << "of Page[" << page_id << "]";
+        auto old_entry = old_snapshot->version()->find(page_id);
+        ASSERT_TRUE(old_entry);
+        auto entry = snapshot->version()->find(page_id);
+        ASSERT_TRUE(entry);
+        ASSERT_EQ(old_entry->fileIdLevel(), entry->fileIdLevel()) << "of Page[" << page_id << "]";
+        ASSERT_EQ(old_entry->offset, entry->offset) << "of Page[" << page_id << "]";
+        ASSERT_EQ(old_entry->size, entry->size) << "of Page[" << page_id << "]";
+        ASSERT_EQ(old_entry->tag, entry->tag) << "of Page[" << page_id << "]";
+        ASSERT_EQ(old_entry->checksum, entry->checksum) << "of Page[" << page_id << "]";
 
         auto old_page = old_storage->read(page_id, nullptr, old_snapshot);
         char * buf = old_page.data.begin();
