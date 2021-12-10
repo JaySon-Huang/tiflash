@@ -229,26 +229,19 @@ PageId PageStorage::getNormalPageId(PageId page_id, SnapshotPtr snapshot)
     return is_ref_id ? normal_page_id : page_id;
 }
 
-PageEntry PageStorage::getEntry(PageId page_id, SnapshotPtr snapshot)
+std::tuple<bool, UInt64> PageStorage::getAppliedVersion(PageId page_id)
 {
-    if (!snapshot)
-    {
-        snapshot = this->getSnapshot();
-    }
-
+    auto snapshot = getSnapshot();
     try
     { // this may throw an exception if ref to non-exist page
-        const auto entry = snapshot->version()->find(page_id);
-        if (entry)
-            return *entry; // A copy of PageEntry
-        else
-            return {}; // return invalid PageEntry
+        if (const auto entry = snapshot->version()->find(page_id); entry)
+            return {true, entry->tag}; // return the applied version
     }
     catch (DB::Exception & e)
     {
         LOG_WARNING(log, storage_name << " " << e.message());
-        return {}; // return invalid PageEntry
     }
+    return {false, 0}; // return invalid PageEntry
 }
 
 PageFile::Writer & PageStorage::getWriter()

@@ -63,7 +63,7 @@ void PageStorageImpl::write(DB::WriteBatch && write_batch, const WriteLimiterPtr
     throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-DB::PageEntry PageStorageImpl::getEntry(PageId page_id, SnapshotPtr snapshot)
+std::tuple<bool, UInt64> PageStorageImpl::getAppliedVersion(PageId page_id)
 {
     throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }

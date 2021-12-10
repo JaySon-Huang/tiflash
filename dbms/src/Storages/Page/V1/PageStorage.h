@@ -85,7 +85,7 @@ public:
     SnapshotPtr getSnapshot();
     size_t getNumSnapshots() const;
 
-    PageEntry getEntry(PageId page_id, SnapshotPtr snapshot = {});
+    std::tuple<bool, UInt64> getAppliedVersion(PageId page_id);
     Page read(PageId page_id, SnapshotPtr snapshot = {});
     PageMap read(const std::vector<PageId> & page_ids, SnapshotPtr snapshot = {});
     void read(const std::vector<PageId> & page_ids, const PageHandler & handler, SnapshotPtr snapshot = {});
@@ -163,32 +163,6 @@ private:
     size_t puts = 0;
     size_t refs = 0;
     size_t upserts = 0;
-};
-
-class PageReader
-{
-public:
-    /// Not snapshot read.
-    explicit PageReader(PageStorage & storage_)
-        : storage(storage_)
-        , snap()
-    {}
-    /// Snapshot read.
-    PageReader(PageStorage & storage_, const PageStorage::SnapshotPtr & snap_)
-        : storage(storage_)
-        , snap(snap_)
-    {}
-
-    Page read(PageId page_id) const { return storage.read(page_id, snap); }
-    PageMap read(const std::vector<PageId> & page_ids) const { return storage.read(page_ids, snap); }
-    void read(const std::vector<PageId> & page_ids, PageHandler & handler) const { storage.read(page_ids, handler, snap); };
-
-    PageId getNormalPageId(PageId page_id) const { return storage.getNormalPageId(page_id, snap); }
-    UInt64 getPageChecksum(PageId page_id) const { return storage.getEntry(page_id, snap).checksum; }
-
-private:
-    PageStorage & storage;
-    PageStorage::SnapshotPtr snap;
 };
 
 } // namespace DB::PS::V1

@@ -159,7 +159,11 @@ public:
 
     virtual void write(WriteBatch && write_batch, const WriteLimiterPtr & write_limiter = nullptr) = 0;
 
-    virtual PageEntry getEntry(PageId page_id, SnapshotPtr snapshot = {}) = 0;
+    /*
+     * Get the applied version of Page{page_id}.
+     * Return <page exist or not, applied version>
+     */
+    virtual std::tuple<bool, UInt64> getAppliedVersion(PageId page_id) = 0;
 
     virtual Page read(PageId page_id, const ReadLimiterPtr & read_limiter = nullptr, SnapshotPtr snapshot = {}) = 0;
 

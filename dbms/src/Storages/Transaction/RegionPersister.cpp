@@ -80,14 +80,14 @@ void RegionPersister::doPersist(RegionCacheWriteElement & region_write_buffer, c
 
     if (page_storage)
     {
-        auto entry = page_storage->getEntry(region_id, nullptr);
-        if (entry.isValid() && entry.tag > applied_index)
+        auto [exist, applied_ver] = page_storage->getAppliedVersion(region_id);
+        if (exist && applied_ver > applied_index)
             return;
     }
     else
     {
-        auto entry = stable_page_storage->getEntry(region_id);
-        if (entry.isValid() && entry.tag > applied_index)
+        auto [exist, applied_ver] = page_storage->getAppliedVersion(region_id);
+        if (exist && applied_ver > applied_index)
             return;
     }
 

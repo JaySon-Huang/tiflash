@@ -32,7 +32,7 @@ public:
 
     void write(DB::WriteBatch && write_batch, const WriteLimiterPtr & write_limiter) override;
 
-    DB::PageEntry getEntry(PageId page_id, SnapshotPtr snapshot) override;
+    std::tuple<bool, UInt64> getAppliedVersion(PageId page_id) override;
 
     DB::Page read(PageId page_id, const ReadLimiterPtr & read_limiter, SnapshotPtr snapshot) override;
 
