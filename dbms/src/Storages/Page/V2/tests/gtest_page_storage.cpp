@@ -1,4 +1,5 @@
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Encryption/FileProvider.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -962,15 +963,15 @@ TEST_F(PageStorageWith2PagesTest, DeleteRefPages)
             WriteBatch batch;
             batch.delPage(3);
             storage->write(std::move(batch));
-            EXPECT_FALSE(storage->getEntry(3).isValid());
-            EXPECT_TRUE(storage->getEntry(4).isValid());
+            EXPECT_THROW(storage->read(3), DB::Exception);
+            EXPECT_NO_THROW(storage->read(4));
         }
         // delete RefPage4
         {
             WriteBatch batch;
             batch.delPage(4);
             storage->write(std::move(batch));
-            EXPECT_FALSE(storage->getEntry(4).isValid());
+            EXPECT_THROW(storage->read(4), DB::Exception);
         }
     }
 }
@@ -987,14 +988,14 @@ TEST_F(PageStorageWith2PagesTest, PutRefPagesOverRefPages)
         storage->write(std::move(batch));
     }
 
-    const auto p0entry = storage->getEntry(1);
+    // const auto p0entry = storage->getEntry(1);
 
     {
-        // check that RefPage3 -> Page1
-        auto entry = storage->getEntry(3);
-        ASSERT_EQ(entry.fileIdLevel(), p0entry.fileIdLevel());
-        ASSERT_EQ(entry.offset, p0entry.offset);
-        ASSERT_EQ(entry.size, p0entry.size);
+        // check that RefPage3 -> Page1. TODO: Should be check at lower level
+        // auto entry = storage->getEntry(3);
+        // ASSERT_EQ(entry.fileIdLevel(), p0entry.fileIdLevel());
+        // ASSERT_EQ(entry.offset, p0entry.offset);
+        // ASSERT_EQ(entry.size, p0entry.size);
         const Page page3 = storage->read(3);
         for (size_t i = 0; i < page3.data.size(); ++i)
         {
@@ -1003,11 +1004,11 @@ TEST_F(PageStorageWith2PagesTest, PutRefPagesOverRefPages)
     }
 
     {
-        // check that RefPage4 -> Page1
-        auto entry = storage->getEntry(4);
-        ASSERT_EQ(entry.fileIdLevel(), p0entry.fileIdLevel());
-        ASSERT_EQ(entry.offset, p0entry.offset);
-        ASSERT_EQ(entry.size, p0entry.size);
+        // check that RefPage4 -> Page1. TODO: Should be check at lower level
+        // auto entry = storage->getEntry(4);
+        // ASSERT_EQ(entry.fileIdLevel(), p0entry.fileIdLevel());
+        // ASSERT_EQ(entry.offset, p0entry.offset);
+        // ASSERT_EQ(entry.size, p0entry.size);
         const Page page4 = storage->read(4);
         for (size_t i = 0; i < page4.data.size(); ++i)
         {
@@ -1029,33 +1030,37 @@ TEST_F(PageStorageWith2PagesTest, PutDuplicateRefPages)
         storage->write(std::move(batch));
         // now Page1's entry has ref count == 2 but not 3
     }
-    PageEntry entry1 = storage->getEntry(1);
-    ASSERT_TRUE(entry1.isValid());
-    PageEntry entry3 = storage->getEntry(3);
-    ASSERT_TRUE(entry3.isValid());
+    // PageEntry entry1 = storage->getEntry(1);
+    // ASSERT_TRUE(entry1.isValid());
+    // PageEntry entry3 = storage->getEntry(3);
+    // ASSERT_TRUE(entry3.isValid());
 
-    EXPECT_EQ(entry1.fileIdLevel(), entry3.fileIdLevel());
-    EXPECT_EQ(entry1.offset, entry3.offset);
-    EXPECT_EQ(entry1.size, entry3.size);
-    EXPECT_EQ(entry1.checksum, entry3.checksum);
+    // EXPECT_EQ(entry1.fileIdLevel(), entry3.fileIdLevel());
+    // EXPECT_EQ(entry1.offset, entry3.offset);
+    // EXPECT_EQ(entry1.size, entry3.size);
+    // EXPECT_EQ(entry1.checksum, entry3.checksum);
 
-    // check Page1's entry has ref count == 2 but not 1
+    // check Page1's entry has ref count == 2 but not 1.
+    // del Page1, then del Page3
     {
         WriteBatch batch;
         batch.delPage(1);
         storage->write(std::move(batch));
-        PageEntry entry_after_del1 = storage->getEntry(3);
-        ASSERT_TRUE(entry_after_del1.isValid());
-        EXPECT_EQ(entry1.fileIdLevel(), entry_after_del1.fileIdLevel());
-        EXPECT_EQ(entry1.offset, entry_after_del1.offset);
-        EXPECT_EQ(entry1.size, entry_after_del1.size);
-        EXPECT_EQ(entry1.checksum, entry_after_del1.checksum);
+        EXPECT_NO_THROW(storage->read(3));
+        // PageEntry entry_after_del1 = storage->getEntry(3);
+        // ASSERT_TRUE(entry_after_del1.isValid());
+        // EXPECT_EQ(entry1.fileIdLevel(), entry_after_del1.fileIdLevel());
+        // EXPECT_EQ(entry1.offset, entry_after_del1.offset);
+        // EXPECT_EQ(entry1.size, entry_after_del1.size);
+        // EXPECT_EQ(entry1.checksum, entry_after_del1.checksum);
 
         WriteBatch batch2;
         batch2.delPage(3);
         storage->write(std::move(batch2));
-        PageEntry entry_after_del2 = storage->getEntry(3);
-        ASSERT_FALSE(entry_after_del2.isValid());
+        EXPECT_THROW(storage->read(3), DB::Exception);
+        EXPECT_THROW(storage->read(1), DB::Exception);
+        // PageEntry entry_after_del2 = storage->getEntry(3);
+        // ASSERT_FALSE(entry_after_del2.isValid());
     }
 }
 
@@ -1077,17 +1082,17 @@ TEST_F(PageStorageWith2PagesTest, PutCollapseDuplicatedRefPages)
         // now Page1's entry has ref count == 3 but not 2
     }
 
-    PageEntry entry1 = storage->getEntry(1);
-    ASSERT_TRUE(entry1.isValid());
-    PageEntry entry3 = storage->getEntry(3);
-    ASSERT_TRUE(entry3.isValid());
-    PageEntry entry4 = storage->getEntry(4);
-    ASSERT_TRUE(entry4.isValid());
+    // PageEntry entry1 = storage->getEntry(1);
+    // ASSERT_TRUE(entry1.isValid());
+    // PageEntry entry3 = storage->getEntry(3);
+    // ASSERT_TRUE(entry3.isValid());
+    // PageEntry entry4 = storage->getEntry(4);
+    // ASSERT_TRUE(entry4.isValid());
 
-    EXPECT_EQ(entry1.fileIdLevel(), entry4.fileIdLevel());
-    EXPECT_EQ(entry1.offset, entry4.offset);
-    EXPECT_EQ(entry1.size, entry4.size);
-    EXPECT_EQ(entry1.checksum, entry4.checksum);
+    // EXPECT_EQ(entry1.fileIdLevel(), entry4.fileIdLevel());
+    // EXPECT_EQ(entry1.offset, entry4.offset);
+    // EXPECT_EQ(entry1.size, entry4.size);
+    // EXPECT_EQ(entry1.checksum, entry4.checksum);
 
     // check Page1's entry has ref count == 3 but not 2
     {
@@ -1095,18 +1100,24 @@ TEST_F(PageStorageWith2PagesTest, PutCollapseDuplicatedRefPages)
         batch.delPage(1);
         batch.delPage(4);
         storage->write(std::move(batch));
-        PageEntry entry_after_del2 = storage->getEntry(3);
-        ASSERT_TRUE(entry_after_del2.isValid());
-        EXPECT_EQ(entry1.fileIdLevel(), entry_after_del2.fileIdLevel());
-        EXPECT_EQ(entry1.offset, entry_after_del2.offset);
-        EXPECT_EQ(entry1.size, entry_after_del2.size);
-        EXPECT_EQ(entry1.checksum, entry_after_del2.checksum);
+        EXPECT_THROW(storage->read(1), DB::Exception);
+        EXPECT_THROW(storage->read(4), DB::Exception);
+        EXPECT_NO_THROW(storage->read(3));
+        // PageEntry entry_after_del2 = storage->getEntry(3);
+        // ASSERT_TRUE(entry_after_del2.isValid());
+        // EXPECT_EQ(entry1.fileIdLevel(), entry_after_del2.fileIdLevel());
+        // EXPECT_EQ(entry1.offset, entry_after_del2.offset);
+        // EXPECT_EQ(entry1.size, entry_after_del2.size);
+        // EXPECT_EQ(entry1.checksum, entry_after_del2.checksum);
 
         WriteBatch batch2;
         batch2.delPage(3);
         storage->write(std::move(batch2));
-        PageEntry entry_after_del3 = storage->getEntry(3);
-        ASSERT_FALSE(entry_after_del3.isValid());
+        EXPECT_THROW(storage->read(1), DB::Exception);
+        EXPECT_THROW(storage->read(4), DB::Exception);
+        EXPECT_THROW(storage->read(3), DB::Exception);
+        // PageEntry entry_after_del3 = storage->getEntry(3);
+        // ASSERT_FALSE(entry_after_del3.isValid());
     }
 }
 
@@ -1120,13 +1131,13 @@ try
         ASSERT_NO_THROW(storage->write(std::move(batch)));
     }
 
-    ASSERT_FALSE(storage->getEntry(3).isValid());
+    // ASSERT_FALSE(storage->getEntry(3).isValid());
     ASSERT_THROW(storage->read(3), DB::Exception);
     // storage->read(3);
 
     // Invalid Pages is filtered after reopen PageStorage
     ASSERT_NO_THROW(reopenWithConfig(config));
-    ASSERT_FALSE(storage->getEntry(3).isValid());
+    // ASSERT_FALSE(storage->getEntry(3).isValid());
     ASSERT_THROW(storage->read(3), DB::Exception);
     // storage->read(3);
 
@@ -1140,13 +1151,13 @@ try
             ASSERT_NO_THROW(storage->write(std::move(batch)));
         }
 
-        ASSERT_FALSE(storage->getEntry(8).isValid());
+        // ASSERT_FALSE(storage->getEntry(8).isValid());
         ASSERT_THROW(storage->read(8), DB::Exception);
         // storage->read(8);
     }
     // Invalid Pages is filtered after reopen PageStorage
     ASSERT_NO_THROW(reopenWithConfig(config));
-    ASSERT_FALSE(storage->getEntry(8).isValid());
+    // ASSERT_FALSE(storage->getEntry(8).isValid());
     ASSERT_THROW(storage->read(8), DB::Exception);
     // storage->read(8);
 }
@@ -1177,7 +1188,7 @@ TEST_F(PageStorageWith2PagesTest, SnapshotReadSnapshotVersion)
     EXPECT_EQ(getPSMVCCNumSnapshots(), 0);
     auto snapshot = storage->getSnapshot();
     EXPECT_EQ(getPSMVCCNumSnapshots(), 1);
-    PageEntry p1_snapshot_entry = storage->getEntry(1, snapshot);
+    // PageEntry p1_snapshot_entry = storage->getEntry(1, snapshot);
 
     {
         // write new version of Page1
@@ -1194,15 +1205,15 @@ TEST_F(PageStorageWith2PagesTest, SnapshotReadSnapshotVersion)
 
     {
         /// read without snapshot
-        PageEntry p1_entry = storage->getEntry(1);
-        ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
+        // PageEntry p1_entry = storage->getEntry(1);
+        // ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
 
         Page page1 = storage->read(1);
         ASSERT_EQ(*page1.data.begin(), ch_update);
 
         // Page3
-        PageEntry p3_entry = storage->getEntry(3);
-        ASSERT_TRUE(p3_entry.isValid());
+        // PageEntry p3_entry = storage->getEntry(3);
+        // ASSERT_TRUE(p3_entry.isValid());
         Page page3 = storage->read(3);
         ASSERT_EQ(*page3.data.begin(), ch_update);
     }
@@ -1210,8 +1221,8 @@ TEST_F(PageStorageWith2PagesTest, SnapshotReadSnapshotVersion)
     {
         /// read with snapshot
         // getEntry with snapshot
-        PageEntry p1_entry = storage->getEntry(1, snapshot);
-        ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+        // PageEntry p1_entry = storage->getEntry(1, snapshot);
+        // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
 
         // read(PageId) with snapshot
         Page page1 = storage->read(1, nullptr, snapshot);
@@ -1227,8 +1238,8 @@ TEST_F(PageStorageWith2PagesTest, SnapshotReadSnapshotVersion)
         // TODO read(vec<PageId>, callback) with snapshot
 
         // new page do appear while read with snapshot
-        PageEntry p3_entry = storage->getEntry(3, snapshot);
-        ASSERT_FALSE(p3_entry.isValid());
+        // PageEntry p3_entry = storage->getEntry(3, snapshot);
+        // ASSERT_FALSE(p3_entry.isValid());
         ASSERT_THROW({ storage->read(3, nullptr, snapshot); }, DB::Exception);
     }
 }
@@ -1237,7 +1248,7 @@ TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
 {
     char ch_before = 0x01;
     char ch_update = 0xFF;
-    PageEntry p1_snapshot_entry = storage->getEntry(1);
+    // PageEntry p1_snapshot_entry = storage->getEntry(1);
     EXPECT_EQ(getPSMVCCNumSnapshots(), 0);
     auto s1 = storage->getSnapshot();
     EXPECT_EQ(getPSMVCCNumSnapshots(), 1);
@@ -1264,12 +1275,12 @@ TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
         1,
     };
     // getEntry with snapshot
-    PageEntry p1_entry = storage->getEntry(1, s1);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
-    p1_entry = storage->getEntry(1, s2);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
-    p1_entry = storage->getEntry(1, s3);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // PageEntry p1_entry = storage->getEntry(1, s1);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1, s2);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1, s3);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
     // read(PageId) with snapshot
     Page page1 = storage->read(1, nullptr, s1);
     ASSERT_EQ(*page1.data.begin(), ch_before);
@@ -1289,17 +1300,17 @@ TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
     ASSERT_EQ(*pages[1].data.begin(), ch_before);
     // TODO read(vec<PageId>, callback) with snapshot
     // without snapshot
-    p1_entry = storage->getEntry(1);
-    ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1);
+    // ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
 
     s1.reset(); /// free snapshot 1
     EXPECT_EQ(getPSMVCCNumSnapshots(), 2);
 
     // getEntry with snapshot
-    p1_entry = storage->getEntry(1, s2);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
-    p1_entry = storage->getEntry(1, s3);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1, s2);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1, s3);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
     // read(PageId) with snapshot
     page1 = storage->read(1, nullptr, s2);
     ASSERT_EQ(*page1.data.begin(), ch_before);
@@ -1315,15 +1326,15 @@ TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
     ASSERT_EQ(*pages[1].data.begin(), ch_before);
     // TODO read(vec<PageId>, callback) with snapshot
     // without snapshot
-    p1_entry = storage->getEntry(1);
-    ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1);
+    // ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
 
     s2.reset(); /// free snapshot 2
     EXPECT_EQ(getPSMVCCNumSnapshots(), 1);
 
     // getEntry with snapshot
-    p1_entry = storage->getEntry(1, s3);
-    ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1, s3);
+    // ASSERT_EQ(p1_entry.checksum, p1_snapshot_entry.checksum);
     // read(PageId) with snapshot
     page1 = storage->read(1, nullptr, s3);
     ASSERT_EQ(*page1.data.begin(), ch_before);
@@ -1333,15 +1344,15 @@ TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
     ASSERT_EQ(*pages[1].data.begin(), ch_before);
     // TODO read(vec<PageId>, callback) with snapshot
     // without snapshot
-    p1_entry = storage->getEntry(1);
-    ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1);
+    // ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
 
     s3.reset(); /// free snapshot 3
     EXPECT_EQ(getPSMVCCNumSnapshots(), 0);
 
     // without snapshot
-    p1_entry = storage->getEntry(1);
-    ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
+    // p1_entry = storage->getEntry(1);
+    // ASSERT_NE(p1_entry.checksum, p1_snapshot_entry.checksum);
 }
 
 } // namespace PS::V2::tests
