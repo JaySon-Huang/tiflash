@@ -1,5 +1,4 @@
 // Only enable these tests under debug mode because we need some classes under `MockUtils.h`
-#include "gtest/internal/gtest-internal.h"
 #ifndef NDEBUG
 
 #include <Common/FailPoint.h>
@@ -10,6 +9,7 @@
 #include <Storages/Page/V2/PageStorage.h>
 #include <Storages/Page/V2/gc/DataCompactor.h>
 #include <Storages/Page/V2/mock/MockUtils.h>
+#include <Storages/Page/V2/tests/PSTestUtils.h>
 #include <Storages/PathPool.h>
 #include <TestUtils/MockDiskDelegator.h>
 #include <TestUtils/TiFlashTestBasic.h>

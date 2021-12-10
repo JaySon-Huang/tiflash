@@ -33,10 +33,10 @@ extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 
 namespace PS::V2::tests
 {
-class PageStorage_test : public DB::base::TiFlashStorageTestBasic
+class PageStorageTest : public DB::base::TiFlashStorageTestBasic
 {
 public:
-    PageStorage_test()
+    PageStorageTest()
         : storage()
         , file_provider{DB::tests::TiFlashTestEnv::getContext().getFileProvider()}
     {}
@@ -71,7 +71,7 @@ protected:
     const FileProviderPtr file_provider;
 };
 
-TEST_F(PageStorage_test, WriteRead)
+TEST_F(PageStorageTest, WriteRead)
 try
 {
     const UInt64 tag = 0;
@@ -108,7 +108,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, WriteMultipleBatchRead)
+TEST_F(PageStorageTest, WriteMultipleBatchRead)
 try
 {
     const UInt64 tag = 0;
@@ -149,7 +149,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, WriteReadAfterGc)
+TEST_F(PageStorageTest, WriteReadAfterGc)
 try
 {
     const size_t buf_sz = 256;
@@ -216,7 +216,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, WriteReadGcExternalPage)
+TEST_F(PageStorageTest, WriteReadGcExternalPage)
 try
 {
     {
@@ -287,7 +287,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, IdempotentDelAndRef)
+TEST_F(PageStorageTest, IdempotentDelAndRef)
 try
 {
     const size_t buf_sz = 1024;
@@ -365,7 +365,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, ListPageFiles)
+TEST_F(PageStorageTest, ListPageFiles)
 try
 {
     constexpr size_t buf_sz = 128;
@@ -428,7 +428,7 @@ try
 CATCH
 
 /// Check if we can correctly do read / write after restore from disk.
-TEST_F(PageStorage_test, WriteReadRestore)
+TEST_F(PageStorageTest, WriteReadRestore)
 try
 {
     const UInt64 tag = 0;
@@ -555,7 +555,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, WriteReadWithSpecifyFields)
+TEST_F(PageStorageTest, WriteReadWithSpecifyFields)
 try
 {
     const UInt64 tag = 0;
@@ -711,7 +711,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, IgnoreIncompleteWriteBatch1)
+TEST_F(PageStorageTest, IgnoreIncompleteWriteBatch1)
 try
 {
     // If there is any incomplete write batch, we should able to ignore those
@@ -786,7 +786,7 @@ try
 }
 CATCH
 
-TEST_F(PageStorage_test, IgnoreIncompleteWriteBatch2)
+TEST_F(PageStorageTest, IgnoreIncompleteWriteBatch2)
 try
 {
     // If there is any incomplete write batch, we should able to ignore those
@@ -863,17 +863,17 @@ CATCH
 /**
  * PageStorage tests with predefine Page1 && Page2
  */
-class PageStorageWith2Pages_test : public PageStorage_test
+class PageStorageWith2PagesTest : public PageStorageTest
 {
 public:
-    PageStorageWith2Pages_test()
-        : PageStorage_test()
+    PageStorageWith2PagesTest()
+        : PageStorageTest()
     {}
 
 protected:
     void SetUp() override
     {
-        PageStorage_test::SetUp();
+        PageStorageTest::SetUp();
         // put predefine Page1, Page2
         const size_t buf_sz = 1024;
         char buf[buf_sz];
@@ -892,7 +892,7 @@ protected:
     }
 };
 
-TEST_F(PageStorageWith2Pages_test, UpdateRefPages)
+TEST_F(PageStorageWith2PagesTest, UpdateRefPages)
 {
     /// update on RefPage, all references get updated.
     const UInt64 tag = 0;
@@ -947,7 +947,7 @@ TEST_F(PageStorageWith2Pages_test, UpdateRefPages)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, DeleteRefPages)
+TEST_F(PageStorageWith2PagesTest, DeleteRefPages)
 {
     // put ref page: RefPage3 -> Page2, RefPage4 -> Page2
     {
@@ -975,7 +975,7 @@ TEST_F(PageStorageWith2Pages_test, DeleteRefPages)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, PutRefPagesOverRefPages)
+TEST_F(PageStorageWith2PagesTest, PutRefPagesOverRefPages)
 {
     /// put ref page to ref page, ref path collapse to normal page
     {
@@ -1016,7 +1016,7 @@ TEST_F(PageStorageWith2Pages_test, PutRefPagesOverRefPages)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, PutDuplicateRefPages)
+TEST_F(PageStorageWith2PagesTest, PutDuplicateRefPages)
 {
     /// put duplicated RefPages in different WriteBatch
     {
@@ -1059,7 +1059,7 @@ TEST_F(PageStorageWith2Pages_test, PutDuplicateRefPages)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, PutCollapseDuplicatedRefPages)
+TEST_F(PageStorageWith2PagesTest, PutCollapseDuplicatedRefPages)
 {
     /// put duplicated RefPages due to ref-path-collapse
     {
@@ -1110,7 +1110,7 @@ TEST_F(PageStorageWith2Pages_test, PutCollapseDuplicatedRefPages)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, AddRefPageToNonExistPage)
+TEST_F(PageStorageWith2PagesTest, AddRefPageToNonExistPage)
 try
 {
     {
@@ -1169,7 +1169,7 @@ CurrentMetrics::Value getPSMVCCNumSnapshots()
 } // namespace
 
 
-TEST_F(PageStorageWith2Pages_test, SnapshotReadSnapshotVersion)
+TEST_F(PageStorageWith2PagesTest, SnapshotReadSnapshotVersion)
 {
     char ch_before = 0x01;
     char ch_update = 0xFF;
@@ -1233,7 +1233,7 @@ TEST_F(PageStorageWith2Pages_test, SnapshotReadSnapshotVersion)
     }
 }
 
-TEST_F(PageStorageWith2Pages_test, GetIdenticalSnapshots)
+TEST_F(PageStorageWith2PagesTest, GetIdenticalSnapshots)
 {
     char ch_before = 0x01;
     char ch_update = 0xFF;
