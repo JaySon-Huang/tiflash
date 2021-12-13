@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/FmtUtils.h>
 #include <Common/joinStr.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/Page/Page.h>
@@ -8,16 +9,13 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <fmt/format.h>
 
-#include "Common/FmtUtils.h"
-#include "gtest/gtest.h"
-
 
 namespace DB
 {
 namespace ErrorCodes
 {
-extern const int PS_PAGE_NOT_EXISTS;
-extern const int PS_PAGE_NO_VALID_VERSION;
+extern const int PS_ENTRY_NOT_EXISTS;
+extern const int PS_ENTRY_NO_VALID_VERSION;
 } // namespace ErrorCodes
 namespace PS::V3::tests
 {
@@ -47,7 +45,7 @@ inline bool isSameEntry(const PageEntryV3 & lhs, const PageEntryV3 & rhs)
         String err_msg;
         if (pid != expected_id_entry.first)
         {
-            err_msg = fmt::format("Try to get Page{} but get Page{}", page_id_expr, pid);
+            err_msg = fmt::format("Try to get entry [id={}] but get [id={}]", page_id_expr, pid);
             return ::testing::AssertionFailure(::testing::Message(err_msg.c_str()));
         }
         if (isSameEntry(entry, expected_entry))
@@ -55,7 +53,7 @@ inline bool isSameEntry(const PageEntryV3 & lhs, const PageEntryV3 & rhs)
             return ::testing::AssertionSuccess();
         }
         // else not the expected entry we want
-        auto actual_expr = fmt::format("Get Page{} from {} with snap{}", page_id_expr, dir_expr, snap_expr);
+        auto actual_expr = fmt::format("Get entry [id={}] from {} with snap{}", page_id_expr, dir_expr, snap_expr);
         return testing::internal::EqFailure(
             expected_entry_expr,
             actual_expr.c_str(),
@@ -71,10 +69,10 @@ inline bool isSameEntry(const PageEntryV3 & lhs, const PageEntryV3 & rhs)
     }
     catch (DB::Exception & ex)
     {
-        if (ex.code() == ErrorCodes::PS_PAGE_NOT_EXISTS)
-            error = fmt::format("Try to get Page{} but not exists. Err message: {}", page_id_expr, ex.message());
-        else if (ex.code() == ErrorCodes::PS_PAGE_NO_VALID_VERSION)
-            error = fmt::format("Try to get Page{} with version {} from {} but failed. Err message: {}", page_id_expr, snap->sequence, snap_expr, ex.message());
+        if (ex.code() == ErrorCodes::PS_ENTRY_NOT_EXISTS)
+            error = fmt::format("Try to get entry [id={}] but not exists. Err message: {}", page_id_expr, ex.message());
+        else if (ex.code() == ErrorCodes::PS_ENTRY_NO_VALID_VERSION)
+            error = fmt::format("Try to get entry [id={}] with version {} from {} but failed. Err message: {}", page_id_expr, snap->sequence, snap_expr, ex.message());
         else
             error = ex.displayText();
         return ::testing::AssertionFailure(::testing::Message(error.c_str()));
@@ -93,6 +91,7 @@ inline bool isSameEntry(const PageEntryV3 & lhs, const PageEntryV3 & rhs)
 String toString(const PageIDAndEntriesV3 & entries)
 {
     FmtBuffer buf;
+    buf.append("[");
     joinStr(
         entries.begin(),
         entries.end(),
@@ -100,6 +99,7 @@ String toString(const PageIDAndEntriesV3 & entries)
         [](const PageIDAndEntryV3 & id_entry, FmtBuffer & buf) {
             buf.fmtAppend("<{},{}>", id_entry.first, toString(id_entry.second));
         });
+    buf.append("]");
     return buf.toString();
 }
 ::testing::AssertionResult getEntriesCompare(
@@ -159,9 +159,9 @@ String toString(const PageIDAndEntriesV3 & entries)
     }
     catch (DB::Exception & ex)
     {
-        if (ex.code() == ErrorCodes::PS_PAGE_NOT_EXISTS)
+        if (ex.code() == ErrorCodes::PS_ENTRY_NOT_EXISTS)
             error = fmt::format("Try to get entries with [ids={}] but not exists. Err message: {}", page_ids_expr, ex.message());
-        else if (ex.code() == ErrorCodes::PS_PAGE_NO_VALID_VERSION)
+        else if (ex.code() == ErrorCodes::PS_ENTRY_NO_VALID_VERSION)
             error = fmt::format("Try to get entries with [ids={}] with version {} from {} but failed. Err message: {}", page_ids_expr, snap->sequence, snap_expr, ex.message());
         else
             error = ex.displayText();
@@ -191,7 +191,7 @@ String toString(const PageIDAndEntriesV3 & entries)
     {
         auto id_entry = dir.get(page_id, snap);
         error = fmt::format(
-            "Expect Page{} from {} with snap{} not exist, but got <{}, {}>",
+            "Expect entry [id={}] from {} with snap{} not exist, but got <{}, {}>",
             page_id_expr,
             dir_expr,
             snap_expr,
@@ -200,7 +200,7 @@ String toString(const PageIDAndEntriesV3 & entries)
     }
     catch (DB::Exception & ex)
     {
-        if (ex.code() == ErrorCodes::PS_PAGE_NOT_EXISTS || ex.code() == ErrorCodes::PS_PAGE_NO_VALID_VERSION)
+        if (ex.code() == ErrorCodes::PS_ENTRY_NOT_EXISTS || ex.code() == ErrorCodes::PS_ENTRY_NO_VALID_VERSION)
             return ::testing::AssertionSuccess();
         else
             error = ex.displayText();

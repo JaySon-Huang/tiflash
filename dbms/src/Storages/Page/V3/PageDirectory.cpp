@@ -1,17 +1,16 @@
 #include <Common/Exception.h>
 #include <Storages/Page/V3/PageDirectory.h>
+#include <Storages/Page/V3/PageEntry.h>
 
 #include <mutex>
-
-#include "Storages/Page/V3/PageEntry.h"
 
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-extern const int PS_PAGE_NOT_EXISTS;
-extern const int PS_PAGE_NO_VALID_VERSION;
+extern const int PS_ENTRY_NOT_EXISTS;
+extern const int PS_ENTRY_NO_VALID_VERSION;
 } // namespace ErrorCodes
 namespace PS::V3
 {
@@ -39,7 +38,7 @@ PageIDAndEntryV3 PageDirectory::get(PageId page_id, const PageDirectorySnapshotP
         std::shared_lock read_lock(table_rw_mutex);
         iter = mvcc_table_directory.find(page_id);
         if (iter == mvcc_table_directory.end())
-            throw Exception(fmt::format("Page [id={}] not exist!", page_id), ErrorCodes::PS_PAGE_NOT_EXISTS);
+            throw Exception(fmt::format("Entry [id={}] not exist!", page_id), ErrorCodes::PS_ENTRY_NOT_EXISTS);
     }
 
     if (auto entry = iter->second->getEntry(snap->sequence); entry)
@@ -47,7 +46,7 @@ PageIDAndEntryV3 PageDirectory::get(PageId page_id, const PageDirectorySnapshotP
         return PageIDAndEntryV3(page_id, *entry);
     }
 
-    throw Exception(fmt::format("Page [id={}] [seq={}] not exist!", page_id, snap->sequence), ErrorCodes::PS_PAGE_NO_VALID_VERSION);
+    throw Exception(fmt::format("Entry [id={}] [seq={}] not exist!", page_id, snap->sequence), ErrorCodes::PS_ENTRY_NO_VALID_VERSION);
 }
 
 PageIDAndEntriesV3 PageDirectory::get(const PageIds & page_ids, const PageDirectorySnapshotPtr & snap) const
@@ -65,7 +64,7 @@ PageIDAndEntriesV3 PageDirectory::get(const PageIds & page_ids, const PageDirect
             }
             else
             {
-                throw Exception(fmt::format("Page [id={}] at [idx={}] not exist!", page_ids[idx], idx), ErrorCodes::PS_PAGE_NOT_EXISTS);
+                throw Exception(fmt::format("Entry [id={}] at [idx={}] not exist!", page_ids[idx], idx), ErrorCodes::PS_ENTRY_NOT_EXISTS);
             }
         }
     }
@@ -79,7 +78,7 @@ PageIDAndEntriesV3 PageDirectory::get(const PageIds & page_ids, const PageDirect
             id_entries.emplace_back(page_ids[idx], *entry);
         }
         else
-            throw Exception(fmt::format("Page [id={}] [seq={}] at [idx={}] not exist!", page_ids[idx], snap->sequence, idx), ErrorCodes::PS_PAGE_NO_VALID_VERSION);
+            throw Exception(fmt::format("Entry [id={}] [seq={}] at [idx={}] not exist!", page_ids[idx], snap->sequence, idx), ErrorCodes::PS_ENTRY_NO_VALID_VERSION);
     }
 
     return id_entries;
