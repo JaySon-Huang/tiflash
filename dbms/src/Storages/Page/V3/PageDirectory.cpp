@@ -8,6 +8,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int PS_PAGE_NOT_EXISTS;
+extern const int PS_PAGE_NO_VALID_VERSION;
 } // namespace ErrorCodes
 namespace PS::V3
 {
@@ -28,24 +30,6 @@ PageDirectorySnapshotPtr PageDirectory::createSnapshot() const
     return std::make_shared<PageDirectorySnapshot>(sequence.load());
 }
 
-std::tuple<PageDirectory::SafeGetResult, PageIDAndEntryV3>
-PageDirectory::safeGet(PageId page_id, const PageDirectorySnapshotPtr & snap) const
-{
-    MVCCMapType::const_iterator iter;
-    {
-        std::shared_lock read_lock(table_rw_mutex);
-        iter = mvcc_table_directory.find(page_id);
-        if (iter == mvcc_table_directory.end())
-            return {SafeGetResult::NOT_EXIST, {}};
-    }
-
-    if (auto entry = iter->second->getEntry(snap->sequence); entry)
-    {
-        return {SafeGetResult::OK, PageIDAndEntryV3{page_id, *entry}};
-    }
-    return {SafeGetResult::INVALID_VERSION, {}};
-}
-
 PageIDAndEntryV3 PageDirectory::get(PageId page_id, const PageDirectorySnapshotPtr & snap) const
 {
     MVCCMapType::const_iterator iter;
@@ -53,7 +37,7 @@ PageIDAndEntryV3 PageDirectory::get(PageId page_id, const PageDirectorySnapshotP
         std::shared_lock read_lock(table_rw_mutex);
         iter = mvcc_table_directory.find(page_id);
         if (iter == mvcc_table_directory.end())
-            throw Exception(fmt::format("Page{} not exist!", page_id), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(fmt::format("Page{} not exist!", page_id), ErrorCodes::PS_PAGE_NOT_EXISTS);
     }
 
     if (auto entry = iter->second->getEntry(snap->sequence); entry)
@@ -61,7 +45,7 @@ PageIDAndEntryV3 PageDirectory::get(PageId page_id, const PageDirectorySnapshotP
         return PageIDAndEntryV3(page_id, *entry);
     }
 
-    throw Exception(fmt::format("Page{} with seq={} not exist!", page_id, snap->sequence), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(fmt::format("Page{} with seq={} not exist!", page_id, snap->sequence), ErrorCodes::PS_PAGE_NO_VALID_VERSION);
 }
 
 PageIDAndEntriesV3 PageDirectory::get(const PageIds & /*read_ids*/, const PageDirectorySnapshotPtr & /*snap*/) const
@@ -75,7 +59,7 @@ void PageDirectory::apply(PageEntriesEdit && edit)
     UInt64 last_sequence = sequence.load();
     // wal.apply(edit);
 
-    std::unordered_map<PageId, std::lock_guard<std::mutex>> updating_locks;
+    std::unordered_map<PageId, PageLock> updating_locks;
     std::vector<VersionedPageEntriesPtr> updating_pages;
     updating_pages.reserve(edit.size());
     const auto & records = edit.getRecords();

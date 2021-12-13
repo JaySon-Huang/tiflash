@@ -33,22 +33,9 @@ public:
     PageIDAndEntryV3 get(PageId page_id, const PageDirectorySnapshotPtr & snap) const;
     PageIDAndEntriesV3 get(const PageIds & read_ids, const PageDirectorySnapshotPtr & snap) const;
 
-
     void apply(PageEntriesEdit && edit);
 
     bool gc();
-
-#ifndef DBMS_PUBLIC_GTEST
-private:
-#endif
-    enum class SafeGetResult {
-        OK,
-        NOT_EXIST,
-        INVALID_VERSION,
-    };
-    // Just for testing
-    std::tuple<SafeGetResult, PageIDAndEntryV3>
-    safeGet(PageId page_id, const PageDirectorySnapshotPtr & snap) const;
 
 private:
     struct VersionType
@@ -78,10 +65,16 @@ private:
             , entry(entry)
         {}
     };
+
+    using PageLock = std::unique_ptr<std::lock_guard<std::mutex>>;
     class VersionedPageEntries
     {
     public:
-        std::lock_guard<std::mutex> acquireLock() const { return std::lock_guard(m); }
+        PageLock
+        acquireLock() const
+        {
+            return std::make_unique<std::lock_guard<std::mutex>>(m);
+        }
 
         void createNewVersion(UInt64 seq, const PageEntryV3 & entry)
         {
@@ -97,7 +90,7 @@ private:
     };
     using VersionedPageEntriesPtr = std::shared_ptr<VersionedPageEntries>;
 
-    std::shared_mutex table_rw_mutex;
+    mutable std::shared_mutex table_rw_mutex;
     std::atomic<UInt64> sequence;
     using MVCCMapType = std::unordered_map<PageId, VersionedPageEntriesPtr>;
     MVCCMapType mvcc_table_directory;

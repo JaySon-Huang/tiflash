@@ -57,7 +57,7 @@ protected:
 
     bool isMarkUnused(UInt64 offset, size_t length) override
     {
-        auto it = details::findLessEQ(free_map, offset); // first free block <= `offset`
+        auto it = MapUtils::findLessEQ(free_map, offset); // first free block <= `offset`
         if (it == free_map.end())
         {
             // No free blocks <= `offset`
