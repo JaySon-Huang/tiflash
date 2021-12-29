@@ -6,6 +6,9 @@
 
 #include <sstream>
 
+#include "DataTypes/IDataType.h"
+#include "gtest/gtest.h"
+
 namespace DB
 {
 namespace tests
@@ -191,29 +194,199 @@ try
 CATCH
 
 
-TEST(DataTypeTest, NullableProperty)
+TEST(DataTypeTest, BasicProperty)
 try
 {
-    std::vector<String> date_cases = {
-        "Date",
-        "DateTime",
-        "MyDate",
-        "MyDateTime",
-    };
-    for (const auto & c : date_cases)
+    for (const auto & c : {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64"})
     {
-        auto type = typeFromString(c);
-        // date-like type
-        ASSERT_TRUE(type->isDateOrDateTime()) << "type: " + type->getName();
-        // these are false for date-like type
-        ASSERT_FALSE(type->isInteger()) << "type: " + type->getName();
-        ASSERT_FALSE(type->isUnsignedInteger()) << "type: " + type->getName();
-        ASSERT_FALSE(type->isNumber()) << "type: " + type->getName();
+        auto checker = [&c](const DataTypePtr & type) {
+            if (!type->isNullable())
+            { // FIXME: isNumber && isInteger is not correct for nullable
+                EXPECT_TRUE(type->isNumber()) << "failure for " << type->getName();
+                EXPECT_TRUE(type->isInteger()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isFloatingPoint()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDateOrDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDecimal()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isEnum()) << "failure for " << type->getName();
+            if (c[0] == 'U' && !type->isNullable())
+            {
+                // FIXME: isUnsignedInteger is not correct for nullable
+                EXPECT_TRUE(type->isUnsignedInteger()) << "failure for " << type->getName();
+            }
+        };
 
-        auto ntype = typeFromString("Nullable(" + c + ")");
-        ASSERT_TRUE(ntype->isNullable()) << "type: " + type->getName();
-        // not true for nullable
-        ASSERT_FALSE(ntype->isDateOrDateTime()) << "type: " + type->getName();
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
+    }
+
+    for (const auto & c : {"Float32", "Float64"})
+    {
+        auto checker = [](const DataTypePtr & type) {
+            if (!type->isNullable())
+            {
+                // FIXME: isNumber is not correct for nullable
+                EXPECT_TRUE(type->isNumber()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isInteger()) << "failure for " << type->getName();
+            if (!type->isNullable())
+            {
+                // FIXME: isFloatingPoint is not correct for nullable
+                EXPECT_TRUE(type->isFloatingPoint()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isDateOrDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDecimal()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isEnum()) << "failure for " << type->getName();
+        };
+
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
+    }
+
+    for (const auto & c : {"String", "FixedString(255)"})
+    {
+        auto checker = [](const DataTypePtr & type) {
+            EXPECT_FALSE(type->isNumber()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isInteger()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isFloatingPoint()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDateOrDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDecimal()) << "failure for " << type->getName();
+            if (!type->isNullable())
+            {
+                // FIXME: isStringOrFixedString is not correct for nullable
+                EXPECT_TRUE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isEnum()) << "failure for " << type->getName();
+        };
+
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
+    }
+
+    /*
+    for (const auto & c : {"Enum8", "Enum16"})
+    {
+        auto checker = [](const DataTypePtr & type) {
+            EXPECT_TRUE(type->isNumber()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isInteger()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isFloatingPoint()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDateOrDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDecimal()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            EXPECT_TRUE(type->isEnum()) << "failure for " << type->getName();
+        };
+
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
+    }
+    */
+
+    for (const auto & c : {"MyDateTime", "MyDate", "Date", "DateTime"})
+    {
+        auto checker = [](const DataTypePtr & type) {
+            EXPECT_FALSE(type->isNumber()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isInteger()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isFloatingPoint()) << "failure for " << type->getName();
+            if (!type->isNullable())
+            {
+                // FIXME: isDateOrDateTime, isMyDateOrMyDateTime is not correct for nullable
+                EXPECT_TRUE(type->isDateOrDateTime()) << "failure for " << type->getName();
+                EXPECT_TRUE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDecimal()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isEnum()) << "failure for " << type->getName();
+        };
+
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
+    }
+
+    for (const auto & c : {"Decimal(6,0)", "Decimal(10,0)", "Decimal(10,3)", "Decimal(18,0)", "Decimal(18,2)", "Decimal(38,0)", "Decimal(65,0)"})
+    {
+        auto checker = [](const DataTypePtr & type) {
+            EXPECT_FALSE(type->isNumber()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isInteger()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isFloatingPoint()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isDateOrDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyDateOrMyDateTime()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isMyTime()) << "failure for " << type->getName();
+            if (!type->isNullable())
+            {
+                // FIXME: isDecimal is not correct for nullable
+                EXPECT_TRUE(type->isDecimal()) << "failure for " << type->getName();
+            }
+            EXPECT_FALSE(type->isStringOrFixedString()) << "failure for " << type->getName();
+            EXPECT_FALSE(type->isEnum()) << "failure for " << type->getName();
+        };
+
+        {
+            auto type = typeFromString(c);
+            EXPECT_FALSE(type->isNullable()) << "failure for " << type->getName();
+            checker(type);
+        }
+
+        {
+            auto nullable_type = typeFromString(fmt::format("Nullable({})", c));
+            EXPECT_TRUE(nullable_type->isNullable()) << "failure for " << nullable_type->getName();
+            checker(nullable_type);
+        }
     }
 }
 CATCH

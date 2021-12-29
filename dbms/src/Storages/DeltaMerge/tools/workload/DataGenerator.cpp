@@ -1,4 +1,8 @@
+#include <Common/Decimal.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypeDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/IDataType.h>
 #include <Storages/DeltaMerge/tools/workload/DataGenerator.h>
 #include <Storages/DeltaMerge/tools/workload/KeyGenerator.h>
 #include <Storages/DeltaMerge/tools/workload/Options.h>
@@ -109,52 +113,60 @@ private:
     {
         ColumnWithTypeAndName col({}, data_type, name, col_id);
         IColumn::MutablePtr mut_col = col.type->createColumn();
-        std::string family_name = col.type->getFamilyName();
-        if (family_name == "Int8" || family_name == "Int16" || family_name == "Int32" || family_name == "Int64")
+        if (col.type->isInteger())
         {
-            Field f = static_cast<Int64>(rand_gen());
-            mut_col->insert(f);
+            if (col.type->isUnsignedInteger())
+            {
+                Field f = static_cast<UInt64>(rand_gen());
+                mut_col->insert(f);
+            }
+            else
+            {
+                Field f = static_cast<Int64>(rand_gen());
+                mut_col->insert(f);
+            }
         }
-        else if (family_name == "UInt8" || family_name == "UInt16" || family_name == "UInt32" || family_name == "UInt64")
-        {
-            Field f = static_cast<UInt64>(rand_gen());
-            mut_col->insert(f);
-        }
-        else if (family_name == "Float32" || family_name == "Float64")
+        else if (col.type->isFloatingPoint())
         {
             Field f = static_cast<Float64>(real_rand_gen(rand_gen));
             mut_col->insert(f);
         }
-        else if (family_name == "String")
+        else if (col.type->isString())
         {
             Field f = randomString();
             mut_col->insert(f);
         }
-        else if (family_name == "Enum8")
+        else if (col.type->isEnum())
         {
-            auto dt = dynamic_cast<const DataTypeEnum8 *>(data_type.get());
-            auto & values = dt->getValues();
-            Field f = static_cast<int64_t>(values[rand_gen() % values.size()].second);
-            mut_col->insert(f);
+            if (col.type->getTypeId() == TypeIndex::Enum8)
+            {
+                const auto * dt = dynamic_cast<const DataTypeEnum8 *>(data_type.get());
+                const auto & values = dt->getValues();
+                Field f = static_cast<int64_t>(values[rand_gen() % values.size()].second);
+                mut_col->insert(f);
+            }
+            else if (col.type->getTypeId() == TypeIndex::Enum16)
+            {
+                const auto * dt = dynamic_cast<const DataTypeEnum16 *>(data_type.get());
+                const auto & values = dt->getValues();
+                Field f = static_cast<int64_t>(values[rand_gen() % values.size()].second);
+                mut_col->insert(f);
+            }
         }
-        else if (family_name == "Enum16")
+        else if (col.type->isMyDateOrMyDateTime())
         {
-            auto dt = dynamic_cast<const DataTypeEnum16 *>(data_type.get());
-            auto & values = dt->getValues();
-            Field f = static_cast<int64_t>(values[rand_gen() % values.size()].second);
-            mut_col->insert(f);
+            if (col.type->getTypeId() == TypeIndex::MyDateTime)
+            {
+                Field f = parseMyDateTime(randomDateTime());
+                mut_col->insert(f);
+            }
+            else if (col.type->getTypeId() == TypeIndex::MyDate)
+            {
+                Field f = parseMyDateTime(randomDate());
+                mut_col->insert(f);
+            }
         }
-        else if (family_name == "MyDateTime")
-        {
-            Field f = parseMyDateTime(randomDateTime());
-            mut_col->insert(f);
-        }
-        else if (family_name == "MyDate")
-        {
-            Field f = parseMyDateTime(randomDate());
-            mut_col->insert(f);
-        }
-        else if (family_name == "Decimal")
+        else if (col.type->isDecimal())
         {
             auto prec = getDecimalPrecision(*data_type, 0);
             auto scale = getDecimalScale(*data_type, 0);
@@ -174,7 +186,7 @@ private:
         return col;
     }
 
-    std::string randomDecimal(uint64_t prec, uint64_t scale)
+    std::string randomDecimal(PrecType prec, ScaleType scale)
     {
         auto s = std::to_string(rand_gen());
         if (s.size() < prec)

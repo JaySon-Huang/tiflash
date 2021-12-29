@@ -141,9 +141,9 @@ void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & ist
 
 void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    path.push_back(Substream::ArraySizes);
+    path.emplace_back(Substream::ArraySizes);
     callback(path);
-    path.back() = Substream::ArrayElements;
+    path.back() = IDataType::Substream{Substream::ArrayElements};
     nested->enumerateStreams(callback, path);
 }
 
@@ -159,8 +159,8 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
     const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
 
     /// First serialize array sizes.
-    path.push_back(Substream::ArraySizes);
-    if (auto stream = getter(path))
+    path.emplace_back(Substream::ArraySizes);
+    if (auto * stream = getter(path); stream)
     {
         if (position_independent_encoding)
             serializeArraySizesPositionIndependent(column, *stream, offset, limit);
@@ -169,7 +169,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
     }
 
     /// Then serialize contents of arrays.
-    path.back() = Substream::ArrayElements;
+    path.back() = IDataType::Substream{Substream::ArrayElements};
     const ColumnArray::Offsets & offset_values = column_array.getOffsets();
 
     if (offset > offset_values.size())
@@ -205,8 +205,8 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
-    path.push_back(Substream::ArraySizes);
-    if (auto stream = getter(path))
+    path.emplace_back(Substream::ArraySizes);
+    if (auto * stream = getter(path); stream)
     {
         if (position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
@@ -214,7 +214,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
             DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
     }
 
-    path.back() = Substream::ArrayElements;
+    path.back() = IDataType::Substream{Substream::ArrayElements};
 
     ColumnArray::Offsets & offset_values = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();

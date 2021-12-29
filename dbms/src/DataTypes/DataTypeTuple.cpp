@@ -281,7 +281,7 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 void DataTypeTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    path.push_back(Substream::TupleElement);
+    path.emplace_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         path.back().tuple_element_name = names[i];
@@ -297,7 +297,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     bool position_independent_encoding,
     SubstreamPath & path) const
 {
-    path.push_back(Substream::TupleElement);
+    path.emplace_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         path.back().tuple_element_name = names[i];
@@ -319,7 +319,7 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     bool position_independent_encoding,
     SubstreamPath & path) const
 {
-    path.push_back(Substream::TupleElement);
+    path.emplace_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         path.back().tuple_element_name = names[i];

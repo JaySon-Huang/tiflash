@@ -26,7 +26,7 @@ using DataTypes = std::vector<DataTypePtr>;
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
   * Implementations of this interface represent a data type (example: UInt8)
-  *  or parapetric family of data types (example: Array(...)).
+  *  or parametric family of data types (example: Array(...)).
   *
   * DataType is totally immutable object. You can always share them.
   */
@@ -58,7 +58,7 @@ public:
       * If the data type require single stream (it's true for most of data types), the stream will have empty path.
       * Otherwise, the path can have components like "array elements", "array sizes", etc.
       *
-      * For multidimensional arrays, path can have arbiraty length.
+      * For multidimensional arrays, path can have arbitrary length.
       * As an example, for 2-dimensional arrays of numbers we have at least three streams:
       * - array sizes;                      (sizes of top level arrays)
       * - array elements / array sizes;     (sizes of second level (nested) arrays)
@@ -87,7 +87,7 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
-        Substream(Type type)
+        explicit Substream(Type type)
             : type(type)
         {}
     };
@@ -315,7 +315,7 @@ public:
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
 
-    virtual ~IDataType() {}
+    virtual ~IDataType() = default;
 
 
     /// Various properties on behaviour of data type.
@@ -343,7 +343,7 @@ public:
     virtual bool shouldAlignRightInPrettyFormats() const { return false; };
 
     /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
-      * Example: String (because it can contain arbitary bytes).
+      * Example: String (because it can contain arbitrary bytes).
       * Counterexamples: numbers, Date, DateTime.
       * For Enum, it depends.
       */
@@ -382,6 +382,7 @@ public:
     virtual bool canBeUsedInBooleanContext() const { return false; };
 
     /** Integers, floats, not Nullable. Not Enums. Not Date/DateTime.
+      * FIXME: Should it include Decimal?
       */
     virtual bool isNumber() const { return false; };
 
@@ -432,6 +433,8 @@ public:
         return isValueUnambiguouslyRepresentedInContiguousMemoryRegion() && (isValueRepresentedByNumber() || isFixedString());
     };
 
+    /** String, FixedString. Not nullable.
+      */
     virtual bool isString() const { return false; };
     virtual bool isFixedString() const { return false; };
     virtual bool isStringOrFixedString() const { return isString() || isFixedString(); };
