@@ -55,7 +55,7 @@ void dbgFuncMappedDatabase(Context & context, const ASTs & args, DBGInvoker::Pri
     if (mapped == std::nullopt)
         output(fmt::format("Database {} not found.", database_name));
     else
-        output(fmt::format(mapped.value()));
+        output(fmt::format(fmt::runtime(mapped.value())));
 }
 
 void dbgFuncMappedTable(Context & context, const ASTs & args, DBGInvoker::Printer output)
@@ -75,7 +75,7 @@ void dbgFuncMappedTable(Context & context, const ASTs & args, DBGInvoker::Printe
     else if (qualify)
         output(fmt::format("{}.{}", mapped->first, mapped->second));
     else
-        output(fmt::format(mapped->second));
+        output(fmt::format(fmt::runtime(mapped->second)));
 }
 
 BlockInputStreamPtr dbgFuncQueryMapped(Context & context, const ASTs & args)

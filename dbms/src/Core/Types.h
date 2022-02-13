@@ -18,6 +18,7 @@ namespace DB
 
 struct Null
 {
+
 };
 
 template <typename T>
