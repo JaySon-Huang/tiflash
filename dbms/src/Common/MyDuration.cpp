@@ -49,7 +49,6 @@ String MyDuration::toString() const
     {
         return fmt::format("{}{:02}:{:02}:{:02}", sign > 0 ? "" : "-", hour, minute, second);
     }
-    auto fmt_str = fmt::format("{}{}{}", "{}{:02}:{:02}:{:02}.{:.", fsp, "}");
     auto frac_str = fmt::format("{:06}", microsecond);
     switch (fsp)
     {
