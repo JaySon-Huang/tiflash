@@ -107,7 +107,7 @@ static_assert(alignof(RaftStoreProxyFFIHelper) == alignof(TiFlashRaftProxyHelper
 void AtomicUpdateProxy(DB::EngineStoreServerWrap * server, RaftStoreProxyFFIHelper * proxy)
 {
     server->proxy_helper = static_cast<TiFlashRaftProxyHelper *>(proxy);
-    std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 }
 
 void HandleDestroy(EngineStoreServerWrap * server, uint64_t region_id)
