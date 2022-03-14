@@ -5760,7 +5760,7 @@
           "reverseYBuckets": false,
           "targets": [
             {
-              "expr": "sum(delta(tiflash_raft_command_duration_seconds_bucket{tidb_cluster=\"$tidb_cluster\", instance=~\"$instance\", type=\"snapshot_predecode_sst2dt\"}[1m])) by (le)",
+              "expr": "sum(delta(tiflash_raft_command_duration_seconds_bucket{k8s_cluster=\"$k8s_cluster\", tidb_cluster=\"$tidb_cluster\", instance=~\"$instance\", type=\"snapshot_predecode_sst2dt\"}[1m])) by (le)",
               "format": "heatmap",
               "intervalFactor": 2,
               "legendFormat": "{{le}}",
@@ -6577,7 +6577,7 @@
       "type": "row"
     }
   ],
-  "refresh": false,
+  "refresh": "30s",
   "schemaVersion": 27,
   "style": "dark",
   "tags": [],
