@@ -1624,8 +1624,7 @@ bool Context::initializeGlobalStoragePoolIfNeed(const PathPool & path_pool, bool
             for (const auto & path : path_pool.listGlobalPagePaths())
                 PS::V3::PageStorageImpl::createManifestsFileIfNeed(path);
 
-            shared->global_storage_pool = std::make_shared<DM::GlobalStoragePool>(path_pool, *this, settings);
-            shared->global_storage_pool->restore();
+            shared->global_storage_pool = DM::GlobalStoragePool::create(path_pool, *this, settings);
             return true;
         }
         catch (...)

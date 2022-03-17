@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Storages/BackgroundProcessingPool.h>
+#include <Storages/Page/PageDefines.h>
 #include <Storages/Page/PageStorage.h>
 
 #include <atomic>
@@ -26,6 +27,7 @@ struct Settings;
 class Context;
 class StoragePathPool;
 class StableDiskDelegator;
+class PathPool;
 
 namespace DM
 {
@@ -43,9 +45,10 @@ public:
     using Timepoint = Clock::time_point;
     using Seconds = std::chrono::seconds;
 
-    GlobalStoragePool(const PathPool & path_pool, Context & global_ctx, const Settings & settings);
-
-    void restore();
+    static GlobalStoragePoolPtr create(
+        const PathPool & path_pool,
+        Context & global_ctx,
+        const Settings & settings);
 
     ~GlobalStoragePool();
 
@@ -53,14 +56,21 @@ public:
     PageStoragePtr data() const { return data_storage; }
     PageStoragePtr meta() const { return meta_storage; }
 
+    // Should only called by create(...)
+    GlobalStoragePool(
+        const PageStoragePtr & log_storage_,
+        const PageStoragePtr & data_storage_,
+        const PageStoragePtr & meta_storage_,
+        Context & global_ctx);
+
 private:
     // TODO: maybe more frequent gc for GlobalStoragePool?
     bool gc(const Settings & settings, const Seconds & try_gc_period = DELTA_MERGE_GC_PERIOD);
 
 private:
-    PageStoragePtr log_storage;
-    PageStoragePtr data_storage;
-    PageStoragePtr meta_storage;
+    const PageStoragePtr log_storage;
+    const PageStoragePtr data_storage;
+    const PageStoragePtr meta_storage;
 
     std::atomic<Timepoint> last_try_gc_time = Clock::now();
 
@@ -77,11 +87,19 @@ public:
     using Timepoint = Clock::time_point;
     using Seconds = std::chrono::seconds;
 
-    StoragePool(const String & name, NamespaceId ns_id_, StoragePathPool & path_pool, Context & global_ctx, const Settings & settings);
+    // Create owned page storages instance for each table.
+    static StoragePoolPtr createOwnedForTable(
+        const String & name,
+        NamespaceId ns_id,
+        StoragePathPool & path_pool,
+        Context & global_ctx,
+        const Settings & settings);
 
-    StoragePool(NamespaceId ns_id_, const GlobalStoragePool & global_storage_pool, Context & global_ctx);
-
-    void restore();
+    // Work as a proxy to the GlobalStoragePool.
+    static StoragePoolPtr createProxyFromGlobal(
+        NamespaceId ns_id,
+        const GlobalStoragePool & global_storage_pool,
+        Context & global_ctx);
 
     ~StoragePool();
 
@@ -91,10 +109,12 @@ public:
     PageStoragePtr data() const { return data_storage; }
     PageStoragePtr meta() const { return meta_storage; }
 
+    // helper readers for always reading the latest version of page
     PageReader & logReader() { return log_storage_reader; }
     PageReader & dataReader() { return data_storage_reader; }
     PageReader & metaReader() { return meta_storage_reader; }
 
+    // create readers with snapshot
     PageReader newLogReader(ReadLimiterPtr read_limiter, bool snapshot_read)
     {
         return PageReader(ns_id, log_storage, snapshot_read ? log_storage->getSnapshot() : nullptr, read_limiter);
@@ -108,29 +128,44 @@ public:
         return PageReader(ns_id, meta_storage, snapshot_read ? meta_storage->getSnapshot() : nullptr, read_limiter);
     }
 
+    // Register gc task
     void enableGC();
-
+    // just exported for test, should use `enableGC` to call it periodically
     bool gc(const Settings & settings, const Seconds & try_gc_period = DELTA_MERGE_GC_PERIOD);
 
+    // Cancel gc task for this storage pool
     void shutdown();
 
-    // Caller must cancel gc tasks before drop
+    // Drop the data of this storage pool. Caller should
+    // ensure there are no other threads write to this
+    // storage pool.
     void drop();
-
-    PageId newDataPageIdForDTFile(StableDiskDelegator & delegator, const char * who);
 
     PageId maxMetaPageId() { return max_meta_page_id; }
 
+    PageId newDataPageIdForDTFile(StableDiskDelegator & delegator, const char * who);
     PageId newLogPageId() { return ++max_log_page_id; }
     PageId newMetaPageId() { return ++max_meta_page_id; }
 
+    // Should only called by create(...)
+    StoragePool(
+        bool work_as_proxy,
+        NamespaceId ns_id_,
+        const PageStoragePtr & log_storage_,
+        const PageStoragePtr & data_storage_,
+        const PageStoragePtr & meta_storage_,
+        Context & global_ctx);
+
 private:
-    NamespaceId ns_id;
+    // whether the three storage instance is work as a proxy to the global StoragePool
+    const bool work_as_proxy = false;
+    const NamespaceId ns_id;
 
-    PageStoragePtr log_storage;
-    PageStoragePtr data_storage;
-    PageStoragePtr meta_storage;
+    const PageStoragePtr log_storage;
+    const PageStoragePtr data_storage;
+    const PageStoragePtr meta_storage;
 
+    // helper readers for always reading the latest version of page
     PageReader log_storage_reader;
     PageReader data_storage_reader;
     PageReader meta_storage_reader;
@@ -140,9 +175,6 @@ private:
     std::mutex mutex;
 
     Context & global_context;
-
-    // whether the three storage instance is owned by this StoragePool
-    bool owned_storage = false;
 
     std::atomic<PageId> max_log_page_id = 0;
     std::atomic<PageId> max_data_page_id = 0;

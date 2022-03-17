@@ -211,17 +211,6 @@ DeltaMergeStore::DeltaMergeStore(Context & db_context,
 {
     LOG_FMT_INFO(log, "Restore DeltaMerge Store start [{}.{}]", db_name, table_name);
 
-    // for mock test, table_id_ should be DB::InvalidTableID
-    NamespaceId ns_id = physical_table_id == DB::InvalidTableID ? TEST_NAMESPACE_ID : physical_table_id;
-    if (auto global_storage_pool = global_context.getGlobalStoragePool(); global_storage_pool)
-    {
-        storage_pool = std::make_shared<StoragePool>(ns_id, *global_storage_pool, global_context);
-    }
-    else
-    {
-        storage_pool = std::make_shared<StoragePool>(db_name_ + "." + table_name_, ns_id, path_pool, global_context, db_context.getSettingsRef());
-    }
-
     // Restore existing dm files and set capacity for path_pool.
     // Should be done before any background task setup.
     restoreStableFiles();
@@ -242,7 +231,17 @@ DeltaMergeStore::DeltaMergeStore(Context & db_context,
 
     try
     {
-        storage_pool->restore(); // restore from disk
+        // for mock test, table_id_ should be DB::InvalidTableID
+        NamespaceId ns_id = physical_table_id == DB::InvalidTableID ? TEST_NAMESPACE_ID : physical_table_id;
+        if (auto global_storage_pool = global_context.getGlobalStoragePool(); global_storage_pool)
+        {
+            storage_pool = StoragePool::createProxyFromGlobal(ns_id, *global_storage_pool, global_context);
+        }
+        else
+        {
+            storage_pool = StoragePool::createOwnedForTable(db_name + "." + table_name, ns_id, path_pool, global_context, db_context.getSettingsRef());
+        }
+
         if (!storage_pool->maxMetaPageId())
         {
             // Create the first segment.
