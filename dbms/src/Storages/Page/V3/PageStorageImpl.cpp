@@ -342,9 +342,22 @@ bool PageStorageImpl::gcImpl(bool /*not_skip*/, const WriteLimiterPtr & write_li
 // TODO: `clean_external_page` for all tables may slow down the whole gc process when there are lots of table.
 void PageStorageImpl::cleanExternalPage(Stopwatch & gc_watch, GCTimeStatistics & statistics)
 {
+    // Fine grained lock on `callbacks_mutex` and `callbacks_remove_mutex`.
+    // So that adding/removing a storage will not be blocked for the whole
+    // processing time of `cleanExternalPage`.
     ExternalPageCallbacksContainer::iterator callbacks_iter;
     {
         std::scoped_lock lock{callbacks_mutex};
+        {
+            std::scoped_lock remove_lock{callbacks_remove_mutex};
+            // remove the callbacks by remove queue
+            for (auto ns_id : callbacks_remove_queue)
+                callbacks_container.erase(ns_id);
+            callbacks_remove_queue.clear();
+            callbacks_remove_queue.rehash(0);
+        }
+
+        // check and get the begin iter
         statistics.num_external_callbacks = callbacks_container.size();
         if (statistics.num_external_callbacks == 0)
         {
@@ -354,7 +367,7 @@ void PageStorageImpl::cleanExternalPage(Stopwatch & gc_watch, GCTimeStatistics &
         callbacks_iter = callbacks_container.begin();
     }
 
-    SYNC_FOR("before_PageStorageImpl::doGC_clean_external_page");
+    SYNC_FOR("before_PageStorageImpl::cleanExternalPage_execute_callbacks");
 
     Stopwatch external_watch;
     // get all alive external ids from all namespaces
@@ -363,18 +376,29 @@ void PageStorageImpl::cleanExternalPage(Stopwatch & gc_watch, GCTimeStatistics &
     while (true)
     {
         const auto & ns_id = callbacks_iter->first;
-        const auto & callbacks = callbacks_iter->second;
-        auto pending_external_pages = callbacks.scanner();
-        statistics.external_page_scan_ns += external_watch.elapsedFromLastTime();
-        if (auto iter = alive_external_ids.find(ns_id); iter != alive_external_ids.end())
+        do
         {
-            callbacks.remover(pending_external_pages, iter->second);
-        }
-        else
-        {
-            callbacks.remover(pending_external_pages, {});
-        }
-        statistics.external_page_remove_ns += external_watch.elapsedFromLastTime();
+            std::scoped_lock remove_lock{callbacks_remove_mutex};
+            // If the ns_id is pushed into `remove_queue`, then the `callbacks`
+            // are invalid and may cause failure, break do..while to continue
+            // on next namespace
+            if (callbacks_remove_queue.count(ns_id) > 0)
+                break;
+
+            // `remove_lock` ensure that the `callbacks` won't be invalid
+            const auto & callbacks = callbacks_iter->second;
+            auto pending_external_pages = callbacks.scanner();
+            statistics.external_page_scan_ns += external_watch.elapsedFromLastTime();
+            if (auto iter = alive_external_ids.find(ns_id); iter != alive_external_ids.end())
+            {
+                callbacks.remover(pending_external_pages, iter->second);
+            }
+            else
+            {
+                callbacks.remover(pending_external_pages, {});
+            }
+            statistics.external_page_remove_ns += external_watch.elapsedFromLastTime();
+        } while (false);
 
         // move to next namespace callbacks
         {
@@ -473,14 +497,37 @@ void PageStorageImpl::registerExternalPagesCallbacks(const ExternalPageCallbacks
     assert(callbacks.scanner != nullptr);
     assert(callbacks.remover != nullptr);
     assert(callbacks.ns_id != MAX_NAMESPACE_ID);
-    assert(callbacks_container.count(callbacks.ns_id) == 0);
+    {
+#ifdef NDEBUG
+        // In product env, we assume that NamespaceId(TableID) will not be reuse,
+        // so that creating table don't require to be blocked by `callbacks_remove_mutex`.
+        RUNTIME_CHECK_MSG(
+            callbacks_container.count(callbacks.ns_id) == 0,
+            "Try to create callbacks for duplicated namespace id {}",
+            callbacks.ns_id);
+#else
+        // In unit test, we may create, drop, recreate with same NamespaceId,
+        // do a cleanup and check.
+        std::scoped_lock remove_lock{callbacks_remove_mutex};
+        // remove the callbacks by remove queue
+        for (auto ns_id : callbacks_remove_queue)
+            callbacks_container.erase(ns_id);
+        callbacks_remove_queue.clear();
+        callbacks_remove_queue.rehash(0);
+        assert(callbacks_container.count(callbacks.ns_id) == 0);
+#endif
+    }
+    // `emplace` won't invalid other iterator
     callbacks_container.emplace(callbacks.ns_id, callbacks);
 }
 
 void PageStorageImpl::unregisterExternalPagesCallbacks(NamespaceId ns_id)
 {
-    std::scoped_lock lock{callbacks_mutex};
-    callbacks_container.erase(ns_id);
+    std::scoped_lock remove_lock{callbacks_remove_mutex};
+    // `callbacks_container.erase` will invalid the iterator of `ns_id`
+    // we only push the id into queue.
+    // The callbacks will be removed inside `cleanExternalPage`
+    callbacks_remove_queue.emplace(ns_id);
 }
 
 const String PageStorageImpl::manifests_file_name = "manifests";
