@@ -24,6 +24,7 @@
 #include <Storages/DeltaMerge/tests/gtest_dm_delta_merge_store_test_basic.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/InputStreamTestUtils.h>
+#include <TestUtils/TiFlashTestEnv.h>
 #include <common/types.h>
 
 #include <algorithm>
@@ -84,8 +85,40 @@ try
         // check column structure of store
         const auto & cols = store->getTableColumns();
         // version & tag column added
-        ASSERT_EQ(cols.size(), 3UL);
+        ASSERT_EQ(cols.size(), 3);
     }
+}
+CATCH
+
+TEST_F(DeltaMergeStoreTest, DroppedInMiddleDTFileGC)
+try
+{
+    // create table
+    ASSERT_NE(store, nullptr);
+
+    auto global_page_storage = TiFlashTestEnv::getGlobalContext().getGlobalStoragePool();
+
+    // Start a PageStorage gc and suspend it before clean external page
+    auto sp_gc = SyncPointCtl::enableInScope("before_PageStorageImpl::cleanExternalPage_execute_callbacks");
+    auto th_gc = std::async([&]() {
+        if (global_page_storage)
+            global_page_storage->gc();
+    });
+    sp_gc.waitAndPause();
+
+    {
+        // check column structure of store
+        const auto & cols = store->getTableColumns();
+        // version & tag column added
+        ASSERT_EQ(cols.size(), 3);
+    }
+
+    // drop table in the middle of page storage gc
+    store->shutdown();
+    store = nullptr;
+
+    sp_gc.next(); // continue the page storage gc
+    th_gc.wait();
 }
 CATCH
 
