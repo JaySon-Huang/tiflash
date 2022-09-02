@@ -16,11 +16,13 @@
 #include <Common/TiFlashMetrics.h>
 #include <Databases/IDatabase.h>
 #include <Debug/MockTiDB.h>
+#include <Debug/dbgTools.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IManageableStorage.h>
+#include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/RegionBlockReader.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <Storages/Transaction/Types.h>
@@ -29,6 +31,8 @@
 #include <TestUtils/TiFlashTestEnv.h>
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <common/defines.h>
+
+#include "Storages/Transaction/Region.h"
 
 namespace DB
 {
@@ -141,6 +145,14 @@ public:
         return tbl;
     }
 
+    // create a mocked empty region
+    void mustCreateRegion(TableID table_id, RegionID region_id, const HandleID start, const HandleID end)
+    {
+        auto region = DB::RegionBench::createRegion(table_id, region_id, start, end);
+        auto & flash_ctx = global_ctx.getTMTContext();
+        flash_ctx.getKVStore()->onSnapshot<RegionPtrWithBlock>(region, nullptr, 0, flash_ctx);
+    }
+
     /*
      * Helper methods work with `db_${database_id}`.`t_${table_id}` in the TiFlash side
      */
@@ -235,7 +247,54 @@ try
     auto part1_id = MockTiDB::instance().newPartition(logical_table_id, "red", pd_client->getTS(), /*is_add_part*/ true);
     auto part2_id = MockTiDB::instance().newPartition(logical_table_id, "blue", pd_client->getTS(), /*is_add_part*/ true);
 
-    // TODO: write some data
+    // write some data to partition 1
+    {
+        RegionID region_id = 4;
+        mustCreateRegion(part1_id, region_id, 0, 100);
+        auto part1_tbl = mustGetSyncedTable(part1_id);
+        RegionBench::insert(
+            part1_tbl->getTableInfo(),
+            region_id,
+            50,
+            std::vector<Field>{
+                Field(String("test1")),
+                Field(UInt64(1)),
+            },
+            global_ctx);
+        RegionBench::insert(
+            part1_tbl->getTableInfo(),
+            region_id,
+            51,
+            std::vector<Field>{
+                Field(String("test2")),
+                Field(UInt64(2)),
+            },
+            global_ctx);
+    }
+    // write some data to partition 2
+    {
+        RegionID region_id = 5;
+        mustCreateRegion(part2_id, region_id, 0, 100);
+        auto part2_tbl = mustGetSyncedTable(part2_id);
+        RegionBench::insert(
+            part2_tbl->getTableInfo(),
+            region_id,
+            152,
+            std::vector<Field>{
+                Field(String("test3")),
+                Field(UInt64(3)),
+            },
+            global_ctx);
+        RegionBench::insert(
+            part2_tbl->getTableInfo(),
+            region_id,
+            153,
+            std::vector<Field>{
+                Field(String("test4")),
+                Field(UInt64(4)),
+            },
+            global_ctx);
+    }
 
     refreshSchema();
 

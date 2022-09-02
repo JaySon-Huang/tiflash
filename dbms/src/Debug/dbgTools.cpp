@@ -298,26 +298,36 @@ void encodeRow(const TiDB::TableInfo & table_info, const std::vector<Field> & fi
     (row_format_flip = !row_format_flip) ? encodeRowV1(table_info, flatten_fields, ss) : encodeRowV2(table_info, flatten_fields, ss);
 }
 
-void insert( //
+void insert(
     const TiDB::TableInfo & table_info,
     RegionID region_id,
-    HandleID handle_id, //
+    HandleID handle_id,
     ASTs::const_iterator values_begin,
-    ASTs::const_iterator values_end, //
+    ASTs::const_iterator values_end,
     Context & context,
     const std::optional<std::tuple<Timestamp, UInt8>> & tso_del)
 {
     // Parse the fields in the inserted row
     std::vector<Field> fields;
+    for (auto it = values_begin; it != values_end; ++it)
     {
-        for (auto it = values_begin; it != values_end; ++it)
-        {
-            auto field = typeid_cast<const ASTLiteral *>((*it).get())->value;
-            fields.emplace_back(field);
-        }
-        if (fields.size() + table_info.pk_is_handle != table_info.columns.size())
-            throw Exception("Number of insert values and columns do not match.", ErrorCodes::LOGICAL_ERROR);
+        auto field = typeid_cast<const ASTLiteral *>((*it).get())->value;
+        fields.emplace_back(field);
     }
+    insert(table_info, region_id, handle_id, fields, context, tso_del);
+}
+
+void insert(
+    const TiDB::TableInfo & table_info,
+    RegionID region_id,
+    HandleID handle_id,
+    const std::vector<Field> & fields,
+    Context & context,
+    const std::optional<std::tuple<Timestamp, UInt8>> & tso_del)
+{
+    if (fields.size() + table_info.pk_is_handle != table_info.columns.size())
+        throw Exception("Number of insert values and columns do not match.", ErrorCodes::LOGICAL_ERROR);
+
     TMTContext & tmt = context.getTMTContext();
     pingcap::pd::ClientPtr pd_client = tmt.getPDClient();
     RegionPtr region = tmt.getKVStore()->getRegion(region_id);

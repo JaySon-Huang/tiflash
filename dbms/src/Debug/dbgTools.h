@@ -52,7 +52,22 @@ RegionPtr createRegion(
 
 void encodeRow(const TiDB::TableInfo & table_info, const std::vector<Field> & fields, WriteBuffer & ss);
 
-void insert(const TiDB::TableInfo & table_info, RegionID region_id, HandleID handle_id, ASTs::const_iterator begin, ASTs::const_iterator end, Context & context, const std::optional<std::tuple<Timestamp, UInt8>> & tso_del = {});
+void insert(
+    const TiDB::TableInfo & table_info,
+    RegionID region_id,
+    HandleID handle_id,
+    ASTs::const_iterator begin,
+    ASTs::const_iterator end,
+    Context & context,
+    const std::optional<std::tuple<Timestamp, UInt8>> & tso_del = {});
+
+void insert(
+    const TiDB::TableInfo & table_info,
+    RegionID region_id,
+    HandleID handle_id,
+    const std::vector<Field> & fields,
+    Context & context,
+    const std::optional<std::tuple<Timestamp, UInt8>> & tso_del = {});
 
 void addRequestsToRaftCmd(raft_cmdpb::RaftCmdRequest & request, const TiKVKey & key, const TiKVValue & value, UInt64 prewrite_ts, UInt64 commit_ts, bool del, const String pk = "pk");
 
