@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if 0
 #include <Flash/tests/bench_exchange.h>
 #include <TestUtils/mockExecutor.h>
 
@@ -165,3 +166,5 @@ BENCHMARK_REGISTER_F(WindowFunctionBench, partial_sort_skew_dataset)
     ->Args({8, 1, 1024 * 10000, 0, 4096});
 } // namespace tests
 } // namespace DB
+
+#endif

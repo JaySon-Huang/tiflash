@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Storages/Page/V3/MapUtils.h>
 #include <Storages/Page/V3/spacemap/SpaceMap.h>
+#include <absl/container/btree_map.h>
 #include <fmt/format.h>
 
 #include <ext/shared_ptr_helper.h>
@@ -339,8 +340,7 @@ protected:
             return true;
         }
 
-        bool meanless = false;
-        std::tie(it, meanless) = free_map.insert({offset, length});
+        it = free_map.insert(/*hint*/ it, {offset, length});
 
         auto it_prev = it;
         auto it_next = it;
@@ -388,7 +388,8 @@ protected:
             // Prev space can merge
             if (it_prev->first + it_prev->second == it->first)
             {
-                free_map[it_prev->first] = it->first + it->second - it_prev->first;
+                // free_map[it_prev->first] = it->first + it->second - it_prev->first;
+                it_prev->second = it->first + it->second - it_prev->first;
                 free_map.erase(it);
                 it = it_prev;
             }
@@ -406,7 +407,8 @@ protected:
 
         if (it->first + it->second == it_next->first)
         {
-            free_map[it->first] = it_next->first + it_next->second - it->first;
+            // free_map[it->first] = it_next->first + it_next->second - it->first;
+            it->second = it_next->first + it_next->second - it->first;
             free_map.erase(it_next);
         }
         // next can't merge
@@ -415,7 +417,8 @@ protected:
 
 private:
     // Save the <offset, length> of free blocks
-    std::map<UInt64, UInt64> free_map;
+    // std::map<UInt64, UInt64> free_map;
+    absl::btree_map<UInt64, UInt64> free_map;
     // Keep a hint track of the biggest free block. Save its biggest capacity and start offset.
     // The hint could be invalid after `markSmapUsed` while restoring or `markSmapFree`.
     UInt64 hint_biggest_offset = 0;

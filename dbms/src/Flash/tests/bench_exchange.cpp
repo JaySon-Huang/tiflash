@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if 0
 #include <Flash/tests/bench_exchange.h>
 #include <fmt/core.h>
 
@@ -464,3 +465,5 @@ BENCHMARK_REGISTER_F(ExchangeBench, basic_send_receive)
 
 } // namespace tests
 } // namespace DB
+
+#endif

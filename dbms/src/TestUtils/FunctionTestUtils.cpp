@@ -15,8 +15,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/FmtUtils.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Row.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Flash/Coprocessor/DAGCodec.h>
 #include <Flash/Coprocessor/DAGExpressionAnalyzer.h>
 #include <Flash/Coprocessor/DAGExpressionAnalyzerHelper.h>
@@ -462,6 +465,7 @@ String getColumnsContent(const ColumnsWithTypeAndName & cols, size_t begin, size
     }
 
     assert(is_same); /// Ensure the sizes of columns in cols are the same
+    UNUSED(is_same);
 
     std::vector<std::pair<size_t, String>> col_content;
     FmtBuffer fmt_buf;

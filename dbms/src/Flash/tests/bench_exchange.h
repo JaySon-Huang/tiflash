@@ -14,6 +14,7 @@
 
 #pragma once
 
+#if 0
 #include <Common/DynamicThreadPool.h>
 #include <Common/MPMCQueue.h>
 #include <Common/ThreadManager.h>
@@ -297,3 +298,4 @@ public:
 
 } // namespace tests
 } // namespace DB
+#endif
