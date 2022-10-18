@@ -82,7 +82,7 @@ private:
 
             stop_watch.start();
 
-            auto buffer_size = 1 * DB::MB;
+            auto buffer_size = ReadableSize::MiB(1).value;
             auto field_size = divideFields(buffer_size, 1000);
 
             startWriter<PSWindowWriter>(options.num_writers, [field_size, buffer_size](std::shared_ptr<PSWindowWriter> writer) -> void {
@@ -104,7 +104,7 @@ private:
 
             stop_watch.start();
 
-            auto buffer_size = 1 * DB::MB;
+            auto buffer_size = ReadableSize::MiB(1).value;
             auto field_size = divideFields(buffer_size, 1000);
 
             startWriter<PSWindowWriter>(options.num_writers, [field_size, buffer_size](std::shared_ptr<PSWindowWriter> writer) -> void {

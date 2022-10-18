@@ -364,7 +364,7 @@ std::tuple<size_t, TiFlashStorageConfig> TiFlashStorageConfig::parseSettings(Poc
             }
             if (num_token != 1)
                 LOG_WARNING(log, "Only the first number in configuration \"capacity\" take effect");
-            LOG_INFO(log, "The capacity limit is: {}", formatReadableSizeWithBinarySuffix(global_capacity_quota));
+            LOG_INFO(log, "The capacity limit is: {}", ReadableSize(global_capacity_quota));
         }
 
         if (!storage_config.parseFromDeprecatedConfiguration(config, log))

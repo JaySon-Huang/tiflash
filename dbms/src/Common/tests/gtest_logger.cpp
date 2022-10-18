@@ -52,7 +52,7 @@ protected:
 TEST_F(LogMacroTest, Poco)
 {
     auto * log = &Poco::Logger::get("LoggerTest");
-    LOG_INFO(log, "float-number: {0:.4f}, {0:.5f}, size: {1}", 3.1415926, formatReadableSizeWithBinarySuffix(9ULL * 1024 * 1024 * 1024 + 8 * 1024 * 1024 + 7 * 1024));
+    LOG_INFO(log, "float-number: {0:.4f}, {0:.5f}, size: {1}", 3.1415926, ReadableSize(9ULL * 1024 * 1024 * 1024 + 8 * 1024 * 1024 + 7 * 1024));
 
     ASSERT_EQ(
         channel->getLastMessage().getText().substr(32), // length of timestamp is 32
@@ -62,7 +62,7 @@ TEST_F(LogMacroTest, Poco)
 TEST_F(LogMacroTest, PropsLogger)
 {
     auto log = Logger::get("props=foo");
-    LOG_INFO(log, "float-number: {0:.4f}, {0:.5f}, size: {1}", 3.1415926, formatReadableSizeWithBinarySuffix(9ULL * 1024 * 1024 * 1024 + 8 * 1024 * 1024 + 7 * 1024));
+    LOG_INFO(log, "float-number: {0:.4f}, {0:.5f}, size: {1}", 3.1415926, ReadableSize(9ULL * 1024 * 1024 * 1024 + 8 * 1024 * 1024 + 7 * 1024));
 
     ASSERT_EQ(
         channel->getLastMessage().getText().substr(32), // length of timestamp is 32

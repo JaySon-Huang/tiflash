@@ -248,7 +248,7 @@ try
     const TableID table_id = 100;
 
     PageStorageConfig config;
-    config.file_roll_size = 128 * MB;
+    config.file_roll_size = ReadableSize::MiB(128).value;
     {
         UInt64 diff = 0;
         RegionPersister persister(ctx, region_manager);

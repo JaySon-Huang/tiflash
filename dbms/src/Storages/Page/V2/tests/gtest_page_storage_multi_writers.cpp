@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Encryption/FileProvider.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Poco/AutoPtr.h>
@@ -56,7 +57,7 @@ protected:
     {
         TiFlashStorageTestBasic::SetUp();
         // default test config
-        config.file_roll_size = 4 * MB;
+        config.file_roll_size = ReadableSize::MiB(4).value;
         config.gc_max_valid_rate = 0.5;
         config.num_write_slots = 4; // At most 4 threads for write
 

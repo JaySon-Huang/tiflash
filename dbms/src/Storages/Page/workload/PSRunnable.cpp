@@ -39,7 +39,7 @@ try
     }
     auto peak = current_memory_tracker->getPeak();
     current_memory_tracker = nullptr;
-    LOG_INFO(StressEnv::logger, "{} exit with peak memory usage: {}", description(), formatReadableSizeWithBinarySuffix(peak));
+    LOG_INFO(StressEnv::logger, "{} exit with peak memory usage: {}", description(), ReadableSize(peak));
 }
 catch (...)
 {
@@ -70,7 +70,7 @@ DB::ReadBufferPtr PSWriter::genRandomData(const DB::PageId pageId, DB::MemHolder
     size_gen.seed(time(nullptr));
     std::uniform_int_distribution<> dist(0, 3000);
 
-    const size_t buff_sz = approx_page_mb * DB::MB + dist(size_gen);
+    const size_t buff_sz = ReadableSize::MiB(approx_page_mb).value + dist(size_gen);
     char * buff = static_cast<char *>(malloc(buff_sz)); // NOLINT
     if (buff == nullptr)
     {
@@ -87,7 +87,7 @@ DB::ReadBufferPtr PSWriter::genRandomData(const DB::PageId pageId, DB::MemHolder
 
 void PSWriter::updatedRandomData()
 {
-    size_t memory_size = approx_page_mb * DB::MB * 2;
+    size_t memory_size = ReadableSize::MiB(approx_page_mb).value * 2;
     if (memory == nullptr)
     {
         memory = static_cast<char *>(malloc(memory_size)); // NOLINT

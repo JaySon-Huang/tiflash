@@ -20,6 +20,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/formatReadable.h>
 #include <Poco/File.h>
 #include <Storages/Page/FileUsage.h>
 #include <Storages/Page/PageDefines.h>
@@ -1049,7 +1050,7 @@ PageEntriesEdit BlobStore::gc(std::map<BlobFileId, PageIdAndVersionedEntries> & 
     {
         throw Exception("BlobStore can't do gc if nothing need gc.", ErrorCodes::LOGICAL_ERROR);
     }
-    LOG_INFO(log, "BlobStore gc will migrate {:.2f}MB into new Blobs", (1.0 * total_page_size / DB::MB));
+    LOG_INFO(log, "BlobStore gc will migrate {} into new Blobs", ReadableSize(total_page_size));
 
     auto write_blob = [this, total_page_size, &written_blobs, &write_limiter](const BlobFileId & file_id,
                                                                               char * data_begin,

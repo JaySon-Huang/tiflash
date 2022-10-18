@@ -14,6 +14,7 @@
 
 
 #include <Common/SyncPoint/Ctl.h>
+#include <Common/formatReadable.h>
 #include <Encryption/MockKeyManager.h>
 #include <Encryption/PosixRandomAccessFile.h>
 #include <Encryption/RandomAccessFile.h>
@@ -560,7 +561,7 @@ TEST_F(PageStorageTest, MultipleWriteRead)
         size_gen.seed(time(nullptr));
         std::uniform_int_distribution<> dist(0, 3000);
 
-        const size_t buff_sz = 2 * DB::MB + dist(size_gen);
+        const size_t buff_sz = ReadableSize::MiB(2).value + dist(size_gen);
         char * buff = static_cast<char *>(malloc(buff_sz));
         if (buff == nullptr)
         {

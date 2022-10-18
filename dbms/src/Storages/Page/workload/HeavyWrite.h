@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/formatReadable.h>
 #include <Storages/Page/workload/PSWorkload.h>
 
 namespace DB::PS::tests
@@ -59,7 +60,7 @@ private:
             stop_watch.start();
             startWriter<PSCommonWriter>(options.num_writers, [](std::shared_ptr<PSCommonWriter> writer) -> void {
                 writer->setBatchBufferNums(4);
-                writer->setBatchBufferRange(1, 2 * DB::MB);
+                writer->setBatchBufferRange(1, ReadableSize::MiB(2).value);
             });
 
             pool.joinAll();

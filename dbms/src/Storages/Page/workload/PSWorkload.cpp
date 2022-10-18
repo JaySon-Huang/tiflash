@@ -46,18 +46,20 @@ void StressWorkload::onDumpResult()
         total_bytes_read += reader->bytes_used;
     }
 
+    constexpr static auto GB = ReadableSize::GiB(1).value;
+
     LOG_INFO(options.logger,
              fmt::format(
                  "W: {} pages, {:.4f} GB, {:.4f} GB/s",
                  total_pages_written,
-                 static_cast<double>(total_bytes_written) / DB::GB,
-                 static_cast<double>(total_bytes_written) / DB::GB / seconds_run));
+                 static_cast<double>(total_bytes_written) / GB,
+                 static_cast<double>(total_bytes_written) / GB / seconds_run));
     LOG_INFO(options.logger,
              fmt::format(
                  "R: {} pages, {:.4f} GB, {:.4f} GB/s",
                  total_pages_read,
-                 static_cast<double>(total_bytes_read) / DB::GB,
-                 static_cast<double>(total_bytes_read) / DB::GB / seconds_run));
+                 static_cast<double>(total_bytes_read) / GB,
+                 static_cast<double>(total_bytes_read) / GB / seconds_run));
 
     if (options.status_interval != 0)
     {

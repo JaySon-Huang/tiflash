@@ -13,10 +13,39 @@
 // limitations under the License.
 
 #include <Common/FmtUtils.h>
+#include <Common/formatReadable.h>
 #include <gtest/gtest.h>
 
 namespace DB::tests
 {
+
+TEST(FmtTest, ReadableSize)
+{
+    EXPECT_EQ(fmt::format("{}", ReadableSize(123)), "123.00 B");
+    EXPECT_EQ(fmt::format("{:.2b}", ReadableSize(123)), "123.00 B");
+    EXPECT_EQ(fmt::format("{:.2d}", ReadableSize(123)), "123.00 B");
+
+    EXPECT_EQ(fmt::format("{}", ReadableSize(1'234)), "1.21 KiB");
+    EXPECT_EQ(fmt::format("{:.2b}", ReadableSize(1'234)), "1.21 KiB");
+    EXPECT_EQ(fmt::format("{:.2d}", ReadableSize(1'234)), "1.23 KB");
+
+    EXPECT_EQ(fmt::format("{}", ReadableSize(123'456)), "120.56 KiB");
+    EXPECT_EQ(fmt::format("{:.2b}", ReadableSize(123'456)), "120.56 KiB");
+    EXPECT_EQ(fmt::format("{:.2d}", ReadableSize(123'456)), "123.46 KB");
+
+    EXPECT_EQ(fmt::format("{}", ReadableSize(1'234'567)), "1.18 MiB");
+    EXPECT_EQ(fmt::format("{:.2b}", ReadableSize(1'234'567)), "1.18 MiB");
+    EXPECT_EQ(fmt::format("{:.2d}", ReadableSize(1'234'567)), "1.23 MB");
+
+    EXPECT_EQ(fmt::format("{}", ReadableSize(1'234'567'890'123'456ULL)), "1.10 PiB");
+    EXPECT_EQ(fmt::format("{:.2b}", ReadableSize(1'234'567'890'123'456ULL)), "1.10 PiB");
+    EXPECT_EQ(fmt::format("{:.2d}", ReadableSize(1'234'567'890'123'456ULL)), "1.23 PB");
+    EXPECT_EQ(fmt::format("{:.1b}", ReadableSize(1'234'567'890'123'456ULL)), "1.1 PiB");
+    EXPECT_EQ(fmt::format("{:.1d}", ReadableSize(1'234'567'890'123'456ULL)), "1.2 PB");
+    EXPECT_EQ(fmt::format("{:.9b}", ReadableSize(1'234'567'890'123'456ULL)), "1.096516558 PiB");
+    EXPECT_EQ(fmt::format("{:.9d}", ReadableSize(1'234'567'890'123'456ULL)), "1.234567890 PB");
+}
+
 TEST(FmtUtilsTest, TestFmtBuffer)
 {
     FmtBuffer buffer;

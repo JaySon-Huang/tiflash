@@ -488,7 +488,7 @@ try
     }
 
     PageStorageConfig tmp_config = config;
-    tmp_config.file_roll_size = 128 * MB;
+    tmp_config.file_roll_size = ReadableSize::MiB(128).value;
     storage = reopenWithConfig(tmp_config);
 
     {

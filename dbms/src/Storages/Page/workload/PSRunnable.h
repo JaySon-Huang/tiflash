@@ -114,7 +114,7 @@ public:
 protected:
     std::vector<DB::ReadBufferPtr> buff_ptrs;
     size_t batch_buffer_nums = 100;
-    size_t batch_buffer_size = 1 * DB::MB;
+    size_t batch_buffer_size = ReadableSize::MiB(1).value;
     size_t batch_buffer_limit = 0;
 
     size_t buffer_size_min = 0;

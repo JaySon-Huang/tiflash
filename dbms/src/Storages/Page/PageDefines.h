@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <Common/formatReadable.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <fmt/format.h>
@@ -27,23 +28,20 @@ namespace DB
 using Clock = std::chrono::system_clock;
 using Seconds = std::chrono::seconds;
 
-static constexpr UInt64 MB = 1ULL * 1024 * 1024;
-static constexpr UInt64 GB = MB * 1024;
-
 
 // PageStorage V2 define
-static constexpr UInt64 PAGE_SIZE_STEP = (1 << 10) * 16; // 16 KB
-static constexpr UInt64 PAGE_FILE_MAX_SIZE = 1024 * 2 * MB;
-static constexpr UInt64 PAGE_FILE_SMALL_SIZE = 2 * MB;
-static constexpr UInt64 PAGE_FILE_ROLL_SIZE = 128 * MB;
+static constexpr UInt64 PAGE_SIZE_STEP = ReadableSize::KiB(16).value;
+static constexpr UInt64 PAGE_FILE_MAX_SIZE = ReadableSize::GiB(2).value;
+static constexpr UInt64 PAGE_FILE_SMALL_SIZE = ReadableSize::MiB(2).value;
+static constexpr UInt64 PAGE_FILE_ROLL_SIZE = ReadableSize::MiB(128).value;
 
 static_assert(PAGE_SIZE_STEP >= ((1 << 10) * 16), "PAGE_SIZE_STEP should be at least 16 KB");
 static_assert((PAGE_SIZE_STEP & (PAGE_SIZE_STEP - 1)) == 0, "PAGE_SIZE_STEP should be power of 2");
 
 // PageStorage V3 define
-static constexpr UInt64 BLOBFILE_LIMIT_SIZE = 256 * MB;
+static constexpr UInt64 BLOBFILE_LIMIT_SIZE = ReadableSize::MiB(256).value;
 static constexpr UInt64 BLOBSTORE_CACHED_FD_SIZE = 100;
-static constexpr UInt64 PAGE_META_ROLL_SIZE = 2 * MB;
+static constexpr UInt64 PAGE_META_ROLL_SIZE = ReadableSize::MiB(2).value;
 static constexpr UInt64 MAX_PERSISTED_LOG_FILES = 4;
 
 using NamespaceId = UInt64;

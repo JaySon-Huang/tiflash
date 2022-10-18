@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/formatReadable.h>
 #include <Storages/Page/workload/PSWorkload.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -162,13 +163,13 @@ private:
         assert(page_writen != 0);
 
         LOG_INFO(StressEnv::logger, fmt::format("After gen: {} pages"
-                                                "virtual memory used: {} MB,"
+                                                "virtual memory used: {},"
                                                 "resident memory used: {} MB,"
                                                 "total memory is {} , It is estimated that {} pages can be stored in the virtual memory,"
                                                 "It is estimated that {} pages can be stored in the resident memory.",
                                                 page_writen,
-                                                virtual_used / DB::MB,
-                                                resident_used / DB::MB,
+                                                ReadableSize(virtual_used),
+                                                ReadableSize(resident_used),
                                                 total_mem,
                                                 std::round(virtual_used) ? (total_mem / ((double)virtual_used / page_writen)) : 0,
                                                 std::round(resident_used) ? (total_mem / ((double)resident_used / page_writen)) : 0));

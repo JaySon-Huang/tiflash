@@ -60,7 +60,7 @@ protected:
         // drop dir if exists
         dropDataOnDisk(getTemporaryPath());
         // default test config
-        config.file_roll_size = 4 * MB;
+        config.file_roll_size = ReadableSize::MiB(4).value;
         config.gc_max_valid_rate = 0.5;
         config.num_write_slots = 4; // At most 4 threads for write
     }
@@ -87,7 +87,7 @@ protected:
 TEST_P(PageStorageMultiPaths_test, DeltaWriteReadRestore)
 try
 {
-    config.file_roll_size = 128 * MB;
+    config.file_roll_size = ReadableSize::MiB(128).value;
 
     size_t number_of_paths = GetParam();
     auto all_paths = getMultiTestPaths(number_of_paths);

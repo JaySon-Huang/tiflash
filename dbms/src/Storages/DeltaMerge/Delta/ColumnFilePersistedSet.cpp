@@ -347,12 +347,12 @@ MinorCompactionPtr ColumnFilePersistedSet::pickUpMinorCompaction(DMContext & con
             next_compaction_level = 0;
 
         auto compaction = std::make_shared<MinorCompaction>(next_compaction_level, minor_compaction_version);
-        auto & level = persisted_files_levels[next_compaction_level];
+        const auto & level = persisted_files_levels[next_compaction_level];
         if (!level.empty())
         {
             bool is_all_trivial_move = true;
             MinorCompaction::Task cur_task;
-            for (auto & file : level)
+            for (const auto & file : level)
             {
                 auto pack_up_cur_task = [&]() {
                     bool is_trivial_move = compaction->packUpTask(std::move(cur_task));
@@ -360,19 +360,19 @@ MinorCompactionPtr ColumnFilePersistedSet::pickUpMinorCompaction(DMContext & con
                     cur_task = {};
                 };
 
-                if (auto * t_file = file->tryToTinyFile(); t_file)
+                if (const auto * t_file = file->tryToTinyFile(); t_file)
                 {
-                    bool cur_task_full = cur_task.total_rows >= context.delta_small_column_file_rows;
-                    bool small_column_file = t_file->getRows() < context.delta_small_column_file_rows;
+                    bool is_cur_task_full = cur_task.total_rows >= context.delta_small_column_file_rows;
+                    bool is_column_file_small = t_file->getRows() < context.delta_small_column_file_rows;
                     bool schema_ok = cur_task.to_compact.empty();
 
                     if (!schema_ok)
                     {
-                        if (auto * last_t_file = cur_task.to_compact.back()->tryToTinyFile(); last_t_file)
+                        if (const auto * last_t_file = cur_task.to_compact.back()->tryToTinyFile(); last_t_file)
                             schema_ok = t_file->getSchema() == last_t_file->getSchema();
                     }
 
-                    if (cur_task_full || !small_column_file || !schema_ok)
+                    if (is_cur_task_full || !is_column_file_small || !schema_ok)
                         pack_up_cur_task();
 
                     cur_task.addColumnFile(file);
@@ -404,7 +404,7 @@ bool ColumnFilePersistedSet::installCompactionResults(const MinorCompactionPtr &
     minor_compaction_version += 1;
     LOG_DEBUG(log, "{}, before commit compaction, level info: {}", info(), levelsInfo());
     ColumnFilePersistedLevels new_persisted_files_levels;
-    auto compaction_src_level = compaction->getCompactionSourceLevel();
+    const auto compaction_src_level = compaction->getCompactionSourceLevel();
     // Copy column files in level range [0, compaction_src_level)
     for (size_t i = 0; i < compaction_src_level; i++)
     {

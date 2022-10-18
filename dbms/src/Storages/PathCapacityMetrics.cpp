@@ -81,7 +81,7 @@ PathCapacityMetrics::PathCapacityMetrics(
 
     for (auto && [path, quota] : all_paths)
     {
-        LOG_INFO(log, "Init capacity [path={}] [capacity={}]", path, formatReadableSizeWithBinarySuffix(quota));
+        LOG_INFO(log, "Init capacity [path={}] [capacity={}]", path, ReadableSize(quota));
         path_infos.emplace_back(CapacityInfo{path, quota});
     }
 }
@@ -191,9 +191,9 @@ FsStats PathCapacityMetrics::getFsStats()
             log,
             "Available space is only {:.2f}% of capacity size. Avail size: {}, used size: {}, capacity size: {}",
             avail_rate * 100.0,
-            formatReadableSizeWithBinarySuffix(total_stat.avail_size),
-            formatReadableSizeWithBinarySuffix(total_stat.used_size),
-            formatReadableSizeWithBinarySuffix(total_stat.capacity_size));
+            ReadableSize(total_stat.avail_size),
+            ReadableSize(total_stat.used_size),
+            ReadableSize(total_stat.capacity_size));
     total_stat.ok = 1;
 
     CurrentMetrics::set(CurrentMetrics::StoreSizeCapacity, total_stat.capacity_size);
@@ -287,8 +287,8 @@ std::tuple<FsStats, struct statvfs> PathCapacityMetrics::CapacityInfo::getStats(
             log,
             "No available space for path: {}, capacity: {}, used: {}",
             path,
-            formatReadableSizeWithBinarySuffix(capacity),
-            formatReadableSizeWithBinarySuffix(used_bytes));
+            ReadableSize(capacity),
+            ReadableSize(used_bytes));
 
     const uint64_t disk_free_bytes = vfs.f_bavail * vfs.f_frsize;
     if (avail > disk_free_bytes)

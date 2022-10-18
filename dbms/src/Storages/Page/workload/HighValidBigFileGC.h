@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/formatReadable.h>
 #include <Storages/Page/workload/PSWorkload.h>
 
 namespace DB::PS::tests
@@ -59,14 +60,14 @@ public:
             stop_watch.start();
 
             DB::PageStorageConfig config;
-            config.file_max_size = 8ULL * DB::GB;
-            config.file_roll_size = 8ULL * DB::GB;
+            config.file_max_size = ReadableSize::GiB(8).value;
+            config.file_roll_size = ReadableSize::GiB(8).value;
             initPageStorage(config, name());
 
             startWriter<PSCommonWriter>(1, [](std::shared_ptr<PSCommonWriter> writer) -> void {
                 writer->setBatchBufferNums(1);
-                writer->setBatchBufferSize(100ULL * DB::MB);
-                writer->setBatchBufferLimit(8ULL * DB::GB);
+                writer->setBatchBufferSize(ReadableSize::MiB(100).value);
+                writer->setBatchBufferLimit(ReadableSize::GiB(8).value);
                 writer->setBatchBufferPageRange(1000000);
             });
 
@@ -86,8 +87,8 @@ public:
             stop_watch.start();
             startWriter<PSCommonWriter>(1, [](std::shared_ptr<PSCommonWriter> writer) -> void {
                 writer->setBatchBufferNums(4);
-                writer->setBatchBufferSize(2ULL * DB::MB);
-                writer->setBatchBufferLimit(1ULL * DB::GB);
+                writer->setBatchBufferSize(ReadableSize::MiB(2).value);
+                writer->setBatchBufferLimit(ReadableSize::GiB(1).value);
                 writer->setBatchBufferPageRange(1000000);
             });
 
@@ -103,8 +104,8 @@ public:
             stop_watch.start();
             startWriter<PSCommonWriter>(1, [](std::shared_ptr<PSCommonWriter> writer) -> void {
                 writer->setBatchBufferNums(4);
-                writer->setBatchBufferSize(2ULL * DB::MB);
-                writer->setBatchBufferLimit(1ULL * DB::GB);
+                writer->setBatchBufferSize(ReadableSize::MiB(2).value);
+                writer->setBatchBufferLimit(ReadableSize::GiB(1).value);
                 writer->setBatchBufferPageRange(1000000);
             });
 
