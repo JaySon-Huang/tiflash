@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Storages/DeltaMerge/ExternalDTFileInfo.h>
 #include <Storages/IManageableStorage.h>
@@ -145,9 +146,9 @@ RegionDataReadInfoList RegionTable::flushRegion(const RegionPtrWithBlock & regio
 }
 
 static const Int64 FTH_BYTES_1 = 1; // 1 B
-static const Int64 FTH_BYTES_2 = 1024 * 1024; // 1 MB
-static const Int64 FTH_BYTES_3 = 1024 * 1024 * 10; // 10 MBs
-static const Int64 FTH_BYTES_4 = 1024 * 1024 * 50; // 50 MBs
+static const Int64 FTH_BYTES_2 = ReadableSize::MiB(1).value; // 1 MB
+static const Int64 FTH_BYTES_3 = ReadableSize::MiB(10).value; // 10 MBs
+static const Int64 FTH_BYTES_4 = ReadableSize::MiB(50).value; // 50 MBs
 
 static const Seconds FTH_PERIOD_1(60 * 60); // 1 hour
 static const Seconds FTH_PERIOD_2(60 * 5); // 5 minutes

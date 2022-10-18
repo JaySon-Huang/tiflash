@@ -316,7 +316,6 @@ TEST_F(DeltaValueSpaceTest, MinorCompaction)
     auto persisted_file_set = delta->getPersistedFileSet();
     WriteBatches wbs(dmContext().storage_pool, dmContext().getWriteLimiter());
     size_t total_rows_write = 0;
-#if 0
     // write some column_file and flush
     {
         {
@@ -378,16 +377,11 @@ TEST_F(DeltaValueSpaceTest, MinorCompaction)
         compaction_task = persisted_file_set->pickUpMinorCompaction(dmContext());
         ASSERT_TRUE(!compaction_task);
     }
-#endif
     // do a lot of minor compaction and check the status
     {
-        for (size_t i = 0; i < 1; i++)
+        for (size_t i = 0; i < 20; i++)
         {
-            for (size_t j = 0; j < 20; ++j)
-            {
-                appendBlockToDeltaValueSpace(dmContext(), delta, total_rows_write, num_rows_write_per_batch);
-                delta->flush(dmContext());
-            }
+            appendBlockToDeltaValueSpace(dmContext(), delta, total_rows_write, num_rows_write_per_batch);
             total_rows_write += num_rows_write_per_batch;
             delta->flush(dmContext());
             while (true)

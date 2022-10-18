@@ -72,13 +72,15 @@ public:
 
     bool verify() override
     {
-        return (metrics_dumper->getMemoryPeak() < 5UL * 1024 * 1024);
+        return (metrics_dumper->getMemoryPeak() < ReadableSize::MiB(5).value);
     }
 
     void onFailed() override
     {
         LOG_WARNING(StressEnv::logger,
-                    fmt::format("Memory Peak is {} , it should not bigger than {} ", metrics_dumper->getMemoryPeak(), 5 * 1024 * 1024));
+                    "Memory Peak is {}, it should not bigger than {} ",
+                    metrics_dumper->getMemoryPeak(),
+                    ReadableSize::MiB(5).value);
     }
 };
 } // namespace DB::PS::tests

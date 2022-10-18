@@ -128,7 +128,7 @@ void TiFlashTestEnv::addGlobalContext(Strings testdata_path, PageStorageRunMode 
     raft_config.for_unit_test = true;
     global_context->createTMTContext(raft_config, pingcap::ClusterConfig());
 
-    global_context->setDeltaIndexManager(1024 * 1024 * 100 /*100MB*/);
+    global_context->setDeltaIndexManager(ReadableSize::MiB(100).value);
 
     auto & path_pool = global_context->getPathPool();
     global_context->getTMTContext().restore(path_pool);

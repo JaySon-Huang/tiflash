@@ -45,7 +45,7 @@ KVStore::KVStore(Context & context, TiDB::SnapshotApplyMethod snapshot_apply_met
     , log(Logger::get())
     , region_compact_log_period(120)
     , region_compact_log_min_rows(40 * 1024)
-    , region_compact_log_min_bytes(32 * 1024 * 1024)
+    , region_compact_log_min_bytes(ReadableSize::MiB(32).value)
 {
     // default config about compact-log: period 120s, rows 40k, bytes 32MB.
 }

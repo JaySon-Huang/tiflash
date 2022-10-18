@@ -29,6 +29,8 @@
 
 #include <ext/scope_guard.h>
 
+#include "Common/formatReadable.h"
+
 namespace DB
 {
 namespace FailPoints
@@ -322,7 +324,7 @@ try
     TableID table_id = 100;
 
     PageStorageConfig config;
-    config.file_roll_size = 16 * 1024;
+    config.file_roll_size = ReadableSize::KiB(16);
     RegionManager region_manager;
     DB::Timestamp tso = 0;
     {
