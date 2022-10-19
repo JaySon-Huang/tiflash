@@ -1349,49 +1349,44 @@ PageDirectory<Trait>::getEntriesByBlobIds(const std::vector<BlobFileId> & blob_i
 template <typename Trait>
 bool PageDirectory<Trait>::tryDumpSnapshot(const ReadLimiterPtr & read_limiter, const WriteLimiterPtr & write_limiter, bool force)
 {
-    bool done_any_io = false;
-    // In order not to make read amplification too high, only apply compact logs when ...
-    auto files_snap = wal->getFilesSnapshot();
-    if (files_snap.needSave(max_persisted_log_files) || (force && (!files_snap.persisted_log_files.empty())))
-    {
-        // To prevent writes from affecting dumping snapshot (and vice versa), old log files
-        // are read from disk and a temporary PageDirectory is generated for dumping snapshot.
-        // The main reason write affect dumping snapshot is that we can not get a read-only
-        // `being_ref_count` by the function `createSnapshot()`.
-        assert(!files_snap.persisted_log_files.empty()); // should not be empty when `needSave` return true
-        auto log_num = files_snap.persisted_log_files.rbegin()->log_num;
-        auto identifier = fmt::format("{}.dump_{}", wal->name(), log_num);
-        auto snapshot_reader = wal->createReaderForFiles(identifier, files_snap.persisted_log_files, read_limiter);
-        auto collapsed_dir = [&]() {
-            // we just use the `collapsed_dir` to dump edit of the snapshot, should never call functions like `apply` that
-            // persist new logs into disk. So we pass `nullptr` as `wal` to the factory.
-            static_assert(std::is_same_v<Trait, u128::PageDirectoryTrait> || std::is_same_v<Trait, universal::PageDirectoryTrait>,
-                          "unknown impl");
-            if constexpr (std::is_same_v<Trait, u128::PageDirectoryTrait>)
-            {
-                u128::PageDirectoryFactory factory;
-                return factory.createFromReader(
-                    identifier,
-                    std::move(snapshot_reader),
-                    /* wal */ nullptr);
-            }
-            else if constexpr (std::is_same_v<Trait, universal::PageDirectoryTrait>)
-            {
-                universal::PageDirectoryFactory factory;
-                return factory.createFromReader(
-                    identifier,
-                    std::move(snapshot_reader),
-                    /* wal */ nullptr);
-            }
-        }();
-        // The records persisted in `files_snap` is older than or equal to all records in `edit`
-        auto edit_from_disk = collapsed_dir->dumpSnapshotToEdit();
-        done_any_io = wal->saveSnapshot(
-            std::move(files_snap),
-            Trait::Serializer::serializeTo(edit_from_disk),
-            edit_from_disk.size(),
-            write_limiter);
-    }
+    // Only apply compact logs when files snapshot is valid
+    auto files_snap = wal->tryGetFilesSnapshot(max_persisted_log_files, force);
+    if (!files_snap.isValid())
+        return false;
+
+    // To prevent writes from affecting dumping snapshot (and vice versa), old log files
+    // are read from disk and a temporary PageDirectory is generated for dumping snapshot.
+    // The main reason write affect dumping snapshot is that we can not get a read-only
+    // `being_ref_count` by the function `createSnapshot()`.
+    assert(!files_snap.persisted_log_files.empty()); // should not be empty
+    auto log_num = files_snap.persisted_log_files.rbegin()->log_num;
+    auto identifier = fmt::format("{}.dump_{}", wal->name(), log_num);
+    auto snapshot_reader = wal->createReaderForFiles(identifier, files_snap.persisted_log_files, read_limiter);
+    auto collapsed_dir = [&]() {
+        // we just use the `collapsed_dir` to dump edit of the snapshot, should never call functions like `apply` that
+        // persist new logs into disk. So we pass `nullptr` as `wal` to the factory.
+        static_assert(std::is_same_v<Trait, u128::PageDirectoryTrait> || std::is_same_v<Trait, universal::PageDirectoryTrait>,
+                      "unknown impl");
+        if constexpr (std::is_same_v<Trait, u128::PageDirectoryTrait>)
+        {
+            u128::PageDirectoryFactory factory;
+            return factory.createFromReader(
+                identifier,
+                std::move(snapshot_reader),
+                /* wal */ nullptr);
+        }
+        else if constexpr (std::is_same_v<Trait, universal::PageDirectoryTrait>)
+        {
+            universal::PageDirectoryFactory factory;
+            return factory.createFromReader(
+                identifier,
+                std::move(snapshot_reader),
+                /* wal */ nullptr);
+        }
+    }();
+    // The records persisted in `files_snap` is older than or equal to all records in `edit`
+    auto edit_from_disk = collapsed_dir->dumpSnapshotToEdit();
+    bool done_any_io = wal->saveSnapshot(std::move(files_snap), ser::serializeTo(edit_from_disk), edit_from_disk.size(), write_limiter);
     return done_any_io;
 }
 

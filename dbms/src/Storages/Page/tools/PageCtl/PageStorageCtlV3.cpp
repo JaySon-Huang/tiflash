@@ -150,7 +150,6 @@ public:
             }
             else
             {
-                PageDirectory<u128::PageDirectoryTrait>::MVCCMapType type;
                 CLIService service(getPageStorageV3Info, options, options.config_file_path, run_raftstore_proxy_ffi);
                 service.run({""});
             }
