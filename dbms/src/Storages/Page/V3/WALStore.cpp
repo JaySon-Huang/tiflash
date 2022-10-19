@@ -14,6 +14,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/SyncPoint/SyncPoint.h>
 #include <Encryption/FileProvider.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>

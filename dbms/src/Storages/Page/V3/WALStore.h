@@ -35,6 +35,10 @@ class PSDiskDelegator;
 using PSDiskDelegatorPtr = std::shared_ptr<PSDiskDelegator>;
 namespace PS::V3
 {
+namespace tests
+{
+class WALStoreTest;
+}
 
 class WALStore;
 using WALStorePtr = std::unique_ptr<WALStore>;
@@ -82,6 +86,8 @@ public:
         const WriteLimiterPtr & write_limiter = nullptr);
 
     const String & name() { return storage_name; }
+
+    friend class tests::WALStoreTest; // for testing
 
 private:
     WALStore(String storage_name,
