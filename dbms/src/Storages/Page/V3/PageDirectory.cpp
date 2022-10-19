@@ -511,8 +511,7 @@ bool VersionedPageEntries<Trait>::cleanOutdatedEntries(
     UInt64 lowest_seq,
     typename Trait::EntriesDerefMap * normal_entries_to_deref,
     PageEntriesV3 * entries_removed,
-    const PageLock & /*page_lock*/,
-    bool keep_last_valid_var_entry)
+    const PageLock & /*page_lock*/)
 {
     if (type == EditRecordType::VAR_EXTERNAL)
     {
@@ -562,11 +561,8 @@ bool VersionedPageEntries<Trait>::cleanOutdatedEntries(
     // If the first version less than <lowest_seq+1, 0> is entry,
     // then we can remove those entries prev of it.
     // If the first version less than <lowest_seq+1, 0> is delete,
-    // we may keep the first valid entry before the delete entry in the following case:
-    //  1) if `keep_last_valid_var_entry` is true
-    //     (this is only used when dump snapshot because there may be some upsert entry in later wal files,
-    //     so we need keep the last valid entry here to avoid the delete entry being removed)
-    //  2) if `being_ref_count` > 1(this means the entry is ref by other entries)
+    // we may keep the first valid entry before the delete entry
+    // if `being_ref_count` > 1 (this means the entry is ref by other entries)
     bool last_entry_is_delete = !iter->second.isEntry();
     --iter; // keep the first version less than <lowest_seq+1, 0>
     while (true)
@@ -580,7 +576,7 @@ bool VersionedPageEntries<Trait>::cleanOutdatedEntries(
         {
             if (last_entry_is_delete)
             {
-                if (!keep_last_valid_var_entry && iter->second.being_ref_count == 1)
+                if (iter->second.being_ref_count == 1)
                 {
                     if (entries_removed)
                     {
@@ -617,8 +613,7 @@ bool VersionedPageEntries<Trait>::derefAndClean(
     const typename Trait::PageId & page_id,
     const PageVersion & deref_ver,
     const Int64 deref_count,
-    PageEntriesV3 * entries_removed,
-    bool keep_last_valid_var_entry)
+    PageEntriesV3 * entries_removed)
 {
     auto page_lock = acquireLock();
     if (type == EditRecordType::VAR_EXTERNAL)
@@ -659,7 +654,7 @@ bool VersionedPageEntries<Trait>::derefAndClean(
 
         // Clean outdated entries after decreased the ref-counter
         // set `normal_entries_to_deref` to be nullptr to ignore cleaning ref-var-entries
-        return cleanOutdatedEntries(lowest_seq, /*normal_entries_to_deref*/ nullptr, entries_removed, page_lock, keep_last_valid_var_entry);
+        return cleanOutdatedEntries(lowest_seq, /*normal_entries_to_deref*/ nullptr, entries_removed, page_lock);
     }
 
     throw Exception(fmt::format("calling derefAndClean with invalid state [state={}]", toDebugString()));
@@ -1378,8 +1373,7 @@ bool PageDirectory<Trait>::tryDumpSnapshot(const ReadLimiterPtr & read_limiter, 
                 return factory.createFromReader(
                     identifier,
                     std::move(snapshot_reader),
-                    /* wal */ nullptr,
-                    /* for_dump_snapshot */ true);
+                    /* wal */ nullptr);
             }
             else if constexpr (std::is_same_v<Trait, universal::PageDirectoryTrait>)
             {
@@ -1387,8 +1381,7 @@ bool PageDirectory<Trait>::tryDumpSnapshot(const ReadLimiterPtr & read_limiter, 
                 return factory.createFromReader(
                     identifier,
                     std::move(snapshot_reader),
-                    /* wal */ nullptr,
-                    /* for_dump_snapshot */ true);
+                    /* wal */ nullptr);
             }
         }();
         // The records persisted in `files_snap` is older than or equal to all records in `edit`
@@ -1403,7 +1396,7 @@ bool PageDirectory<Trait>::tryDumpSnapshot(const ReadLimiterPtr & read_limiter, 
 }
 
 template <typename Trait>
-PageEntriesV3 PageDirectory<Trait>::gcInMemEntries(bool return_removed_entries, bool keep_last_valid_var_entry)
+PageEntriesV3 PageDirectory<Trait>::gcInMemEntries(bool return_removed_entries)
 {
     UInt64 lowest_seq = sequence.load();
 
@@ -1468,8 +1461,7 @@ PageEntriesV3 PageDirectory<Trait>::gcInMemEntries(bool return_removed_entries, 
             lowest_seq,
             &normal_entries_to_deref,
             return_removed_entries ? &all_del_entries : nullptr,
-            iter->second->acquireLock(),
-            keep_last_valid_var_entry);
+            iter->second->acquireLock());
 
         {
             std::unique_lock write_lock(table_rw_mutex);
@@ -1507,8 +1499,7 @@ PageEntriesV3 PageDirectory<Trait>::gcInMemEntries(bool return_removed_entries, 
             page_id,
             /*deref_ver=*/deref_counter.first,
             /*deref_count=*/deref_counter.second,
-            return_removed_entries ? &all_del_entries : nullptr,
-            keep_last_valid_var_entry);
+            return_removed_entries ? &all_del_entries : nullptr);
 
         if (all_deleted)
         {

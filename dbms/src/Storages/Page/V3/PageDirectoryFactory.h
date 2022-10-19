@@ -54,7 +54,7 @@ public:
 
     typename Trait::PageDirectoryPtr create(String storage_name, FileProviderPtr & file_provider, PSDiskDelegatorPtr & delegator, WALConfig config);
 
-    typename Trait::PageDirectoryPtr createFromReader(String storage_name, WALStoreReaderPtr reader, WALStorePtr wal, bool for_dump_snapshot = false);
+    typename Trait::PageDirectoryPtr createFromReader(String storage_name, WALStoreReaderPtr reader, WALStorePtr wal);
 
     // just for test
     typename Trait::PageDirectoryPtr createFromEdit(String storage_name, FileProviderPtr & file_provider, PSDiskDelegatorPtr & delegator, const typename Trait::PageEntriesEdit & edit);
