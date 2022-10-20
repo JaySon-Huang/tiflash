@@ -18,7 +18,6 @@ namespace DB::PS::tests
 {
 class HeavyMemoryCostInGC
     : public StressWorkload
-    , public StressWorkloadFunc<HeavyMemoryCostInGC>
 {
 public:
     explicit HeavyMemoryCostInGC(const StressEnv & options_)

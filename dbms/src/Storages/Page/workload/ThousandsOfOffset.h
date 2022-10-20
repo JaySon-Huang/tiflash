@@ -17,7 +17,6 @@
 namespace DB::PS::tests
 {
 class ThousandsOfOffset : public StressWorkload
-    , public StressWorkloadFunc<ThousandsOfOffset>
 {
 public:
     explicit ThousandsOfOffset(const StressEnv & options_)

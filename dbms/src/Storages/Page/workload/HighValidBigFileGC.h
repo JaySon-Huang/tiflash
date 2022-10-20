@@ -18,7 +18,6 @@ namespace DB::PS::tests
 {
 class HighValidBigFileGCWorkload
     : public StressWorkload
-    , public StressWorkloadFunc<HighValidBigFileGCWorkload>
 {
 public:
     explicit HighValidBigFileGCWorkload(const StressEnv & options_)

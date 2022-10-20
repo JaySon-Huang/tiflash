@@ -17,7 +17,6 @@
 namespace DB::PS::tests
 {
 class HoldSnapshotsLongTime : public StressWorkload
-    , public StressWorkloadFunc<HoldSnapshotsLongTime>
 {
 public:
     explicit HoldSnapshotsLongTime(const StressEnv & options_)

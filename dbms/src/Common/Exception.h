@@ -19,6 +19,7 @@
 #include <Poco/Exception.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
+#include <fmt/core.h>
 
 #include <boost/preprocessor/comparison/equal.hpp>
 #include <boost/preprocessor/control/if.hpp>
@@ -50,7 +51,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     Exception(int code, const std::string & fmt, Args &&... args)
-        : Exception(FmtBuffer().fmtAppend(fmt, std::forward<Args>(args)...).toString(), code)
+        : Exception(FmtBuffer().fmtAppend(fmt::runtime(fmt), std::forward<Args>(args)...).toString(), code)
     {}
 
     Exception(const std::string & msg, const std::string & arg, int code = 0)
@@ -184,7 +185,7 @@ inline std::string generateFormattedMessage(const char * condition)
 template <typename... Args>
 inline std::string generateFormattedMessage(const char * condition, const char * fmt_str, Args &&... args)
 {
-    return FmtBuffer().fmtAppend("Assert {} fail! ", condition).fmtAppend(fmt_str, std::forward<Args>(args)...).toString();
+    return FmtBuffer().fmtAppend("Assert {} fail! ", condition).fmtAppend(fmt::runtime(fmt_str), std::forward<Args>(args)...).toString();
 }
 
 template <typename... Args>

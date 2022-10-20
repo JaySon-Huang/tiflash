@@ -18,7 +18,6 @@ namespace DB::PS::tests
 {
 class NormalWorkload
     : public StressWorkload
-    , public StressWorkloadFunc<NormalWorkload>
 {
 public:
     explicit NormalWorkload(const StressEnv & options_)

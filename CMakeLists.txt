@@ -274,13 +274,9 @@ if (ARCHNATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (CMAKE_VERSION VERSION_LESS "3.8.0")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
-else ()
-    set (CMAKE_CXX_STANDARD 17)
-    set (CMAKE_CXX_EXTENSIONS 1) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
-    set (CMAKE_CXX_STANDARD_REQUIRED ON)
-endif ()
+set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_EXTENSIONS 1) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")

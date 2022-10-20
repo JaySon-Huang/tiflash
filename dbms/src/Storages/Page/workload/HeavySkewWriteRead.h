@@ -17,7 +17,6 @@
 namespace DB::PS::tests
 {
 class HeavySkewWriteRead : public StressWorkload
-    , public StressWorkloadFunc<HeavySkewWriteRead>
 {
 public:
     explicit HeavySkewWriteRead(const StressEnv & options_)

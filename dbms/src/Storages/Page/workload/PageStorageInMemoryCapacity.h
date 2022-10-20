@@ -29,7 +29,6 @@
 namespace DB::PS::tests
 {
 class PageStorageInMemoryCapacity : public StressWorkload
-    , public StressWorkloadFunc<PageStorageInMemoryCapacity>
 {
 public:
     explicit PageStorageInMemoryCapacity(const StressEnv & options_)

@@ -27,19 +27,14 @@
 #define NORMAL_WORKLOAD 0
 namespace DB::PS::tests
 {
-template <typename Child>
-class StressWorkloadFunc
+// clang-format off
+template <typename T>
+concept StressWorkloadTrait = requires (T t)
 {
-public:
-    static String nameFunc()
-    {
-        return Child::name();
-    }
-    static UInt64 maskFunc()
-    {
-        return Child::mask();
-    }
+    {t.name()} -> std::convertible_to<String>;
+    {t.mask()} -> std::convertible_to<UInt64>;
 };
+// clang-format on
 
 // Define a workload.
 // The derived class must define `static String name()` and `static UInt64 mask()`
@@ -193,12 +188,12 @@ private:
     StressEnv options;
 };
 
-template <class Workload>
+template <StressWorkloadTrait Workload>
 void work_load_register()
 {
     StressWorkloadManger::getInstance().reg(
-        Workload::nameFunc(),
-        Workload::maskFunc(),
+        Workload::name(),
+        Workload::mask(),
         [](const StressEnv & opts) -> std::shared_ptr<StressWorkload> {
             return std::make_shared<Workload>(opts);
         });

@@ -17,7 +17,6 @@
 namespace DB::PS::tests
 {
 class HeavyRead : public StressWorkload
-    , public StressWorkloadFunc<HeavyRead>
 {
 public:
     explicit HeavyRead(const StressEnv & options_)
