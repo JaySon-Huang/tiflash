@@ -273,6 +273,7 @@ try
         ASSERT_PAGE_EQ(c_buff, buf_sz, page_maps[7], 7);
     }
 
+#if 0
     {
         PageIds page_ids = {1, 2, 3, 4};
         PageHandler hander = [](DB::PageId /*page_id*/, const Page & /*page*/) {
@@ -283,6 +284,7 @@ try
         page_ids = {1, 2, 7};
         ASSERT_NO_THROW(page_reader_mix->read(page_ids, hander));
     }
+#endif
 
     {
         std::vector<PageStorage::PageReadFields> read_fields;

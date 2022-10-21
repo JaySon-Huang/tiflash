@@ -74,8 +74,6 @@ public:
 
     typename Trait::Page read(const typename Trait::PageIdAndEntry & entry, const ReadLimiterPtr & read_limiter = nullptr);
 
-    void read(typename Trait::PageIdAndEntries & entries, const typename Trait::PageHandler & handler, const ReadLimiterPtr & read_limiter = nullptr);
-
     typename Trait::PageMap read(typename Trait::FieldReadInfos & to_read, const ReadLimiterPtr & read_limiter = nullptr);
 
 #ifndef DBMS_PUBLIC_GTEST

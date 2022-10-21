@@ -172,7 +172,7 @@ namespace DB
         F(type_blob, {{"type", "blob"}}, ExpBuckets{0.0001, 2, 20}),                                                                      \
         F(type_wal, {{"type", "wal"}}, ExpBuckets{0.0001, 2, 20}),                                                                        \
         F(type_apply, {{"type", "apply"}}, ExpBuckets{0.0001, 2, 20}))                                                                    \
-    M(tiflash_storage_page_read_duration_seconds, "The duration of each read", Histogram,                                         \
+    M(tiflash_storage_page_read_duration_seconds, "The duration of each read", Histogram,                                                 \
         F(type_total, {{"type", "total"}}, ExpBuckets{0.0001, 2, 20}),                                                                    \
         F(type_blob, {{"type", "blob"}}, ExpBuckets{0.0001, 2, 20}),                                                                      \
         F(type_wal, {{"type", "wal"}}, ExpBuckets{0.0001, 2, 20}),                                                                        \

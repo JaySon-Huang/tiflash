@@ -158,7 +158,8 @@ public:
         return (entry.isValid() && entry.tag > applied_index);
     }
 
-    void read(const PageIds & page_ids, std::function<void(const PageId &, const UniversalPage &)> handler) const
+    std::map<DB::PageId, UniversalPage>
+    read(const PageIds & page_ids) const
     {
         UniversalPageIds uni_page_ids;
         uni_page_ids.reserve(page_ids.size());
@@ -166,7 +167,7 @@ public:
             uni_page_ids.emplace_back(toFullPageId(pid));
         auto snap = uni_storage.getSnapshot("");
         auto page_entries = uni_storage.page_directory->getByIDs(uni_page_ids, snap);
-        uni_storage.blob_store->read(page_entries, handler, nullptr);
+        return uni_storage.blob_store->read(page_entries, nullptr);
     }
 
     void traverse(const std::function<void(const DB::UniversalPage & page)> & /*acceptor*/)

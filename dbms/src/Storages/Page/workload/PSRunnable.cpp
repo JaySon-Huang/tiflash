@@ -26,6 +26,7 @@
 #include <TestUtils/MockDiskDelegator.h>
 #include <fmt/format.h>
 #include <google/protobuf/stubs/common.h>
+#include <unistd.h>
 
 #include <random>
 
@@ -294,27 +295,30 @@ bool PSReader::runImpl()
 
     if (ps)
     {
-        DB::PageHandler handler = [&](DB::PageId, const DB::Page & page) {
-            // use `sleep` to mock heavy read
+        auto page_map = ps->read(DB::TEST_NAMESPACE_ID, page_ids);
+        for (const auto & page : page_map)
+        {
             if (heavy_read_delay_ms > 0)
             {
                 usleep(heavy_read_delay_ms * 1000);
             }
             ++pages_used;
-            bytes_used += page.data.size();
-        };
-        ps->read(DB::TEST_NAMESPACE_ID, page_ids, handler);
+            bytes_used += page.second.data.size();
+        }
     }
     else
     {
-        auto handler = [&](const PageId &, const UniversalPage & page) {
-            if (heavy_read_delay_ms > 0)
-                usleep(heavy_read_delay_ms * 1000);
-            ++pages_used;
-            bytes_used += page.data.size();
-        };
         UniReader reader(*uni_ps);
-        reader.read(page_ids, handler);
+        auto page_map = reader.read(page_ids);
+        for (const auto & page : page_map)
+        {
+            if (heavy_read_delay_ms > 0)
+            {
+                usleep(heavy_read_delay_ms * 1000);
+            }
+            ++pages_used;
+            bytes_used += page.second.data.size();
+        }
     }
     return true;
 }
