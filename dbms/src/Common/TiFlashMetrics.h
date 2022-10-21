@@ -155,8 +155,15 @@ namespace DB
         F(type_v3_mvcc_dumped, {"type", "v3_mvcc_dumped"}),                                                                               \
         F(type_v3_bs_full_gc, {"type", "v3_bs_full_gc"}))                                                                                 \
     M(tiflash_storage_page_gc_duration_seconds, "Bucketed histogram of page's gc task duration", Histogram,                               \
-        F(type_exec, {{"type", "exec"}}, ExpBuckets{0.0005, 2, 20}),                                                                      \
+        F(type_v2, {{"type", "v2"}}, ExpBuckets{0.0005, 2, 20}),                                                                          \
         F(type_migrate, {{"type", "migrate"}}, ExpBuckets{0.0005, 2, 20}),                                                                \
+        /* Below are metrics for PageStorage V3 */                                                                                        \
+        F(type_compact_wal, {{"type", "compact_wal"}}, ExpBuckets{0.0005, 2, 20}),                                                        \
+        F(type_compact_directory, {{"type", "compact_directory"}}, ExpBuckets{0.0005, 2, 20}),                                            \
+        F(type_compact_spacemap, {{"type", "compact_spacemap"}}, ExpBuckets{0.0005, 2, 20}),                                              \
+        F(type_fullgc_disk, {{"type", "fullgc_disk"}}, ExpBuckets{0.0005, 2, 20}),                                                        \
+        F(type_fullgc_apply, {{"type", "fullgc_apply"}}, ExpBuckets{0.0005, 2, 20}),                                                      \
+        F(type_clean_external, {{"type", "clean_external"}}, ExpBuckets{0.0005, 2, 20}),                                                \
         F(type_v3, {{"type", "v3"}}, ExpBuckets{0.0005, 2, 20}))                                                                          \
     M(tiflash_storage_page_write_batch_size, "The size of each write batch in bytes", Histogram,                                          \
         F(type_v3, {{"type", "v3"}}, ExpBuckets{4 * 1024, 4, 10}))                                                                        \
@@ -231,7 +238,9 @@ namespace DB
     M(tiflash_storage_read_thread_gauge, "The gauge of storage read thread", Gauge,                                                       \
         F(type_merged_task, {"type", "merged_task"}))                                                                                     \
     M(tiflash_storage_read_thread_seconds, "Bucketed histogram of read thread", Histogram,                                                \
-        F(type_merged_task, {{"type", "merged_task"}}, ExpBuckets{0.001, 2, 20}))
+        F(type_merged_task, {{"type", "merged_task"}}, ExpBuckets{0.001, 2, 20}))                                                         \
+    M(tiflash_mpp_task_manager, "The gauge of mpp task manager", Gauge,                                                                   \
+        F(type_mpp_query_count, {"type", "mpp_query_count"})) \
 // clang-format on
 
 struct ExpBuckets
@@ -239,6 +248,8 @@ struct ExpBuckets
     const double start;
     const int base;
     const size_t size;
+
+    // NOLINTNEXTLINE(google-explicit-constructor)
     inline operator prometheus::Histogram::BucketBoundaries() const &&
     {
         prometheus::Histogram::BucketBoundaries buckets(size);
@@ -257,6 +268,8 @@ struct EqualWidthBuckets
     const size_t start;
     const int num_buckets;
     const size_t step;
+
+    // NOLINTNEXTLINE(google-explicit-constructor)
     inline operator prometheus::Histogram::BucketBoundaries() const &&
     {
         // up to `num_buckets` * `step`
@@ -382,9 +395,12 @@ public:
 APPLY_FOR_METRICS(MAKE_METRIC_ENUM_M, MAKE_METRIC_ENUM_F)
 #undef APPLY_FOR_METRICS
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define __GET_METRIC_MACRO(_1, _2, NAME, ...) NAME
 #ifndef GTEST_TIFLASH_METRICS
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define __GET_METRIC_0(family) TiFlashMetrics::instance().family.get()
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define __GET_METRIC_1(family, metric) TiFlashMetrics::instance().family.get(family##_metrics::metric)
 #else
 #define __GET_METRIC_0(family) TestMetrics::instance().family.get()
