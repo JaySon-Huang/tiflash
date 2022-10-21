@@ -142,7 +142,6 @@ struct BlobStoreTrait
     using PageIdAndEntries = PageIDAndEntriesV3;
     using Page = Page;
     using PageMap = PageMap;
-    using PageHandler = PageHandler;
 
     using ExternalIdTrait = ExternalIdTrait;
     using WriteBatch = DB::WriteBatch;
@@ -178,7 +177,6 @@ struct BlobStoreTrait
     using Page = UniversalPage;
     // TODO: universal pagemap/handler may should not filter by prefix
     using PageMap = std::map<DB::PageId, UniversalPage>;
-    using PageHandler = std::function<void(DB::PageId page_id, const UniversalPage &)>;
 
     using ExternalIdTrait = ExternalIdTrait;
     using WriteBatch = UniversalWriteBatch;
