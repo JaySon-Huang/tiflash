@@ -59,6 +59,7 @@ enum class RawCppPtrTypeImpl : RawCppPtrType
     PreHandledSnapshotWithFiles,
     WakerNotifier,
     WriteBatch,
+    UniversalPage,
 };
 
 RawCppPtr GenRawCppPtr(RawVoidPtr ptr_ = nullptr, RawCppPtrTypeImpl type_ = RawCppPtrTypeImpl::None);
@@ -136,10 +137,10 @@ uint8_t WriteBatchIsEmpty(RawVoidPtr ptr);
 void WriteBatchMerge(RawVoidPtr lhs, RawVoidPtr rhs);
 void WriteBatchClear(RawVoidPtr ptr);
 void ConsumeWriteBatch(const EngineStoreServerWrap * server, RawVoidPtr ptr);
-CppStrWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id);
-CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id);
+PageWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id);
+PageWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id);
+void GcPageWithViewVec(PageWithView * inner, uint64_t len);
 void HandlePurgePageStorage(const EngineStoreServerWrap * server);
-
 void AtomicUpdateProxy(EngineStoreServerWrap * server, RaftStoreProxyFFIHelper * proxy);
 void HandleDestroy(EngineStoreServerWrap * server, uint64_t region_id);
 EngineStoreApplyRes HandleIngestSST(EngineStoreServerWrap * server, SSTViewVec snaps, RaftCmdHeader header);
@@ -186,6 +187,7 @@ inline EngineStoreServerHelper GetEngineStoreServerHelper(
         .fn_consume_write_batch = ConsumeWriteBatch,
         .fn_handle_read_page = HandleReadPage,
         .fn_handle_scan_page = HandleScanPage,
+        .fn_gc_page_with_view_vec = GcPageWithViewVec,
         .fn_handle_purge_pagestorage = HandlePurgePageStorage,
         .fn_atomic_update_proxy = AtomicUpdateProxy,
         .fn_handle_destroy = HandleDestroy,

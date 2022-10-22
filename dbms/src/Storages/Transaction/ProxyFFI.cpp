@@ -227,23 +227,21 @@ void ConsumeWriteBatch(const EngineStoreServerWrap * server, RawVoidPtr ptr)
     }
 }
 
-CppStrWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id)
+PageWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id)
 {
     try
     {
         auto uni_ps = server->tmt->getContext().getGlobalUniversalPageStorage();
         RaftLogReader reader(*uni_ps);
         UniversalPageId id{page_id.data, page_id.len};
-        auto page = reader.read(id);
-        // FIXME: avoid this extra copy
-        if (page.isValid())
+        auto * page = new UniversalPage(reader.read(id));
+        if (page->isValid())
         {
-            auto * value = new String(page.data.begin(), page.data.size());
-            return CppStrWithView{.inner = GenRawCppPtr(value, RawCppPtrTypeImpl::String), .view = BaseBuffView{value->data(), value->size()}};
+            return PageWithView{.inner = GenRawCppPtr(page, RawCppPtrTypeImpl::UniversalPage), .view = BaseBuffView{page->data.begin(), page->data.size()}};
         }
         else
         {
-            return CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{}};
+            return PageWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{}};
         }
     }
     catch (...)
@@ -253,7 +251,7 @@ CppStrWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView
     }
 }
 
-CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id)
+PageWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id)
 {
     try
     {
@@ -261,23 +259,19 @@ CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffV
         RaftLogReader reader(*uni_ps);
         UniversalPageId start_id{start_page_id.data, start_page_id.len};
         UniversalPageId end_id{end_page_id.data, end_page_id.len};
-        std::vector<UniversalPage> pages;
-        // FIXME: avoid all extra copy
-        auto checker = [&](const DB::UniversalPage & page) {
-            pages.push_back(page);
+        std::vector<UniversalPage *> pages;
+        auto checker = [&](DB::UniversalPage page) {
+            pages.push_back(new UniversalPage(std::move(page)));
         };
-        reader.traverse(start_id, end_id, checker);
-        // FIXME: reclaim the space
-        auto * data = static_cast<char *>(malloc(pages.size() * sizeof(CppStrWithView)));
+        reader.traverse2(start_id, end_id, checker);
+        auto * data = static_cast<char *>(malloc(pages.size() * sizeof(PageWithView)));
         for (size_t i = 0; i < pages.size(); i++)
         {
-            auto & page = pages[i];
-            auto * target = reinterpret_cast<CppStrWithView *>(data) + i;
-            if (page.isValid())
+            auto * target = reinterpret_cast<PageWithView *>(data) + i;
+            if (pages[i]->isValid())
             {
-                auto * value = new String(page.data.begin(), page.data.size());
-                target->inner = GenRawCppPtr(value, RawCppPtrTypeImpl::String);
-                BaseBuffView temp{.data = value->data(), .len = value->size()};
+                target->inner = GenRawCppPtr(pages[i], RawCppPtrTypeImpl::UniversalPage);
+                BaseBuffView temp{.data = pages[i]->data.begin(), .len = pages[i]->data.size()};
                 memcpy(reinterpret_cast<char *>(target) + sizeof(RawCppPtr), &temp, sizeof(BaseBuffView));
             }
             else
@@ -287,13 +281,22 @@ CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffV
                 memcpy(reinterpret_cast<char *>(target) + sizeof(RawCppPtr), &temp, sizeof(BaseBuffView));
             }
         }
-        return CppStrWithViewVec{.inner = reinterpret_cast<CppStrWithView *>(data), .len = pages.size()};
+        return PageWithViewVec{.inner = reinterpret_cast<PageWithView *>(data), .len = pages.size() };
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         exit(-1);
     }
+}
+
+void GcPageWithViewVec(PageWithView * inner, uint64_t len)
+{
+    for (size_t i = 0; i < len; i++)
+    {
+        GcRawCppPtr(inner[i].inner.ptr, inner[i].inner.type);
+    }
+    delete inner;
 }
 
 void HandlePurgePageStorage(const EngineStoreServerWrap * server)
@@ -606,6 +609,9 @@ void GcRawCppPtr(RawVoidPtr ptr, RawCppPtrType type)
             break;
         case RawCppPtrTypeImpl::WriteBatch:
             delete reinterpret_cast<UniversalWriteBatch *>(ptr);
+            break;
+        case RawCppPtrTypeImpl::UniversalPage:
+            delete reinterpret_cast<UniversalPage *>(ptr);
             break;
         default:
             LOG_FMT_ERROR(&Poco::Logger::get(__FUNCTION__), "unknown type {}", type);

@@ -218,6 +218,18 @@ public:
         }
     }
 
+    void traverse2(const UniversalPageId & start, const UniversalPageId & end, const std::function<void(DB::UniversalPage page)> & acceptor)
+    {
+        // always traverse with the latest snapshot
+        auto snapshot = uni_storage.getSnapshot(fmt::format("scan_r_{}_{}", start, end));
+        const auto page_ids = uni_storage.page_directory->getRangePageIds(start, end);
+        for (const auto & page_id : page_ids)
+        {
+            const auto page_id_and_entry = uni_storage.page_directory->getByID(page_id, snapshot);
+            acceptor(uni_storage.blob_store->read(page_id_and_entry));
+        }
+    }
+
     UniversalPage read(const UniversalPageId & page_id)
     {
         Stopwatch watch;
