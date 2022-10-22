@@ -186,6 +186,7 @@ inline EngineStoreServerHelper GetEngineStoreServerHelper(
         .fn_consume_write_batch = ConsumeWriteBatch,
         .fn_handle_read_page = HandleReadPage,
         .fn_handle_scan_page = HandleScanPage,
+        .fn_handle_purge_pagestorage = HandlePurgePageStorage,
         .fn_atomic_update_proxy = AtomicUpdateProxy,
         .fn_handle_destroy = HandleDestroy,
         .fn_handle_ingest_sst = HandleIngestSST,

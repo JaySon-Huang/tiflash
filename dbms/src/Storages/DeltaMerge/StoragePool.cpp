@@ -121,11 +121,14 @@ void GlobalStoragePool::restore()
     data_storage->restore();
     meta_storage->restore();
 
+    // Disable original gc
+    /*
     gc_handle = global_context.getBackgroundPool().addTask(
         [this] {
             return this->gc(global_context.getSettingsRef());
         },
         false);
+    */
 }
 
 FileUsageStatistics GlobalStoragePool::getLogFileUsage() const
