@@ -171,8 +171,11 @@ RawCppPtr CreateWriteBatch()
 void WriteBatchPutPage(RawVoidPtr ptr, BaseBuffView page_id, BaseBuffView value)
 {
     auto * wb = reinterpret_cast<UniversalWriteBatch *>(ptr);
-    ReadBufferPtr buff = std::make_shared<ReadBufferFromMemory>(value.data, value.len);
-    wb->putPage(UniversalPageId(page_id.data, page_id.len), 0, buff, value.len);
+    MemoryWriteBuffer buf(0, value.len);
+    buf.write(value.data, value.len);
+    auto data_size = buf.count();
+    assert(data_size == value.len);
+    wb->putPage(UniversalPageId(page_id.data, page_id.len), 0, buf.tryGetReadBuffer(), data_size);
 }
 
 void WriteBatchDelPage(RawVoidPtr ptr, BaseBuffView page_id)
