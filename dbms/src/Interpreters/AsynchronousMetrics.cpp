@@ -24,6 +24,7 @@
 #include <Storages/DeltaMerge/StoragePool.h>
 #include <Storages/MarkCache.h>
 #include <Storages/Page/FileUsage.h>
+#include <Storages/Page/universal/UniversalPageStorage.h>
 #include <Storages/StorageDeltaMerge.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
@@ -137,6 +138,13 @@ FileUsageStatistics AsynchronousMetrics::getPageStorageFileUsage()
         usage.total_disk_size += log_usage.total_disk_size + meta_usage.total_disk_size + data_usage.total_disk_size;
         usage.total_valid_size += log_usage.total_valid_size + meta_usage.total_valid_size + data_usage.total_valid_size;
     }
+    if (auto global_uni_storage = context.getGlobalUniversalPageStorage(); global_uni_storage != nullptr)
+    {
+        const auto u = global_uni_storage->getFileUsageStatistics();
+        usage.total_file_num += u.total_file_num;
+        usage.total_disk_size += u.total_disk_size;
+        usage.total_valid_size += u.total_valid_size;
+    }
     return usage;
 }
 
@@ -241,7 +249,7 @@ void AsynchronousMetrics::update()
     M("background_thread.num_runs", uint64_t)  \
     M("background_thread.run_interval", uint64_t)
 
-#define GET_METRIC(NAME, TYPE)                             \
+#define GET_JE_METRIC(NAME, TYPE)                             \
     do                                                     \
     {                                                      \
         TYPE value{};                                      \
@@ -250,9 +258,9 @@ void AsynchronousMetrics::update()
         set("jemalloc." NAME, value);                      \
     } while (0);
 
-        FOR_EACH_METRIC(GET_METRIC);
+        FOR_EACH_METRIC(GET_JE_METRIC);
 
-#undef GET_METRIC
+#undef GET_JE_METRIC
 #undef FOR_EACH_METRIC
     }
 #endif
