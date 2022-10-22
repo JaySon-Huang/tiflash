@@ -138,6 +138,8 @@ void WriteBatchClear(RawVoidPtr ptr);
 void ConsumeWriteBatch(const EngineStoreServerWrap * server, RawVoidPtr ptr);
 CppStrWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id);
 CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id);
+void HandlePurgePageStorage(const EngineStoreServerWrap * server);
+
 void AtomicUpdateProxy(EngineStoreServerWrap * server, RaftStoreProxyFFIHelper * proxy);
 void HandleDestroy(EngineStoreServerWrap * server, uint64_t region_id);
 EngineStoreApplyRes HandleIngestSST(EngineStoreServerWrap * server, SSTViewVec snaps, RaftCmdHeader header);

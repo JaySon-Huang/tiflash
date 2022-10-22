@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "RaftStoreProxyFFI/ProxyFFI.h"
+
 #include <Common/CurrentMetrics.h>
 #include <Common/nocopyable.h>
 #include <Interpreters/Context.h>
@@ -28,6 +30,8 @@
 #include <kvproto/diagnosticspb.pb.h>
 
 #include <ext/scope_guard.h>
+
+#include "Common/Exception.h"
 
 #define CHECK_PARSE_PB_BUFF_IMPL(n, a, b, c)                                              \
     do                                                                                    \
@@ -280,7 +284,21 @@ CppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffV
                 memcpy(reinterpret_cast<char *>(target) + sizeof(RawCppPtr), &temp, sizeof(BaseBuffView));
             }
         }
-        return CppStrWithViewVec{.inner = reinterpret_cast<CppStrWithView *>(data), .len = pages.size() };
+        return CppStrWithViewVec{.inner = reinterpret_cast<CppStrWithView *>(data), .len = pages.size()};
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        exit(-1);
+    }
+}
+
+void HandlePurgePageStorage(const EngineStoreServerWrap * server)
+{
+    try
+    {
+        auto uni_ps = server->tmt->getContext().getGlobalUniversalPageStorage();
+        uni_ps->gc();
     }
     catch (...)
     {
