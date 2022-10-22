@@ -373,7 +373,7 @@ GCTimeStatistics PageStorageImpl::doGC(const WriteLimiterPtr & write_limiter, co
         GET_METRIC(tiflash_storage_page_gc_count, type_v3_mvcc_dumped).Increment();
     }
     statistics.compact_wal_ms = gc_watch.elapsedMillisecondsFromLastTime();
-    GET_METRIC(tiflash_storage_page_gc_duration_seconds, type_compact_wal).Observe(statistics.compact_directory_ms / 1000.0);
+    GET_METRIC(tiflash_storage_page_gc_duration_seconds, type_compact_wal).Observe(statistics.compact_wal_ms / 1000.0);
 
     const auto & del_entries = page_directory->gcInMemEntries();
     statistics.compact_directory_ms = gc_watch.elapsedMillisecondsFromLastTime();
