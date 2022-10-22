@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <Common/Stopwatch.h>
+#include <Common/TiFlashMetrics.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/Page/Config.h>
@@ -124,10 +126,10 @@ public:
     void registerExternalPagesCallbacks(const ExternalPageCallbacks & callbacks) { UNUSED(callbacks); }
     void unregisterExternalPagesCallbacks(NamespaceId /*ns_id*/) {}
 
-// private:
+    // private:
     PS::V3::GCTimeStatistics doGC(const WriteLimiterPtr & write_limiter, const ReadLimiterPtr & read_limiter);
 
-// private:
+    // private:
     String storage_name; // Identify between different Storage
     PSDiskDelegatorPtr delegator; // Get paths for storing data
     PageStorageConfig config;
@@ -218,12 +220,21 @@ public:
 
     UniversalPage read(const UniversalPageId & page_id)
     {
+        Stopwatch watch;
+        SCOPE_EXIT({
+            GET_METRIC(tiflash_storage_page_read_duration_seconds, type_total).Observe(watch.elapsedSeconds());
+        });
+
         // always traverse with the latest snapshot
         auto snapshot = uni_storage.getSnapshot(fmt::format("read_{}", page_id));
         const auto page_id_and_entry = uni_storage.page_directory->getByIDOrNull(page_id, snapshot);
+        GET_METRIC(tiflash_storage_page_read_duration_seconds, type_directory).Observe(watch.elapsedSecondsFromLastTime());
+
         if (page_id_and_entry.second.isValid())
         {
-            return uni_storage.blob_store->read(page_id_and_entry);
+            auto page = uni_storage.blob_store->read(page_id_and_entry);
+            GET_METRIC(tiflash_storage_page_read_duration_seconds, type_blob).Observe(watch.elapsedSecondsFromLastTime());
+            return page;
         }
         else
         {

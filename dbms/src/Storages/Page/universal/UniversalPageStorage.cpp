@@ -55,7 +55,11 @@ void UniversalPageStorage::write(UniversalWriteBatch && write_batch, const Write
     if (unlikely(write_batch.empty()))
         return;
 
+    Stopwatch watch;
+    SCOPE_EXIT({ GET_METRIC(tiflash_storage_page_write_duration_seconds, type_total).Observe(watch.elapsedSeconds()); });
+
     auto edit = blob_store->write(write_batch, write_limiter);
+    GET_METRIC(tiflash_storage_page_write_duration_seconds, type_blob).Observe(watch.elapsedSeconds());
     page_directory->apply(std::move(edit), write_limiter);
 }
 
