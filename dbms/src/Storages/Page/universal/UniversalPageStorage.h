@@ -24,6 +24,7 @@
 #include <Storages/Page/UniversalPage.h>
 #include <Storages/Page/UniversalWriteBatch.h>
 #include <Storages/Page/V3/BlobStore.h>
+#include <Storages/Page/V3/GC/GCTimeStatistics.h>
 #include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Transaction/TiKVRecordFormat.h>
 #include <common/defines.h>
@@ -116,17 +117,17 @@ public:
     }
 
     // We may skip the GC to reduce useless reading by default.
-    bool gc(bool not_skip = false, const WriteLimiterPtr & write_limiter = nullptr, const ReadLimiterPtr & read_limiter = nullptr)
-    {
-        UNUSED(not_skip, write_limiter, read_limiter);
-        return false;
-    }
+    bool gc(bool not_skip = false, const WriteLimiterPtr & write_limiter = nullptr, const ReadLimiterPtr & read_limiter = nullptr);
 
     // Register and unregister external pages GC callbacks
     // Note that user must ensure that it is safe to call `scanner` and `remover` even after unregister.
     void registerExternalPagesCallbacks(const ExternalPageCallbacks & callbacks) { UNUSED(callbacks); }
     void unregisterExternalPagesCallbacks(NamespaceId /*ns_id*/) {}
 
+// private:
+    PS::V3::GCTimeStatistics doGC(const WriteLimiterPtr & write_limiter, const ReadLimiterPtr & read_limiter);
+
+// private:
     String storage_name; // Identify between different Storage
     PSDiskDelegatorPtr delegator; // Get paths for storing data
     PageStorageConfig config;
@@ -134,6 +135,9 @@ public:
 
     PS::V3::universal::PageDirectoryPtr page_directory;
     PS::V3::universal::BlobStorePtr blob_store;
+
+    std::atomic<bool> gc_is_running{false};
+    LoggerPtr log;
 };
 
 class KVStoreReader final
