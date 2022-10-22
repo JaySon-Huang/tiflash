@@ -70,6 +70,7 @@
 #include <pcg_random.hpp>
 #include <set>
 #include <unordered_map>
+#include "Storages/Page/Config.h"
 
 
 namespace ProfileEvents
@@ -1623,7 +1624,9 @@ void Context::initializeGlobalUniversalPageStorage(const PathPool & path_pool, c
     if (shared->uni_page_storage)
         throw Exception("UniversalPageStorage has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->uni_page_storage = UniversalPageStorage::create("global", path_pool.getPSDiskDelegatorGlobalMulti("global"), {}, file_provider);
+    PageStorageConfig config;
+    config.blob_heavy_gc_valid_rate = 0.2; // less full gc
+    shared->uni_page_storage = UniversalPageStorage::create("global", path_pool.getPSDiskDelegatorGlobalMulti("global"), config, file_provider);
     shared->uni_page_storage->restore();
     LOG_INFO(shared->log, "initialized GlobalUniversalPageStorage");
 }
