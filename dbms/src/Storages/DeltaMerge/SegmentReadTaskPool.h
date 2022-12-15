@@ -43,11 +43,12 @@ struct SegmentReadTask
     SegmentSnapshotPtr read_snapshot;
     RowKeyRanges ranges;
 
-    SegmentReadTask(const SegmentPtr & segment_, //
+    SegmentReadTask(const SegmentPtr & segment_,
                     const SegmentSnapshotPtr & read_snapshot_,
                     const RowKeyRanges & ranges_);
 
-    explicit SegmentReadTask(const SegmentPtr & segment_, const SegmentSnapshotPtr & read_snapshot_);
+    SegmentReadTask(const SegmentPtr & segment_,
+                    const SegmentSnapshotPtr & read_snapshot_);
 
     ~SegmentReadTask();
 

@@ -33,6 +33,7 @@
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/StoragePool.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/universal/UniversalPageStorage.h>
 
 namespace DB
 {
@@ -403,6 +404,12 @@ public:
     // If we need to read columns besides pk and version, a DeltaValueReader can NOT be used more than once.
     // This method create a new reader based on then current one. It will reuse some caches in the current reader.
     DeltaValueReaderPtr createNewReader(const ColumnDefinesPtr & new_col_defs);
+
+    // For only read PageData
+    DeltaValueReader(const DMContext & context_,
+                     const DeltaSnapshotPtr & delta_snap_);
+
+    PageMap readPages(const PageIds & page_ids) const;
 
     void setDeltaIndex(const DeltaIndexCompactedPtr & delta_index_) { _compacted_delta_index = delta_index_; }
 
