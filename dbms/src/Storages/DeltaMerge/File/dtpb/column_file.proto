@@ -48,3 +48,8 @@ message DisaggregatedSegment {
     // serialized array of ColumnFileRemote
     repeated ColumnFileRemote column_files = 3;
 }
+
+message DisaggregatedPhysicalTable {
+    uint64 table_id = 1;
+    repeated DisaggregatedSegment segments = 2;
+}

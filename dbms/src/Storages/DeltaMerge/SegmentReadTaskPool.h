@@ -23,6 +23,8 @@
 
 #include <mutex>
 
+#include "Storages/DeltaMerge/File/dtpb/column_file.pb.h"
+
 namespace DB
 {
 namespace DM
@@ -294,18 +296,23 @@ using SegmentReadTaskPools = std::vector<SegmentReadTaskPoolPtr>;
 
 struct RemoteSegmentReadTask
 {
-    // UInt64 segment_id;
-    SegmentPtr segment; // FIXME: temporary directly reuse the segment
+    UInt64 store_id;
+    UInt64 segment_id;
     RowKeyRanges ranges;
 
     // The snapshot of reading ids acquired from write node
     std::vector<UInt64> delta_page_ids;
     std::vector<UInt64> stable_files;
 
-    // FIXME: This should be only stored in write node
+    // FIXME: These should be only stored in write node
+    SegmentPtr segment;
     SegmentSnapshotPtr segment_snap;
 
-    StableSnapshotPtr buildRemoteStableSnap(const Context & db_context, TableID table_id, UInt64 stable_id, const RowKeyRange & seg_range);
+    StableSnapshotPtr buildRemoteStableSnap(
+        const Context & db_context,
+        TableID table_id,
+        UInt64 stable_id,
+        const RowKeyRange & seg_range);
 };
 using RemoteSegmentReadTaskPtr = std::shared_ptr<RemoteSegmentReadTask>;
 
@@ -314,7 +321,22 @@ using RemoteReadTaskPtr = std::shared_ptr<RemoteReadTask>;
 class RemoteReadTask
 {
 public:
+    explicit RemoteReadTask(UInt64 table_id_)
+        : table_id(table_id_)
+    {}
+
     static RemoteReadTaskPtr buildFrom(const DMContext & context, SegmentReadTasks & tasks);
+
+    static RemoteReadTaskPtr buildFrom(
+        const Context & db_context,
+        UInt64 store_id,
+        TableID physical_table_id,
+        const SegmentReadTasks & tasks);
+
+    static RemoteReadTaskPtr buildFrom(
+        const Context & db_context,
+        UInt64 store_id,
+        const dtpb::DisaggregatedPhysicalTable & segs);
 
     RemoteSegmentReadTaskPtr nextTask()
     {
@@ -327,7 +349,7 @@ public:
     }
 
 private:
-    UInt64 table_id;
+    const UInt64 table_id;
     mutable std::mutex mtx_tasks;
     std::list<RemoteSegmentReadTaskPtr> tasks;
 };

@@ -39,6 +39,7 @@
 #include <Storages/Page/PageStorage.h>
 #include <Storages/Page/V2/VersionSet/PageEntriesVersionSetWithDelta.h>
 #include <Storages/PathPool.h>
+#include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <common/logger_useful.h>
 
@@ -1110,14 +1111,14 @@ PageMap DeltaMergeStore::readPages(
     // maybe we need a better return type.
 
     // For DeltaVS,
-    //   * CFTiny 
+    //   * CFTiny
     // for (auto seg_id: read_segments)
     // {
     //     for (const auto & task: tasks)
     //     {
     //         if (task->segment->segmentId() != seg_id)
     //             continue;
-            
+
     //         storage_pool->newLogReader(nullptr, task->read_snapshot);
     //     }
     // }
