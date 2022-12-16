@@ -15,6 +15,7 @@
 #pragma once
 #include <Common/MemoryTrackerSetter.h>
 #include <Storages/DeltaMerge/DMContext.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 #include <Storages/DeltaMerge/ReadThread/WorkQueue.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
@@ -22,8 +23,6 @@
 #include <Storages/DeltaMerge/StableValueSpace.h>
 
 #include <mutex>
-
-#include "Storages/DeltaMerge/File/dtpb/column_file.pb.h"
 
 namespace DB
 {
@@ -296,7 +295,6 @@ using SegmentReadTaskPools = std::vector<SegmentReadTaskPoolPtr>;
 
 struct RemoteSegmentReadTask
 {
-    UInt64 store_id;
     UInt64 segment_id;
     RowKeyRanges ranges;
 

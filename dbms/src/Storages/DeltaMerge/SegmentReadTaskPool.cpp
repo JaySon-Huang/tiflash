@@ -14,14 +14,14 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/Transaction/Types.h>
 #include <common/logger_useful.h>
 #include <google/protobuf/repeated_ptr_field.h>
-#include <memory>
 
-#include "Storages/DeltaMerge/File/dtpb/column_file.pb.h"
+#include <memory>
 
 namespace CurrentMetrics
 {
@@ -333,7 +333,6 @@ RemoteReadTaskPtr RemoteReadTask::buildFrom(const DMContext & context, SegmentRe
     for (const auto & task : tasks)
     {
         auto seg_task = std::make_shared<RemoteSegmentReadTask>();
-        seg_task->store_id = store_id;
         seg_task->segment = task->segment;
         seg_task->ranges = task->ranges;
 

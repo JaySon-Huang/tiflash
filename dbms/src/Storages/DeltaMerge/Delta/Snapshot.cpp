@@ -139,7 +139,7 @@ DeltaValueReader::DeltaValueReader(
 PageMap DeltaValueReader::readPages(
     const PageIds & page_ids) const
 {
-    auto storage_snap = delta_snap->getMemTableSetSnapshot()->getStorageSnapshot();
+    // auto storage_snap = delta_snap->getMemTableSetSnapshot()->getStorageSnapshot();
 #ifndef NDEBUG
     for (const auto & page_id : page_ids)
     {
@@ -156,9 +156,10 @@ PageMap DeltaValueReader::readPages(
     }
 #endif
     // The persisted pages
-    PageMap page_map = storage_snap->log_reader.read(page_ids);
+    // PageMap page_map = storage_snap->log_reader.read(page_ids);
     // TODO: The blocks in mem-table
-    return page_map;
+    // return page_map;
+    return {};
 }
 
 DeltaValueReaderPtr

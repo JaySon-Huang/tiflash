@@ -16,16 +16,15 @@
 #include <DataStreams/TiRemoteBlockInputStream.h>
 #include <Flash/Coprocessor/DAGPipeline.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/StorageDisaggregated.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <Storages/Transaction/TiDB.h>
 #include <kvproto/mpp.pb.h>
+#include <pingcap/kv/Cluster.h>
 #include <tipb/executor.pb.h>
 #include <tipb/select.pb.h>
-
-#include "Storages/DeltaMerge/File/dtpb/column_file.pb.h"
-#include "pingcap/kv/Cluster.h"
 
 
 namespace DB
@@ -39,7 +38,9 @@ StorageDisaggregated::buildDisaggregatedTaskForNode(
 {
     const auto & settings = db_context.getSettingsRef();
     auto establish_req = std::make_shared<::mpp::EstablishDisaggregatedTaskRequest>();
-    establish_req->set_start_ts(sender_target_task_start_ts);
+    establish_req->set_start_ts(sender_target_mpp_task_id.query_id.start_ts);
+    establish_req->set_query_ts(sender_target_mpp_task_id.query_id.query_ts);
+    establish_req->set_local_query_id(sender_target_mpp_task_id.query_id.local_query_id);
     establish_req->set_timeout(10); // 10 secs
     establish_req->set_address(batch_cop_task.store_addr);
     establish_req->set_schema_ver(settings.schema_version);
