@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <Storages/DeltaMerge/ScanContext.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #ifdef __clang__
@@ -58,6 +59,8 @@ struct JoinExecuteInfo
 };
 
 using MPPTunnelSetPtr = std::shared_ptr<MPPTunnelSet>;
+
+class ProcessListEntry;
 
 UInt64 inline getMaxErrorCount(const tipb::DAGRequest &)
 {
@@ -155,7 +158,7 @@ public:
         , flags(dag_request->flags())
         , sql_mode(dag_request->sql_mode())
         , mpp_task_meta(meta_)
-        , mpp_task_id(mpp_task_meta.start_ts(), mpp_task_meta.task_id())
+        , mpp_task_id(mpp_task_meta)
         , max_recorded_error_count(getMaxErrorCount(*dag_request))
         , warnings(max_recorded_error_count)
         , warning_count(0)
@@ -169,7 +172,6 @@ public:
     // for test
     explicit DAGContext(UInt64 max_error_count_)
         : dag_request(nullptr)
-        , dummy_query_string("")
         , dummy_ast(makeDummyQuery())
         , collect_execution_summaries(false)
         , is_mpp_task(false)
@@ -202,7 +204,6 @@ public:
         initOutputInfo();
     }
 
-    void attachBlockIO(const BlockIO & io_);
     std::unordered_map<String, BlockInputStreams> & getProfileStreamsMap();
 
     std::unordered_map<String, std::vector<String>> & getExecutorIdToJoinIdMap();
@@ -260,11 +261,6 @@ public:
 
     bool containsRegionsInfoForTable(Int64 table_id) const;
 
-    const BlockIO & getBlockIO() const
-    {
-        return io;
-    }
-
     UInt64 getFlags() const
     {
         return flags;
@@ -316,12 +312,23 @@ public:
     }
     void addCoprocessorReader(const CoprocessorReaderPtr & coprocessor_reader);
     std::vector<CoprocessorReaderPtr> & getCoprocessorReaders();
+    void setDisaggregatedComputeExchangeReceiver(const String & executor_id, const ExchangeReceiverPtr & receiver)
+    {
+        disaggregated_compute_exchange_receiver = std::make_pair(executor_id, receiver);
+    }
+    std::optional<std::pair<String, ExchangeReceiverPtr>> getDisaggregatedComputeExchangeReceiver()
+    {
+        return disaggregated_compute_exchange_receiver;
+    }
+
 
     void addSubquery(const String & subquery_id, SubqueryForSet && subquery);
     bool hasSubquery() const { return !subqueries.empty(); }
     std::vector<SubqueriesForSets> && moveSubqueries() { return std::move(subqueries); }
     void setProcessListEntry(std::shared_ptr<ProcessListEntry> entry) { process_list_entry = entry; }
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const { return process_list_entry; }
+
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
     const tipb::DAGRequest * dag_request;
     /// Some existing code inherited from Clickhouse assume that each query must have a valid query string and query ast,
@@ -361,14 +368,21 @@ public:
     /// It is used to ensure that the order of Execution summary of list based executors is the same as the order of list based executors.
     std::vector<String> list_based_executors_order;
 
+    /// executor_id, ScanContextPtr
+    /// Currently, max(scan_context_map.size()) == 1, because one mpp task only have do one table scan
+    /// While when we support collcate join later, scan_context_map.size() may > 1,
+    /// thus we need to pay attention to scan_context_map usage that time.
+    std::unordered_map<String, DM::ScanContextPtr> scan_context_map;
+
 private:
     void initExecutorIdToJoinIdMap();
     void initOutputInfo();
 
 private:
     std::shared_ptr<ProcessListEntry> process_list_entry;
-    /// Hold io for correcting the destruction order.
-    BlockIO io;
+    /// Holding the table lock to make sure that the table wouldn't be dropped during the lifetime of this query, even if there are no local regions.
+    /// TableLockHolders need to be released after the BlockInputStream is destroyed to prevent data read exceptions.
+    TableLockHolders table_locks;
     /// profile_streams_map is a map that maps from executor_id to profile BlockInputStreams.
     std::unordered_map<String, BlockInputStreams> profile_streams_map;
     /// executor_id_to_join_id_map is a map that maps executor id to all the join executor id of itself and all its children.
@@ -394,6 +408,9 @@ private:
     /// vector of SubqueriesForSets(such as join build subquery).
     /// The order of the vector is also the order of the subquery.
     std::vector<SubqueriesForSets> subqueries;
+    // In disaggregated tiflash mode, table_scan in tiflash_compute node will be converted ExchangeReceiver.
+    // Record here so we can add to receiver_set and cancel/close it.
+    std::optional<std::pair<String, ExchangeReceiverPtr>> disaggregated_compute_exchange_receiver;
 };
 
 } // namespace DB

@@ -15,7 +15,9 @@
 #pragma once
 
 #include <Storages/DeltaMerge/Remote/ObjectId.h>
+#include <Storages/Page/Page.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/PageStorage.h>
 
 #include <boost/noncopyable.hpp>
 

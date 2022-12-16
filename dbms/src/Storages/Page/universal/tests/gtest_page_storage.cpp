@@ -17,6 +17,7 @@
 #include <Storages/Page/UniversalWriteBatch.h>
 #include <Storages/Page/V3/Remote/CheckpointFilesWriter.h>
 #include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
+#include <Storages/Page/universal/Readers.h>
 #include <Storages/Page/universal/UniversalPageStorage.h>
 #include <Storages/tests/TiFlashStorageTestBasic.h>
 #include <TestUtils/MockDiskDelegator.h>

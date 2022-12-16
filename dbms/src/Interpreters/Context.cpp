@@ -48,6 +48,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/UUID.h>
+#include <Server/RaftConfigParser.h>
 #include <Storages/BackgroundProcessingPool.h>
 #include <Storages/DeltaMerge/DeltaIndexManager.h>
 #include <Storages/DeltaMerge/Index/MinMaxIndex.h>
@@ -194,6 +195,7 @@ struct ContextShared
     ConfigurationPtr users_config; /// Config with the users, profiles and quotas sections.
     BackgroundProcessingPoolPtr background_pool; /// The thread pool for the background work performed by the tables.
     BackgroundProcessingPoolPtr blockable_background_pool; /// The thread pool for the blockable background work performed by the tables.
+    BackgroundProcessingPoolPtr ps_compact_background_pool; /// The thread pool for the background work performed by the ps v2.
     mutable TMTContextPtr tmt_context; /// Context of TiFlash. Note that this should be free before background_pool.
     MultiVersion<Macros> macros; /// Substitutions extracted from config.
     size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -206,6 +208,7 @@ struct ContextShared
     IORateLimiter io_rate_limiter;
     PageStorageRunMode storage_run_mode = PageStorageRunMode::UNI_PS;
     DM::GlobalStoragePoolPtr global_storage_pool;
+    TiFlashSecurityConfigPtr security_config;
 
     /// The PS instance available on Write Node.
     UniversalPageStorageWrapperPtr ps_write;
@@ -337,6 +340,7 @@ Context Context::createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime
     res.shared = std::make_shared<ContextShared>(runtime_components_factory);
     res.quota = std::make_shared<QuotaForIntervals>();
     res.timezone_info.init();
+    res.disaggregated_mode = DisaggregatedMode::None;
     return res;
 }
 
@@ -637,6 +641,20 @@ ConfigurationPtr Context::getUsersConfig()
 {
     auto lock = getLock();
     return shared->users_config;
+}
+
+void Context::setSecurityConfig(Poco::Util::AbstractConfiguration & config, const LoggerPtr & log)
+{
+    LOG_INFO(log, "Setting secuirty config.");
+    auto lock = getLock();
+    shared->security_config = std::make_shared<TiFlashSecurityConfig>(log);
+    shared->security_config->init(config);
+}
+
+TiFlashSecurityConfigPtr Context::getSecurityConfig()
+{
+    auto lock = getLock();
+    return shared->security_config;
 }
 
 void Context::reloadDeltaTreeConfig(const Poco::Util::AbstractConfiguration & config)
@@ -1338,7 +1356,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 
@@ -1364,7 +1382,7 @@ void Context::setMinMaxIndexCache(size_t cache_size_in_bytes)
     if (shared->minmax_index_cache)
         throw Exception("Minmax index cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->minmax_index_cache = std::make_shared<DM::MinMaxIndexCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->minmax_index_cache = std::make_shared<DM::MinMaxIndexCache>(cache_size_in_bytes);
 }
 
 DM::MinMaxIndexCachePtr Context::getMinMaxIndexCache() const
@@ -1442,6 +1460,15 @@ BackgroundProcessingPool & Context::getBlockableBackgroundPool()
     // TODO: maybe a better name for the pool
     auto lock = getLock();
     return *shared->blockable_background_pool;
+}
+
+BackgroundProcessingPool & Context::getPSBackgroundPool()
+{
+    auto lock = getLock();
+    // use the same size as `background_pool_size`
+    if (!shared->ps_compact_background_pool)
+        shared->ps_compact_background_pool = std::make_shared<BackgroundProcessingPool>(settings.background_pool_size, "bg-page-");
+    return *shared->ps_compact_background_pool;
 }
 
 void Context::createTMTContext(const TiFlashRaftConfig & raft_config, pingcap::ClusterConfig && cluster_config)

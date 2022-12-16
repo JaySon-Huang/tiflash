@@ -42,6 +42,7 @@
 
 namespace DB
 {
+class Context;
 class FileProvider;
 using FileProviderPtr = std::shared_ptr<FileProvider>;
 class PathCapacityMetrics;
@@ -102,6 +103,7 @@ public:
         PSDiskDelegatorPtr delegator,
         const PageStorageConfig & config,
         const FileProviderPtr & file_provider,
+        Context & global_ctx,
         bool use_v3 = false,
         bool no_more_insert_to_v2 = false);
 
@@ -200,6 +202,8 @@ public:
     {
         return gcImpl(not_skip, write_limiter, read_limiter);
     }
+
+    virtual void shutdown() {}
 
     void doCheckpoint(std::shared_ptr<const PS::V3::Remote::WriterInfo> writer_info)
     {

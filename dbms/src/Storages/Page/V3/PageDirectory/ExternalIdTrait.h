@@ -44,7 +44,7 @@ struct UniversalPageIdFormat
         return toBigEndian(v);
     }
 };
-}
+} // namespace DB
 
 namespace DB::PS::V3
 {
