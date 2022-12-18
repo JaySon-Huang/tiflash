@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
@@ -7,6 +8,7 @@
 #include <Storages/DeltaMerge/Remote/RemoteSegmentThreadInputStream.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 
+#include <memory>
 #include <mutex>
 
 namespace DB::DM
@@ -66,6 +68,46 @@ RemoteSegmentReadTaskPtr RemoteReadTask::nextFetchTask()
         if (curr_store == tasks.end())
             curr_store = tasks.begin();
     }
+}
+
+void RemoteReadTask::updateTaskState(const RemoteSegmentReadTaskPtr & seg_task, bool meet_error)
+{
+    {
+        std::unique_lock ready_lock(mtx_ready_tasks);
+        const auto old_state = seg_task->state;
+        auto state_iter = ready_segment_tasks.find(old_state);
+        RUNTIME_CHECK(state_iter != ready_segment_tasks.end());
+
+        // TODO: make it an unordered_map
+        bool found = false;
+        for (auto task_iter = state_iter->second.begin(); task_iter != state_iter->second.end(); task_iter++)
+        {
+            auto & task = *task_iter;
+            if (task->store_id == seg_task->store_id
+                && task->table_id == seg_task->table_id
+                && task->segment_id == seg_task->segment_id)
+            {
+                task->state = meet_error ? SegmentReadTaskState::Error : SegmentReadTaskState::AllReady;
+                found = true;
+                // Move it into the right ready state
+                state_iter->second.erase(task_iter);
+                insertReadyTask(task, ready_lock);
+                break;
+            }
+        }
+        RUNTIME_CHECK(found);
+    }
+
+    cv_ready_tasks.notify_one();
+}
+
+void RemoteReadTask::insertReadyTask(const RemoteSegmentReadTaskPtr & seg_task, std::unique_lock<std::mutex> &)
+{
+    if (auto state_iter = ready_segment_tasks.find(seg_task->state);
+        state_iter != ready_segment_tasks.end())
+        state_iter->second.push_back(seg_task);
+    else
+        ready_segment_tasks.emplace(seg_task->state, std::list<RemoteSegmentReadTaskPtr>{seg_task});
 }
 
 RemoteSegmentReadTaskPtr RemoteReadTask::nextReadyTask()

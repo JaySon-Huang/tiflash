@@ -143,6 +143,11 @@ GRPCPagesReceiverContext::Request GRPCPagesReceiverContext::popRequest() const
     return req;
 }
 
+void GRPCPagesReceiverContext::updateTaskState(const Request & req, bool meet_error)
+{
+    remote_read_tasks->updateTaskState(req.seg_task, meet_error);
+}
+
 void GRPCPagesReceiverContext::setDispatchMPPTaskErrMsg(const std::string & err)
 {
     std::lock_guard<std::mutex> lock(dispatch_mpp_task_err_msg_mu);

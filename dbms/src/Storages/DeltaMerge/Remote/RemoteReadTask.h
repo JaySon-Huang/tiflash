@@ -27,6 +27,7 @@ using RemoteSegmentReadTaskPtr = std::shared_ptr<RemoteSegmentReadTask>;
 enum class SegmentReadTaskState
 {
     Init,
+    Error,
     PersistedDataReady,
     AllReady,
 };
@@ -42,8 +43,17 @@ public:
     // write node.
     RemoteSegmentReadTaskPtr nextFetchTask();
 
+    // After the fetch pages done for a segment task, the
+    // worker thread need to update the task state.
+    // Then the read threads can know the segment is ready
+    // or there is error happened.
+    void updateTaskState(const RemoteSegmentReadTaskPtr & seg_task, bool meet_error);
+
     // Return a segment read task that is ready for reading.
     RemoteSegmentReadTaskPtr nextReadyTask();
+
+private:
+    void insertReadyTask(const RemoteSegmentReadTaskPtr & seg_task, std::unique_lock<std::mutex> &);
 
 private:
     // The original number of segment tasks
@@ -131,8 +141,32 @@ struct RemoteSegmentReadTask
         const ColumnDefines & columns_to_read,
         const RowKeyRanges & key_ranges,
         UInt64 read_tso,
-        const DM::RSOperatorPtr &rs_filter,
+        const DM::RSOperatorPtr & rs_filter,
         size_t expected_block_size);
+
+    void receivePage(PageId page_id, Page && page)
+    {
+        // TODO: directly write down to local cache?
+        std::lock_guard lock(mtx_queue);
+        persisted_pages.push(std::make_pair(page_id, std::move(page)));
+    }
+
+    void receiveMemTable(Block && block)
+    {
+        // Keep the block in memory for reading (multiple times)
+        std::lock_guard lock(mtx_queue);
+        mem_table_blocks.push(std::move(block));
+    }
+
+private:
+    std::mutex mtx_queue;
+    // FIXME: this should be directly persisted to local cache? Or it will consume
+    // too many memory
+    // A temporary queue for storing the pages
+    std::queue<std::pair<PageId, Page>> persisted_pages;
+    // A temporary queue for storing the blocks
+    // from remote mem-table
+    std::queue<Block> mem_table_blocks;
 };
 
 } // namespace DM

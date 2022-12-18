@@ -109,6 +109,8 @@ public:
     // So when we cancel the former MPPTask, the latter MPPTask needs to be handled by the tiflash_compute node itself.
     void cancelMPPTaskOnTiFlashStorageNode(LoggerPtr log);
 
+    void updateTaskState(const Request & req, bool meet_error);
+
 private:
     void setDispatchMPPTaskErrMsg(const std::string & err);
 

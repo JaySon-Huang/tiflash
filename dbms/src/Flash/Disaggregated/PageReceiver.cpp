@@ -139,7 +139,6 @@ void PageReceiverBase<RPCContext>::setUpConnection()
 
 template <typename RPCContext>
 PageReceiverResult PageReceiverBase<RPCContext>::nextResult(
-    std::queue<Block> & block_queue,
     const Block & header,
     size_t stream_id,
     std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr)
@@ -147,22 +146,76 @@ PageReceiverResult PageReceiverBase<RPCContext>::nextResult(
     if (unlikely(stream_id >= msg_channels.size()))
     {
         LOG_ERROR(exc_log, "stream_id out of range, stream_id: {}, total_stream_count: {}", stream_id, msg_channels.size());
-        return PageReceiverResult::newError(0, "", "stream_id out of range");
+        return PageReceiverResult::newError("", "stream_id out of range");
     }
 
     std::shared_ptr<PageReceivedMessage> recv_msg;
     if (msg_channels[stream_id]->pop(recv_msg) != MPMCQueueResult::OK)
     {
+        // TODO: handle closed
         throw Exception("Abnormal channel");
     }
     else
     {
         assert(recv_msg != nullptr);
         if (unlikely(recv_msg->error_ptr != nullptr))
-            return PageReceiverResult::newError(0, recv_msg->req_info, recv_msg->error_ptr->msg());
+            return PageReceiverResult::newError(recv_msg->req_info, recv_msg->error_ptr->msg());
 
-        return toDecodeResult(block_queue, header, recv_msg, decoder_ptr);
+        // For pages, write down to local cache
+        // For blocks, push to block_queue
+        return toDecodeResult(header, recv_msg, decoder_ptr);
     }
+}
+
+template <typename RPCContext>
+PageReceiverResult PageReceiverBase<RPCContext>::toDecodeResult(
+    const Block & header,
+    const std::shared_ptr<PageReceivedMessage> & recv_msg,
+    std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr)
+{
+    UNUSED(header, decoder_ptr);
+
+    assert(recv_msg != nullptr);
+    /// the data packets (now we ignore execution summary)
+    auto result = PageReceiverResult::newOk(recv_msg->req_info);
+    result.decode_detail = decodeChunks(recv_msg, decoder_ptr);
+    return result;
+}
+
+template <typename RPCContext>
+DecodeDetail PageReceiverBase<RPCContext>::decodeChunks(
+    const std::shared_ptr<PageReceivedMessage> & recv_msg,
+    std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr)
+{
+    assert(recv_msg != nullptr);
+    DecodeDetail detail;
+
+    if (recv_msg->chunks.empty())
+        return detail;
+
+    {
+        // Record total packet size
+        const auto & packet = *recv_msg->packet;
+        detail.packet_bytes = packet.ByteSizeLong();
+    }
+
+    // Parse the chunks into block and push to queue
+    for (const String * chunk : recv_msg->chunks)
+    {
+        auto result = decoder_ptr->decodeAndSquash(*chunk);
+        if (!result)
+            continue;
+        detail.rows += result->rows();
+        if likely (result->rows() > 0)
+        {
+            recv_msg->seg_task->receiveMemTable(std::move(result.value()));
+        }
+    }
+
+    // TODO: Parse the chunks into pages and push to queue
+    // recv_msg->seg_task->receivePage(PageId page_id, Page &&page)
+
+    return detail;
 }
 
 constexpr Int32 max_retry_times = 10;
@@ -176,21 +229,22 @@ void PageReceiverBase<RPCContext>::readLoop()
     bool meet_error = false;
     String local_err_msg;
 
-    try
+    // Keep poping segment fetch pages request to get the task ready
+    while (!meet_error)
     {
-        // Keep poping segment fetch pages request to get the task ready
-        while (true)
+        auto req = rpc_context->popRequest();
+        if (!req.isValid())
+            break;
+        try
         {
-            auto req = rpc_context->popRequest();
-            if (!req.isValid())
-                break;
             std::tie(meet_error, local_err_msg) = taskReadLoop(std::move(req));
         }
-    }
-    catch (...)
-    {
-        meet_error = true;
-        local_err_msg = getCurrentExceptionMessage(false);
+        catch (...)
+        {
+            meet_error = true;
+            local_err_msg = getCurrentExceptionMessage(false);
+        }
+        rpc_context->updateTaskState(req, meet_error);
     }
     connectionDone(meet_error, local_err_msg, exc_log);
 }
@@ -271,22 +325,6 @@ std::tuple<bool, String> PageReceiverBase<RPCContext>::taskReadLoop(Request && r
         local_err_msg = status.error_message();
     }
     return {meet_error, local_err_msg};
-}
-
-template <typename RPCContext>
-PageReceiverResult PageReceiverBase<RPCContext>::toDecodeResult(
-    std::queue<Block> & block_queue,
-    const Block & header,
-    const std::shared_ptr<PageReceivedMessage> & recv_msg,
-    std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr)
-{
-    UNUSED(block_queue, header, decoder_ptr);
-
-    assert(recv_msg != nullptr);
-    /// the data packets (without summary now)
-    auto result = PageReceiverResult::newOk(nullptr, 0, recv_msg->req_info);
-    // result.decode_detail = decodeChunks(recv_msg, block_queue, decoder_ptr);
-    return result;
 }
 
 template <typename RPCContext>

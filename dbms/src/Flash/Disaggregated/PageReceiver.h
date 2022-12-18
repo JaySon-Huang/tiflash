@@ -21,6 +21,7 @@ struct PageReceivedMessage
     DM::RemoteSegmentReadTaskPtr seg_task;
     const TrackedPageDataPacketPtr packet;
     const mpp::Error * error_ptr;
+    // The chunks to be parsed as Block
     std::vector<const String *> chunks;
 
     PageReceivedMessage(
@@ -41,44 +42,35 @@ using PageReceivedMessagePtr = std::shared_ptr<PageReceivedMessage>;
 
 struct PageReceiverResult
 {
-    std::shared_ptr<tipb::SelectResponse> resp;
-    size_t call_index;
     String req_info;
     bool meet_error;
     String error_msg;
     bool eof;
+    // details to collect execution summary
     DecodeDetail decode_detail;
 
-    PageReceiverResult()
-        : PageReceiverResult(nullptr, 0)
-    {}
-
-    static PageReceiverResult newOk(std::shared_ptr<tipb::SelectResponse> resp_, size_t call_index_, const String & req_info_)
+    static PageReceiverResult newOk(const String & req_info_)
     {
-        return {resp_, call_index_, req_info_, /*meet_error*/ false, /*error_msg*/ "", /*eof*/ false};
+        return PageReceiverResult{req_info_, /*meet_error*/ false, /*error_msg*/ "", /*eof*/ false};
     }
 
     static PageReceiverResult newEOF(const String & req_info_)
     {
-        return {/*resp*/ nullptr, 0, req_info_, /*meet_error*/ false, /*error_msg*/ "", /*eof*/ true};
+        return PageReceiverResult{req_info_, /*meet_error*/ false, /*error_msg*/ "", /*eof*/ true};
     }
 
-    static PageReceiverResult newError(size_t call_index, const String & req_info, const String & error_msg)
+    static PageReceiverResult newError(const String & req_info, const String & error_msg)
     {
-        return {/*resp*/ nullptr, call_index, req_info, /*meet_error*/ true, error_msg, /*eof*/ false};
+        return PageReceiverResult{req_info, /*meet_error*/ true, error_msg, /*eof*/ false};
     }
 
 private:
-    PageReceiverResult(
-        std::shared_ptr<tipb::SelectResponse> resp_,
-        size_t call_index_,
+    explicit PageReceiverResult(
         const String & req_info_ = "",
         bool meet_error_ = false,
         const String & error_msg_ = "",
         bool eof_ = false)
-        : resp(resp_)
-        , call_index(call_index_)
-        , req_info(req_info_)
+        : req_info(req_info_)
         , meet_error(meet_error_)
         , error_msg(error_msg_)
         , eof(eof_)
@@ -103,7 +95,6 @@ public:
     void close();
 
     PageReceiverResult nextResult(
-        std::queue<Block> & block_queue,
         const Block & header,
         size_t stream_id,
         std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr);
@@ -129,8 +120,11 @@ private:
     void cancelAllMsgChannels();
 
     PageReceiverResult toDecodeResult(
-        std::queue<Block> & block_queue,
         const Block & header,
+        const std::shared_ptr<PageReceivedMessage> & recv_msg,
+        std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr);
+
+    DecodeDetail decodeChunks(
         const std::shared_ptr<PageReceivedMessage> & recv_msg,
         std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr);
 
