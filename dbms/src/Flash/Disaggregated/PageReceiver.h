@@ -81,6 +81,9 @@ template <typename RPCContext>
 class PageReceiverBase
 {
 public:
+    static constexpr auto name = "PageReceiver";
+
+public:
     PageReceiverBase(
         std::unique_ptr<RPCContext> rpc_context_,
         size_t source_num_,
@@ -118,6 +121,9 @@ private:
 
     void finishAllMsgChannels();
     void cancelAllMsgChannels();
+
+    PageReceiverResult handleAbnormalChannel(
+        std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr);
 
     PageReceiverResult toDecodeResult(
         const Block & header,

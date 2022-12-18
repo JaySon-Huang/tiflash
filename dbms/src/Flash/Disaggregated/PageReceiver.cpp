@@ -7,6 +7,7 @@
 #include <Storages/DeltaMerge/Remote/RemoteReadTask.h>
 
 #include <memory>
+#include <mutex>
 
 namespace DB
 {
@@ -149,22 +150,47 @@ PageReceiverResult PageReceiverBase<RPCContext>::nextResult(
         return PageReceiverResult::newError("", "stream_id out of range");
     }
 
+    // TODO: decode_ptr can not squash blocks, the blocks could comes
+    // from different stores, tables, segments
+
     std::shared_ptr<PageReceivedMessage> recv_msg;
     if (msg_channels[stream_id]->pop(recv_msg) != MPMCQueueResult::OK)
     {
-        // TODO: handle closed
-        throw Exception("Abnormal channel");
+        return handleAbnormalChannel(decoder_ptr);
     }
-    else
-    {
-        assert(recv_msg != nullptr);
-        if (unlikely(recv_msg->error_ptr != nullptr))
-            return PageReceiverResult::newError(recv_msg->req_info, recv_msg->error_ptr->msg());
 
-        // For pages, write down to local cache
-        // For blocks, push to block_queue
-        return toDecodeResult(header, recv_msg, decoder_ptr);
+    assert(recv_msg != nullptr);
+    if (unlikely(recv_msg->error_ptr != nullptr))
+        return PageReceiverResult::newError(recv_msg->req_info, recv_msg->error_ptr->msg());
+
+    // Decode the pages or blocks into recv_msg->seg_task
+    return toDecodeResult(header, recv_msg, decoder_ptr);
+}
+
+template <typename RPCContext>
+PageReceiverResult PageReceiverBase<RPCContext>::handleAbnormalChannel(
+    std::unique_ptr<CHBlockChunkDecodeAndSquash> & decoder_ptr)
+{
+    std::optional<Block> last_block = decoder_ptr->flush();
+    std::unique_lock lock(mu);
+    if (this->state != DB::ExchangeReceiverState::NORMAL)
+    {
+        return PageReceiverResult::newError(PageReceiverBase<RPCContext>::name, details::constructStatusString(state, err_msg));
     }
+
+    // If there are cached data in SquashDecoder, then just push the block and return EOF next iteration
+    if (last_block && last_block->rows() > 0)
+    {
+        auto result = PageReceiverResult::newOk("");
+        result.decode_detail.packets = 0;
+        result.decode_detail.rows = last_block->rows();
+        // TODO: push block to queue
+        return result;
+    }
+
+    /// live_connections == 0, msg_channel is finished, and state is NORMAL,
+    /// that is the end.
+    return PageReceiverResult::newEOF(PageReceiverBase<RPCContext>::name);
 }
 
 template <typename RPCContext>
