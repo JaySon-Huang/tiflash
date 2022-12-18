@@ -8,6 +8,7 @@
 #include <Storages/Transaction/Types.h>
 #include <common/types.h>
 
+#include <condition_variable>
 #include <mutex>
 #include <unordered_map>
 
@@ -23,17 +24,42 @@ using RemoteTableReadTaskPtr = std::shared_ptr<RemoteTableReadTask>;
 struct RemoteSegmentReadTask;
 using RemoteSegmentReadTaskPtr = std::shared_ptr<RemoteSegmentReadTask>;
 
+enum class SegmentReadTaskState
+{
+    Init,
+    PersistedDataReady,
+    AllReady,
+};
+
 class RemoteReadTask
 {
 public:
     explicit RemoteReadTask(std::vector<RemoteTableReadTaskPtr> && tasks_);
 
-    RemoteSegmentReadTaskPtr nextTask();
+    size_t numSegments() const;
+
+    // Return a segment task that need to fetch pages from
+    // write node.
+    RemoteSegmentReadTaskPtr nextFetchTask();
+
+    // Return a segment read task that is ready for reading.
+    RemoteSegmentReadTaskPtr nextReadyTask();
 
 private:
+    // The original number of segment tasks
+    // Only assign when init
+    size_t num_segments;
+
+    // A task pool for fetching data from write nodes
     mutable std::mutex mtx_tasks;
     std::unordered_map<UInt64, RemoteTableReadTaskPtr> tasks;
     std::unordered_map<UInt64, RemoteTableReadTaskPtr>::iterator curr_store;
+
+    // A task pool for segment tasks
+    // The tasks are sorted by the ready state of segments
+    std::mutex mtx_ready_tasks;
+    std::condition_variable cv_ready_tasks;
+    std::map<SegmentReadTaskState, std::list<RemoteSegmentReadTaskPtr>> ready_segment_tasks;
 };
 
 // Represent a read tasks from one write node
@@ -72,6 +98,11 @@ public:
         return task;
     }
 
+    const std::list<RemoteSegmentReadTaskPtr> & allTasks() const
+    {
+        return tasks;
+    }
+
 private:
     const UInt64 store_id;
     const UInt64 table_id;
@@ -82,6 +113,8 @@ private:
 
 struct RemoteSegmentReadTask
 {
+    SegmentReadTaskState state = SegmentReadTaskState::Init;
+    UInt64 store_id;
     TableID table_id;
     UInt64 segment_id;
     RowKeyRanges ranges;
@@ -93,6 +126,13 @@ struct RemoteSegmentReadTask
     // FIXME: These should be only stored in write node
     SegmentPtr segment;
     SegmentSnapshotPtr segment_snap;
+
+    BlockInputStreamPtr getInputStream(
+        const ColumnDefines & columns_to_read,
+        const RowKeyRanges & key_ranges,
+        UInt64 read_tso,
+        const DM::RSOperatorPtr &rs_filter,
+        size_t expected_block_size);
 };
 
 } // namespace DM
