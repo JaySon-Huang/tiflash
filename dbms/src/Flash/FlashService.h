@@ -14,11 +14,9 @@
 
 #pragma once
 
-#include <Common/TiFlashSecurity.h>
 #include <Interpreters/Context.h>
 #include <common/ThreadPool.h>
 #include <common/logger_useful.h>
-#include <grpcpp/server_context.h>
 
 #include <boost/noncopyable.hpp>
 #pragma GCC diagnostic push
@@ -27,8 +25,8 @@
 #ifdef __clang__
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
+#include <grpcpp/server_context.h>
 #include <kvproto/tikvpb.grpc.pb.h>
-
 #pragma GCC diagnostic pop
 
 namespace DB
