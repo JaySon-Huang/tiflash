@@ -129,39 +129,6 @@ DeltaValueReader::DeltaValueReader(
     , segment_range(segment_range_)
 {}
 
-DeltaValueReader::DeltaValueReader(
-    const DMContext & context_,
-    const DeltaSnapshotPtr & delta_snap_)
-    : DeltaValueReader(context_, delta_snap_, nullptr, {})
-{
-}
-
-PageMap DeltaValueReader::readPages(
-    const PageIds & page_ids) const
-{
-    // auto storage_snap = delta_snap->getMemTableSetSnapshot()->getStorageSnapshot();
-#ifndef NDEBUG
-    for (const auto & page_id : page_ids)
-    {
-        bool found = false;
-        for (const auto & cf : delta_snap->getPersistedFileSetSnapshot()->getColumnFiles())
-        {
-            if (cf->isTinyFile() && cf->getId() == page_id)
-            {
-                found = true;
-                break;
-            }
-        }
-        RUNTIME_CHECK_MSG(found, "Try to read with an invalid page_id! page_id={}", page_id);
-    }
-#endif
-    // The persisted pages
-    // PageMap page_map = storage_snap->log_reader.read(page_ids);
-    // TODO: The blocks in mem-table
-    // return page_map;
-    return {};
-}
-
 DeltaValueReaderPtr
 DeltaValueReader::createNewReader(const ColumnDefinesPtr & new_col_defs)
 {
