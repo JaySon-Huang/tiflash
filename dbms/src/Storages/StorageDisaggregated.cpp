@@ -18,6 +18,7 @@
 #include <DataStreams/TiRemoteBlockInputStream.h>
 #include <Flash/Coprocessor/DAGPipeline.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
+#include <Flash/Coprocessor/RequestUtils.h>
 #include <Flash/Disaggregated/GRPCPageReceiverContext.h>
 #include <Flash/Disaggregated/PageReceiver.h>
 #include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
@@ -54,6 +55,19 @@ struct RpcTypeTraits<::mpp::EstablishDisaggregatedTaskRequest>
 namespace DB
 {
 const String StorageDisaggregated::ExecIDPrefixForTiFlashStorageSender = "exec_id_disaggregated_tiflash_storage_sender";
+
+StorageDisaggregated::StorageDisaggregated(
+    Context & context_,
+    const TiDBTableScan & table_scan_,
+    const PushDownFilter & push_down_filter_)
+    : IStorage()
+    , context(context_)
+    , table_scan(table_scan_)
+    , log(Logger::get(context_.getDAGContext()->log ? context_.getDAGContext()->log->identifier() : ""))
+    , sender_target_mpp_task_id(context_.getDAGContext()->getMPPTaskMeta())
+    , push_down_filter(push_down_filter_)
+{
+}
 
 /**
  * Build the RPC requst by region, key-ranges to
@@ -325,8 +339,6 @@ std::vector<pingcap::coprocessor::BatchCopTask> StorageDisaggregated::buildBatch
 StorageDisaggregated::RequestAndRegionIDs StorageDisaggregated::buildDispatchMPPTaskRequest(
     const pingcap::coprocessor::BatchCopTask & batch_cop_task)
 {
-    // For error handling, need to record region_ids and store_id to invalidate cache.
-    std::vector<pingcap::kv::RegionVerID> region_ids;
     auto dispatch_req = std::make_shared<::mpp::DispatchTaskRequest>();
     ::mpp::TaskMeta * dispatch_req_meta = dispatch_req->mutable_meta();
     dispatch_req_meta->set_start_ts(sender_target_mpp_task_id.query_id.start_ts);
@@ -338,47 +350,9 @@ StorageDisaggregated::RequestAndRegionIDs StorageDisaggregated::buildDispatchMPP
     const auto & settings = context.getSettings();
     dispatch_req->set_timeout(60);
     dispatch_req->set_schema_ver(settings.schema_version);
-    RUNTIME_CHECK_MSG(batch_cop_task.region_infos.empty() != batch_cop_task.table_regions.empty(),
-                      "region_infos and table_regions should not exist at the same time, single table region info: {}, partition table region info: {}",
-                      batch_cop_task.region_infos.size(),
-                      batch_cop_task.table_regions.size());
-    if (!batch_cop_task.region_infos.empty())
-    {
-        // For non-partition table.
-        for (const auto & region_info : batch_cop_task.region_infos)
-        {
-            region_ids.push_back(region_info.region_id);
-            auto * region = dispatch_req->add_regions();
-            region->set_region_id(region_info.region_id.id);
-            region->mutable_region_epoch()->set_version(region_info.region_id.ver);
-            region->mutable_region_epoch()->set_conf_ver(region_info.region_id.conf_ver);
-            for (const auto & key_range : region_info.ranges)
-            {
-                key_range.setKeyRange(region->add_ranges());
-            }
-        }
-    }
-    else
-    {
-        // For partition table.
-        for (const auto & table_region : batch_cop_task.table_regions)
-        {
-            auto * req_table_region = dispatch_req->add_table_regions();
-            req_table_region->set_physical_table_id(table_region.physical_table_id);
-            auto * region = req_table_region->add_regions();
-            for (const auto & region_info : table_region.region_infos)
-            {
-                region_ids.push_back(region_info.region_id);
-                region->set_region_id(region_info.region_id.id);
-                region->mutable_region_epoch()->set_version(region_info.region_id.ver);
-                region->mutable_region_epoch()->set_conf_ver(region_info.region_id.conf_ver);
-                for (const auto & key_range : region_info.ranges)
-                {
-                    key_range.setKeyRange(region->add_ranges());
-                }
-            }
-        }
-    }
+
+    // For error handling, need to record region_ids and store_id to invalidate cache.
+    std::vector<pingcap::kv::RegionVerID> region_ids = RequestUtils::setUpRegionInfos(batch_cop_task, dispatch_req);
 
     const auto & sender_target_task_meta = context.getDAGContext()->getMPPTaskMeta();
     const auto * dag_req = context.getDAGContext()->dag_request;
