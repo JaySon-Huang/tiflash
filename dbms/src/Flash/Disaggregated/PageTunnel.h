@@ -3,6 +3,7 @@
 #include <Common/Logger.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedTaskId.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
+#include <Storages/Page/PageDefines.h>
 #include <Storages/Transaction/Types.h>
 
 #pragma GCC diagnostic push
@@ -43,6 +44,8 @@ public:
     // wait until all the data has been transferred.
     void waitForFinish();
 
+    void close();
+
 public:
     PageTunnel(DM::DisaggregatedTaskId task_id_,
                DM::DisaggregatedSnapshotManager * manager,
@@ -55,7 +58,17 @@ public:
         , log(Logger::get())
     {}
 
-    void close();
+    // just for test
+    PageTunnel(DM::SegmentReadTaskPtr seg_task_, PageIds read_page_ids)
+        : PageTunnel(
+            DM::DisaggregatedTaskId::unknown_disaggregated_task_id,
+            nullptr,
+            std::move(seg_task_),
+            std::move(read_page_ids))
+    {}
+
+    // just for test
+    mpp::PagesPacket readPacket();
 
 private:
     const DM::DisaggregatedTaskId task_id;
@@ -63,7 +76,7 @@ private:
     DM::SegmentReadTaskPtr seg_task;
     PageIds read_page_ids;
 
-    const LoggerPtr log;
+    LoggerPtr log;
 };
 
 } // namespace DB

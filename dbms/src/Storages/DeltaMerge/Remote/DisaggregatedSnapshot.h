@@ -37,7 +37,7 @@ public:
     std::tuple<SegmentReadTaskPtr, String> popTask(TableID physical_table_id, UInt64 segment_id);
 
     bool empty() const;
-    const TableSnapshotMap & tasks() const { return table_snapshots; }
+    const TableSnapshotMap & tableSnapshots() const { return table_snapshots; }
 
     DISALLOW_COPY(DisaggregatedReadSnapshot);
 
@@ -64,6 +64,8 @@ public:
     bool empty() const { return tasks.empty(); }
 
     DISALLOW_COPY(DisaggregatedTableReadSnapshot);
+
+    const SegmentReadTasks & getTasks() const { return tasks; }
 
 public:
     const TableID table_id;

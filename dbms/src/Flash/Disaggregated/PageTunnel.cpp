@@ -2,16 +2,15 @@
 #include <Common/Exception.h>
 #include <Flash/Disaggregated/PageTunnel.h>
 #include <Interpreters/Context.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshotManager.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/Transaction/TMTContext.h>
+#include <common/logger_useful.h>
 #include <kvproto/mpp.pb.h>
 
 #include <memory>
-
-#include "Storages/DeltaMerge/File/dtpb/column_file.pb.h"
-#include "common/logger_useful.h"
 
 namespace DB
 {
@@ -32,7 +31,7 @@ PageTunnelPtr PageTunnel::build(
     return tunnel;
 }
 
-void PageTunnel::connect(SyncPagePacketWriter * sync_writer)
+mpp::PagesPacket PageTunnel::readPacket()
 {
     mpp::PagesPacket packet;
 
@@ -68,7 +67,13 @@ void PageTunnel::connect(SyncPagePacketWriter * sync_writer)
               packet.pages_size(),
               total_pages_data_size,
               packet.chunks_size());
-    sync_writer->Write(packet);
+    return packet;
+}
+
+void PageTunnel::connect(SyncPagePacketWriter * sync_writer)
+{
+    // TODO: split the packet into smaller size
+    sync_writer->Write(readPacket());
 }
 
 void PageTunnel::waitForFinish()
@@ -77,6 +82,9 @@ void PageTunnel::waitForFinish()
 
 void PageTunnel::close()
 {
+    if (!snap_manager)
+        return;
+
     if (auto snap = snap_manager->getSnapshot(task_id);
         snap && snap->empty())
     {
