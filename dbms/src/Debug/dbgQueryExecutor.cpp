@@ -15,6 +15,9 @@
 #include <Debug/dbgQueryExecutor.h>
 #include <Flash/Coprocessor/DAGDriver.h>
 #include <Flash/CoprocessorHandler.h>
+#include <Storages/Transaction/Region.h>
+#include <Storages/Transaction/TMTContext.h>
+#include <kvproto/coprocessor.pb.h>
 
 namespace DB
 {

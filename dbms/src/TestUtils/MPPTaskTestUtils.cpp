@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <Server/MockComputeClient.h>
+#include <Storages/Transaction/TMTContext.h>
 #include <TestUtils/MPPTaskTestUtils.h>
 
 namespace DB::tests

@@ -16,6 +16,7 @@
 #include <Debug/dbgFuncCoprocessorUtils.h>
 #include <Debug/dbgNaturalDag.h>
 #include <Storages/IManageableStorage.h>
+#include <Storages/Transaction/TMTContext.h>
 
 namespace DB
 {

@@ -13,6 +13,7 @@
 // limitations under the License.
 #include <Common/FmtUtils.h>
 #include <Debug/MockComputeServerManager.h>
+#include <Storages/Transaction/TMTContext.h>
 #include <TestUtils/TiFlashTestEnv.h>
 
 #include <chrono>
