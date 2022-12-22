@@ -1,12 +1,13 @@
 #include <Flash/Disaggregated/PageTunnel.h>
 #include <Storages/DeltaMerge/ColumnFile/ColumnFileSetSnapshot.h>
+#include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedTaskId.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/tests/gtest_dm_delta_merge_store_test_basic.h>
 #include <Storages/DeltaMerge/tests/gtest_segment_test_basic.h>
 #include <Storages/Page/PageDefines.h>
-#include "Storages/DeltaMerge/DeltaMergeDefines.h"
+
 #include "tipb/expression.pb.h"
 
 namespace DB::DM::tests

@@ -30,6 +30,7 @@
 #include <Flash/Coprocessor/DAGStorageInterpreter.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
 #include <Flash/Coprocessor/RemoteRequest.h>
+#include <Flash/Coprocessor/collectOutputFieldTypes.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeDummyQuery.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
@@ -41,11 +42,11 @@
 #include <Storages/Transaction/LockException.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <TiDB/Schema/SchemaSyncer.h>
-#include "Flash/Coprocessor/collectOutputFieldTypes.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <kvproto/coprocessor.pb.h>
+#include <tipb/expression.pb.h>
 #include <tipb/select.pb.h>
 #pragma GCC diagnostic pop
 
@@ -744,7 +745,12 @@ DAGStorageInterpreter::buildLocalStreamsForPhysicalTable(
                 StorageDeltaMergePtr delta_merge_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
                 RUNTIME_CHECK_MSG(delta_merge_storage != nullptr, "delta_merge_storage which cast from storage is null");
                 disaggregated_snap = delta_merge_storage->buildRemoteReadSnapshot(required_columns, query_info, context, max_streams);
+                // TODO: could be shared on the request level
+                disaggregated_snap->output_field_types = std::make_shared<std::vector<tipb::FieldType>>();
                 *disaggregated_snap->output_field_types = collectOutputFieldTypes(*dag_context.dag_request);
+                RUNTIME_CHECK(disaggregated_snap->output_field_types->size() == disaggregated_snap->column_defines->size(),
+                              disaggregated_snap->output_field_types->size(),
+                              disaggregated_snap->column_defines->size());
             }
             injectFailPointForLocalRead(query_info);
 

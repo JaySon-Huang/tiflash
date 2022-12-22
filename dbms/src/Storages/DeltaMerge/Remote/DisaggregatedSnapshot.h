@@ -1,17 +1,16 @@
 #pragma once
 
 #include <Common/nocopyable.h>
+#include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedTaskId.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/Transaction/Types.h>
+#include <tipb/expression.pb.h>
 
 #include <mutex>
 #include <unordered_map>
-
-#include "Storages/DeltaMerge/DeltaMergeDefines.h"
-#include "tipb/expression.pb.h"
 
 namespace DB::DM
 {
@@ -100,6 +99,8 @@ public:
 
 public:
     const TableID table_id;
+
+    // TODO: these can be shared on DisaggregatedReadSnapshot level
     DM::ColumnDefinesPtr column_defines;
     std::shared_ptr<std::vector<tipb::FieldType>> output_field_types;
 

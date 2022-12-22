@@ -4,6 +4,7 @@
 #include <Flash/Disaggregated/PageTunnel.h>
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/Delta/DeltaValueSpace.h>
+#include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshotManager.h>
@@ -27,8 +28,9 @@ PageTunnelPtr PageTunnel::build(
     auto & tmt = context.getTMTContext();
     auto * snap_manager = tmt.getDisaggregatedSnapshotManager();
     auto snap = snap_manager->getSnapshot(task_id);
+    RUNTIME_CHECK_MSG(snap != nullptr, "Can not find disaggregated task, task_id={}", task_id);
     auto task = snap->popSegTask(table_id, segment_id);
-    RUNTIME_CHECK(!task.isValid(), task.err_msg); // TODO: return bad request
+    RUNTIME_CHECK(task.isValid(), task.err_msg); // TODO: return bad request
 
     auto tunnel = std::make_unique<PageTunnel>(
         task_id,
@@ -68,8 +70,7 @@ mpp::PagesPacket PageTunnel::readPacket()
         packet.mutable_pages()->Add(remote_page.SerializeAsString());
     }
 
-// generate an inputstream of mem-table
-#if 0
+    // generate an inputstream of mem-table
     auto chunk_codec_stream = std::make_unique<CHBlockChunkCodec>()->newCodecStream(*result_field_types);
     auto delta_vs = seg_task->read_snapshot->delta;
     auto mem_table_stream = std::make_shared<DM::DeltaMemTableInputStream>(delta_vs, column_defines, seg_task->segment->getRowKeyRange());
@@ -85,7 +86,6 @@ mpp::PagesPacket PageTunnel::readPacket()
         chunk_codec_stream->clear();
     }
     mem_table_stream->readSuffix();
-#endif
 
     LOG_DEBUG(log,
               "send packet, pages={} pages_size={} blocks={}",
