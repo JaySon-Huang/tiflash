@@ -41,6 +41,7 @@
 #include <Storages/Transaction/LockException.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <TiDB/Schema/SchemaSyncer.h>
+#include "Flash/Coprocessor/collectOutputFieldTypes.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -743,6 +744,7 @@ DAGStorageInterpreter::buildLocalStreamsForPhysicalTable(
                 StorageDeltaMergePtr delta_merge_storage = std::dynamic_pointer_cast<StorageDeltaMerge>(storage);
                 RUNTIME_CHECK_MSG(delta_merge_storage != nullptr, "delta_merge_storage which cast from storage is null");
                 disaggregated_snap = delta_merge_storage->buildRemoteReadSnapshot(required_columns, query_info, context, max_streams);
+                *disaggregated_snap->output_field_types = collectOutputFieldTypes(*dag_context.dag_request);
             }
             injectFailPointForLocalRead(query_info);
 

@@ -24,6 +24,8 @@
 
 #include <random>
 #include <vector>
+#include "Storages/DeltaMerge/DeltaMergeDefines.h"
+#include "tipb/expression.pb.h"
 
 namespace DB
 {
@@ -137,6 +139,8 @@ protected:
 };
 
 PageIds getCFTinyIds(const ColumnFileSetSnapshotPtr & snapshot);
+
+std::vector<tipb::FieldType> reverseGetFieldType(const ColumnDefines & cds);
 
 } // namespace tests
 } // namespace DM

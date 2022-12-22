@@ -1,7 +1,9 @@
 
 #include <Common/Exception.h>
+#include <Flash/Coprocessor/CHBlockChunkCodec.h>
 #include <Flash/Disaggregated/PageTunnel.h>
 #include <Interpreters/Context.h>
+#include <Storages/DeltaMerge/Delta/DeltaValueSpace.h>
 #include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
 #include <Storages/DeltaMerge/Remote/DisaggregatedSnapshotManager.h>
@@ -9,6 +11,7 @@
 #include <Storages/Transaction/TMTContext.h>
 #include <common/logger_useful.h>
 #include <kvproto/mpp.pb.h>
+#include <tipb/expression.pb.h>
 
 #include <memory>
 
@@ -24,10 +27,16 @@ PageTunnelPtr PageTunnel::build(
     auto & tmt = context.getTMTContext();
     auto * snap_manager = tmt.getDisaggregatedSnapshotManager();
     auto snap = snap_manager->getSnapshot(task_id);
-    auto [seg_task, err_msg] = snap->popTask(table_id, segment_id);
-    RUNTIME_CHECK(!seg_task, err_msg); // TODO: return bad request
+    auto task = snap->popSegTask(table_id, segment_id);
+    RUNTIME_CHECK(!task.isValid(), task.err_msg); // TODO: return bad request
 
-    auto tunnel = std::make_unique<PageTunnel>(task_id, snap_manager, seg_task, read_page_ids);
+    auto tunnel = std::make_unique<PageTunnel>(
+        task_id,
+        snap_manager,
+        task.seg_task,
+        task.column_defines,
+        task.output_field_types,
+        read_page_ids);
     return tunnel;
 }
 
@@ -59,8 +68,24 @@ mpp::PagesPacket PageTunnel::readPacket()
         packet.mutable_pages()->Add(remote_page.SerializeAsString());
     }
 
-    // generate an inputstream of mem-table
-    auto mem_table = seg_task->read_snapshot->delta->getMemTableSetSnapshot();
+// generate an inputstream of mem-table
+#if 0
+    auto chunk_codec_stream = std::make_unique<CHBlockChunkCodec>()->newCodecStream(*result_field_types);
+    auto delta_vs = seg_task->read_snapshot->delta;
+    auto mem_table_stream = std::make_shared<DM::DeltaMemTableInputStream>(delta_vs, column_defines, seg_task->segment->getRowKeyRange());
+    mem_table_stream->readPrefix();
+    while (true)
+    {
+        Block block = mem_table_stream->read();
+        if (!block)
+            break;
+        chunk_codec_stream->encode(block, 0, block.rows());
+        // serialize block as chunk
+        packet.add_chunks(chunk_codec_stream->getString());
+        chunk_codec_stream->clear();
+    }
+    mem_table_stream->readSuffix();
+#endif
 
     LOG_DEBUG(log,
               "send packet, pages={} pages_size={} blocks={}",
