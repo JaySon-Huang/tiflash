@@ -20,6 +20,7 @@
 #include <Storages/DeltaMerge/DMChecksumConfig.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
+#include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/IStorage.h>
@@ -30,6 +31,7 @@
 
 namespace DB
 {
+struct SelectQueryInfo;
 namespace DM
 {
 struct RowKeyRange;
@@ -66,6 +68,13 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    DM::DisaggregatedTableReadSnapshotPtr
+    buildRemoteReadSnapshot(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        unsigned num_streams);
+
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     /// Write from raft layer.
@@ -93,6 +102,12 @@ public:
         const DM::RowKeyRange & range,
         const std::vector<DM::ExternalDTFileInfo> & external_files,
         bool clear_data_in_range,
+        const Settings & settings);
+
+    void ingestSegmentFromCheckpointPath(
+        const DM::RowKeyRange & range,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info,
         const Settings & settings);
 
     UInt64 onSyncGc(Int64, const DM::GCOptions &) override;
@@ -212,6 +227,7 @@ private:
     DM::RowKeyRanges parseMvccQueryInfo(const DB::MvccQueryInfo & mvcc_query_info,
                                         unsigned num_streams,
                                         const Context & context,
+                                        const String & req_id,
                                         const LoggerPtr & tracing_logger);
 #ifndef DBMS_PUBLIC_GTEST
 private:

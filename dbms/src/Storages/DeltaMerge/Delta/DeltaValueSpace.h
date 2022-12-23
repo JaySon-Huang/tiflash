@@ -17,6 +17,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/DeltaMerge/ColumnFile/ColumnFile.h>
 #include <Storages/DeltaMerge/ColumnFile/ColumnFileBig.h>
@@ -33,6 +34,8 @@
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/StoragePool.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/V3/PageDirectory.h>
+#include <Storages/Page/V3/Remote/CheckpointPageManager.h>
 
 namespace DB
 {
@@ -55,6 +58,8 @@ using DeltaIndexIterator = DeltaIndexCompacted::Iterator;
 struct DMContext;
 struct WriteBatches;
 class StoragePool;
+
+using PS::V3::universal::PageDirectoryTrait;
 
 class DeltaValueSpace
     : public std::enable_shared_from_this<DeltaValueSpace>
@@ -108,6 +113,15 @@ public:
     /// Restore the metadata of this instance.
     /// Only called after reboot.
     static DeltaValueSpacePtr restore(DMContext & context, const RowKeyRange & segment_range, PageId id);
+
+    static DeltaValueSpacePtr restoreFromCheckpoint( //
+        DMContext & context,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info,
+        const RowKeyRange & segment_range,
+        NamespaceId ns_id,
+        PageId delta_id,
+        WriteBatches & wbs);
 
     /**
      * Resets the logger by using the one from the segment.
@@ -347,11 +361,14 @@ public:
 
     static DeltaSnapshotPtr createSnapshotForRead(CurrentMetrics::Metric type)
     {
+        // read snapshot do nothing with the DeltaVS
         return std::make_shared<DeltaValueSnapshot>(type, /* is_update */ false, nullptr);
     }
 
     static DeltaSnapshotPtr createSnapshotForUpdate(CurrentMetrics::Metric type, DeltaValueSpacePtr delta)
     {
+        // after update snapshot is released, it will change the DeltaVS updating flag
+        assert(delta != nullptr);
         return std::make_shared<DeltaValueSnapshot>(type, /* is_update */ true, delta);
     }
 
@@ -368,7 +385,7 @@ public:
 
     RowKeyRange getSquashDeleteRange() const;
 
-    const auto & getSharedDeltaIndex() { return shared_delta_index; }
+    const auto & getSharedDeltaIndex() const { return shared_delta_index; }
 
     bool isForUpdate() const { return is_update; }
 };
@@ -457,6 +474,27 @@ public:
             persisted_files_done = true;
             return mem_table_input_stream.read();
         }
+    }
+};
+
+class DeltaMemTableInputStream : public IBlockInputStream
+{
+private:
+    ColumnFileSetInputStream mem_table_input_stream;
+
+public:
+    DeltaMemTableInputStream(const DeltaSnapshotPtr & delta_snap_,
+                             const ColumnDefinesPtr & col_defs_,
+                             const RowKeyRange & segment_range_)
+        : mem_table_input_stream(delta_snap_->getMemTableSetSnapshot(), col_defs_, segment_range_)
+    {}
+
+    String getName() const override { return "DeltaValue"; }
+    Block getHeader() const override { return mem_table_input_stream.getHeader(); }
+
+    Block read() override
+    {
+        return mem_table_input_stream.read();
     }
 };
 

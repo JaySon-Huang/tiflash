@@ -220,7 +220,7 @@ typename Trait::PageIdSharedPtr VersionedPageEntries<Trait>::createNewExternal(c
         delete_ver = PageVersion(0);
         being_ref_count = 1;
         // return the new created holder to caller to set the page_id
-        external_holder = std::make_shared<typename Trait::PageId>(0, 0);
+        external_holder = std::make_shared<typename Trait::PageId>();
         return external_holder;
     }
 
@@ -236,7 +236,7 @@ typename Trait::PageIdSharedPtr VersionedPageEntries<Trait>::createNewExternal(c
                 delete_ver = PageVersion(0);
                 being_ref_count = 1;
                 // return the new created holder to caller to set the page_id
-                external_holder = std::make_shared<typename Trait::PageId>(0, 0);
+                external_holder = std::make_shared<typename Trait::PageId>();
                 return external_holder;
             }
             else
@@ -1287,13 +1287,16 @@ typename Trait::PageIdSet PageDirectory<Trait>::getRangePageIds(const typename T
     typename Trait::PageIdSet page_ids;
 
     std::shared_lock read_lock(table_rw_mutex);
+    const auto seq = sequence.load();
     for (auto iter = mvcc_table_directory.lower_bound(start);
          iter != mvcc_table_directory.end();
          ++iter)
     {
         if (!Trait::ExternalIdTrait::isInvalidPageId(end) && iter->first >= end)
             break;
-        page_ids.insert(iter->first);
+        // Only return the page_id that is visible
+        if (iter->second->isVisible(seq))
+            page_ids.insert(iter->first);
     }
     return page_ids;
 }
@@ -1314,7 +1317,7 @@ typename universal::PageDirectoryTrait::PageIdSet PageDirectory<universal::PageD
          iter != mvcc_table_directory.end();
          ++iter)
     {
-        if (iter->first.rfind(prefix, 0) != 0)
+        if (iter->first.rfind(prefix.asStr(), 0) != 0)
             break;
         page_ids.insert(iter->first);
     }
@@ -1651,9 +1654,13 @@ PageDirectory<Trait>::getEntriesByBlobIds(const std::vector<BlobFileId> & blob_i
             RUNTIME_CHECK(page_iter != mvcc_table_directory.end(), ref_id, ori_id, ver);
         }
         const auto & version_entries = page_iter->second;
+        // After storing all data in one PageStorage instance, we will run full gc
+        // with external pages. Skip rewriting if it is an external pages.
+        if (version_entries->isExternalPage())
+            continue;
         // the latest entry with version.seq <= ref_id.create_ver.seq
         auto entry = version_entries->getLastEntry(ver.sequence);
-        RUNTIME_CHECK(entry.has_value(), ref_id, ori_id, ver);
+        RUNTIME_CHECK_MSG(entry.has_value(), "ref_id={} ori_id={} ver={} entries={}", ref_id, ori_id, ver, version_entries->toDebugString());
         // If the being-ref entry lays on the full gc candidate blobfiles, then we
         // need to rewrite the ref-id to a normal page.
         if (blob_id_set.count(entry->file_id) > 0)
@@ -1757,30 +1764,32 @@ typename PageDirectory<Trait>::DumpRemoteCheckpointResult PageDirectory<Trait>::
         options.data_file_name_pattern,
         fmt::arg("sequence", snap->sequence),
         fmt::arg("sub_file_index", 0));
-    auto data_file_path = options.remote_directory + data_file_name;
+    auto remote_data_file_path = options.remote_directory + data_file_name;
+    auto remote_data_file_path_tmp = remote_data_file_path + ".tmp";
     // Always append a suffix, in case of remote_directory == temp_directory
-    auto data_file_path_temp = options.temp_directory + data_file_name + ".tmp";
+    auto local_data_file_path_temp = options.temp_directory + data_file_name + ".tmp";
 
     auto manifest_file_name = fmt::format(
         options.manifest_file_name_pattern,
         fmt::arg("sequence", snap->sequence));
-    auto manifest_file_path = options.remote_directory + manifest_file_name;
+    auto remote_manifest_file_path = options.remote_directory + manifest_file_name;
+    auto remote_manifest_file_path_temp = remote_manifest_file_path + ".tmp";
     // Always append a suffix, in case of remote_directory == temp_directory
-    auto manifest_file_path_temp = options.temp_directory + manifest_file_name + ".tmp";
+    auto local_manifest_file_path_temp = options.temp_directory + manifest_file_name + ".tmp";
 
-    Poco::File(Poco::Path(data_file_path_temp).parent()).createDirectories();
-    Poco::File(Poco::Path(manifest_file_path_temp).parent()).createDirectories();
+    Poco::File(Poco::Path(local_data_file_path_temp).parent()).createDirectories();
+    Poco::File(Poco::Path(local_manifest_file_path_temp).parent()).createDirectories();
 
-    LOG_DEBUG(log, "data_file_path_temp={} manifest_file_path_temp={}", data_file_path_temp, manifest_file_path_temp);
+    LOG_DEBUG(log, "data_file_path_temp={} manifest_file_path_temp={}", local_data_file_path_temp, local_manifest_file_path_temp);
 
     auto data_writer = CheckpointDataFileWriter<Trait>::create(
         typename CheckpointDataFileWriter<Trait>::Options{
-            .file_path = data_file_path_temp,
+            .file_path = local_data_file_path_temp,
             .file_id = data_file_name,
         });
     auto manifest_writer = CheckpointManifestFileWriter<Trait>::create(
         typename CheckpointManifestFileWriter<Trait>::Options{
-            .file_path = manifest_file_path_temp,
+            .file_path = local_manifest_file_path_temp,
             .file_id = manifest_file_name,
         });
     auto writer = CheckpointFilesWriter<Trait, PSBlobTrait>::create(
@@ -1805,25 +1814,42 @@ typename PageDirectory<Trait>::DumpRemoteCheckpointResult PageDirectory<Trait>::
     if (has_new_data)
     {
         // Copy back the remote info to the current PageStorage. New remote infos are attached in `writeEditsAndApplyRemoteInfo`.
-        // As a snapshot is kept, we expect there should be no missing page.
-        copyRemoteInfoFromEdit(edit_from_mem, /* allow_missing */ false);
+        // Snapshot cannot prevent obsolete entries from being deleted.
+        // For example, if there is a `Put 1` with sequence 10, `Del 1` with sequence 11,
+        // and the snapshot sequence is 12, Page with id 1 may be deleted by the gc process.
+        copyRemoteInfoFromEdit(edit_from_mem, /* allow_missing */ true);
     }
 
     // NOTE: The following IO may be very slow, because the output directory should be mounted as S3.
-    Poco::File(Poco::Path(data_file_path).parent()).createDirectories();
-    Poco::File(Poco::Path(manifest_file_path).parent()).createDirectories();
+    Poco::File(Poco::Path(remote_data_file_path).parent()).createDirectories();
+    Poco::File(Poco::Path(remote_manifest_file_path).parent()).createDirectories();
 
-    auto data_file = Poco::File{data_file_path_temp};
+    auto data_file = Poco::File{local_data_file_path_temp};
     RUNTIME_CHECK(data_file.exists());
 
     if (has_new_data)
-        data_file.moveTo(data_file_path);
+    {
+        // Upload in two steps to avoid other store read incomplete file
+        if (remote_data_file_path_tmp != local_data_file_path_temp)
+        {
+            data_file.moveTo(remote_data_file_path_tmp);
+        }
+        auto remote_data_file_temp = Poco::File{remote_data_file_path_tmp};
+        RUNTIME_CHECK(remote_data_file_temp.exists());
+        remote_data_file_temp.renameTo(remote_data_file_path);
+    }
     else
         data_file.remove();
 
-    auto manifest_file = Poco::File{manifest_file_path_temp};
+    auto manifest_file = Poco::File{local_manifest_file_path_temp};
     RUNTIME_CHECK(manifest_file.exists());
-    manifest_file.moveTo(manifest_file_path);
+    if (remote_manifest_file_path_temp != local_manifest_file_path_temp)
+    {
+        manifest_file.moveTo(remote_manifest_file_path_temp);
+    }
+    auto remote_manifest_file_temp = Poco::File{remote_manifest_file_path_temp};
+    RUNTIME_CHECK(remote_manifest_file_temp.exists());
+    remote_manifest_file_temp.renameTo(remote_manifest_file_path);
 
     last_checkpoint_sequence = snap->sequence;
     LOG_DEBUG(log, "Update last_checkpoint_sequence to {}", last_checkpoint_sequence);

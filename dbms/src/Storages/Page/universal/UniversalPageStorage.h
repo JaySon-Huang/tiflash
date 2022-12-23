@@ -28,6 +28,7 @@
 #include <Storages/Page/V3/PageDirectory/ExternalIdTrait.h>
 #include <common/defines.h>
 
+
 namespace DB
 {
 class FileProvider;
@@ -75,6 +76,7 @@ public:
         String name,
         PSDiskDelegatorPtr delegator,
         const PageStorageConfig & config,
+        const String & remote_dir,
         const FileProviderPtr & file_provider);
 
     UniversalPageStorage(
@@ -160,9 +162,13 @@ public:
 
     Page read(const PageReadFields & page_field, const ReadLimiterPtr & read_limiter = nullptr, SnapshotPtr snapshot = {}, bool throw_on_not_exist = true);
 
+    void traverseEntries(const std::function<void(UniversalPageId page_id, DB::PageEntry entry)> & acceptor, SnapshotPtr snapshot = {});
+
     UniversalPageId getNormalPageId(const UniversalPageId & page_id, SnapshotPtr snapshot = {}, bool throw_on_not_exist = true);
 
     DB::PageEntry getEntry(const UniversalPageId & page_id, SnapshotPtr snapshot);
+
+    DB::PS::V3::PageEntryV3 getEntryV3(const UniversalPageId & page_id, SnapshotPtr snapshot);
 
     PageId getMaxId() const;
 
@@ -171,6 +177,15 @@ public:
 
     GCTimeStatistics doGC(const WriteLimiterPtr & write_limiter, const ReadLimiterPtr & read_limiter);
     void cleanExternalPage(Stopwatch & gc_watch, GCTimeStatistics & statistics);
+
+    void doCheckpoint(std::shared_ptr<const PS::V3::Remote::WriterInfo> writer_info)
+    {
+        if (config.ps_remote_directory.get().empty())
+            return;
+        return checkpointImpl(writer_info, config.ps_remote_directory);
+    }
+
+    void checkpointImpl(std::shared_ptr<const PS::V3::Remote::WriterInfo> writer_info, const std::string & remote_directory);
 
     bool isEmpty() const
     {

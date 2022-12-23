@@ -609,6 +609,30 @@ void DMFile::readMetadata(const FileProviderPtr & file_provider, const ReadMetaM
         readPackStat(file_provider, footer.meta_pack_info);
 }
 
+void DMFile::finalizeForRemote(const FileProviderPtr & file_provider)
+{
+    if (unlikely(status != Status::WRITING))
+        throw Exception("Expected WRITING status, now " + statusString(status));
+    Poco::File old_file(path());
+    setStatus(Status::READABLE);
+    auto new_path = path();
+
+    Poco::File file(new_path);
+    if (file.exists())
+    {
+        LOG_WARNING(log, "Existing dmfile, removing: {}", new_path);
+        const String deleted_path = getPathByStatus(parent_path, file_id, Status::DROPPED);
+        // no need to delete the encryption info associated with the dmfile path here.
+        // because this dmfile path is still a valid path and no obsolete encryption info will be left.
+        file.renameTo(deleted_path);
+        file.remove(true);
+        LOG_WARNING(log, "Existing dmfile, removed: {}", deleted_path);
+    }
+    old_file.renameTo(new_path);
+    readConfiguration(file_provider);
+    readMetadata(file_provider, ReadMetaMode::all());
+}
+
 void DMFile::finalizeForFolderMode(const FileProviderPtr & file_provider, const WriteLimiterPtr & write_limiter)
 {
     if (STORAGE_FORMAT_CURRENT.dm_file >= DMFileFormat::V2 && !configuration)
@@ -775,6 +799,29 @@ void DMFile::enableGC()
     Poco::File ngc_file(ngcPath());
     if (ngc_file.exists())
         ngc_file.remove();
+}
+
+String DMFile::remotePath() const
+{
+    return getPathByStatus(parent_path, file_id, status) + "/REMOTE";
+}
+
+
+void DMFile::clearRemote()
+{
+    Poco::File remote_file(remotePath());
+    if (remote_file.exists())
+        remote_file.remove();
+}
+
+void DMFile::setRemote()
+{
+    PageUtil::touchFile(remotePath());
+}
+
+bool DMFile::isRemote()
+{
+    return Poco::File(remotePath()).exists();
 }
 
 void DMFile::remove(const FileProviderPtr & file_provider)

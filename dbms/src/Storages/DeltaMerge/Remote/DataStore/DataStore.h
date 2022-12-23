@@ -81,6 +81,10 @@ public:
      */
     virtual void putDMFile(DMFilePtr local_dm_file, const DMFileOID & oid) = 0;
 
+    virtual void copyDMFileMetaToLocalPath(const DMFileOID & remote_oid, const String & local_path) = 0;
+
+    virtual void linkDMFile(const DMFileOID & remote_oid, const DMFileOID & self_oid) = 0;
+
     /**
      * Blocks until a DMFile in the remote data store is successfully prepared in a local cache.
      * If the DMFile exists in the local cache, it will not be prepared again.

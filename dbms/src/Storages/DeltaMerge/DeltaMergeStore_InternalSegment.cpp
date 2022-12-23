@@ -111,7 +111,7 @@ SegmentPair DeltaMergeStore::segmentSplit(DMContext & dm_context, const SegmentP
         }
     });
 
-    WriteBatches wbs(*storage_pool, dm_context.getWriteLimiter());
+    WriteBatches wbs(storage_pool, dm_context.getWriteLimiter());
 
     Segment::SplitMode seg_split_mode;
     switch (opt_split_mode)
@@ -279,7 +279,7 @@ SegmentPtr DeltaMergeStore::segmentMerge(DMContext & dm_context, const std::vect
         }
     });
 
-    WriteBatches wbs(*storage_pool, dm_context.getWriteLimiter());
+    WriteBatches wbs(storage_pool, dm_context.getWriteLimiter());
     auto merged_stable = Segment::prepareMerge(dm_context, schema_snap, ordered_segments, ordered_snapshots, wbs);
     wbs.writeLogAndData();
     merged_stable->enableDMFilesGC();
@@ -295,7 +295,7 @@ SegmentPtr DeltaMergeStore::segmentMerge(DMContext & dm_context, const std::vect
             if (!isSegmentValid(lock, seg))
             {
                 LOG_DEBUG(log, "Merge - Give up segmentMerge because not valid, segment={}", seg->simpleInfo());
-                wbs.setRollback();
+                wbs.rollbackWrittenLogAndData();
                 return {};
             }
         }
@@ -425,7 +425,7 @@ SegmentPtr DeltaMergeStore::segmentMergeDelta(
         }
     });
 
-    WriteBatches wbs(*storage_pool, dm_context.getWriteLimiter());
+    WriteBatches wbs(storage_pool, dm_context.getWriteLimiter());
 
     auto new_stable = segment->prepareMergeDelta(dm_context, schema_snap, segment_snap, wbs);
     wbs.writeLogAndData();
@@ -579,6 +579,50 @@ SegmentPtr DeltaMergeStore::segmentIngestData(
             RUNTIME_CHECK_MSG(false, "applyIngestData returns unexpected result");
         }
     }
+
+    if constexpr (DM_RUN_CHECK)
+        check(dm_context.db_context);
+
+    return new_segment;
+}
+
+// TODO: avoid duplicate code
+SegmentPtr DeltaMergeStore::segmentDangerouslyReplaceData2(
+    DMContext & dm_context,
+    const SegmentPtr & segment,
+    const DMFilePtr & data_file,
+    const ColumnFilePersisteds & column_file_persisteds)
+{
+    LOG_INFO(log, "ReplaceData - Begin, segment={} data_file={}", segment->info(), data_file->path());
+
+    WriteBatches wbs(storage_pool);
+
+    SegmentPtr new_segment;
+    {
+        std::unique_lock lock(read_write_mutex);
+        if (!isSegmentValid(lock, segment))
+        {
+            LOG_DEBUG(log, "ReplaceData - Give up segment replace data because segment not valid, segment={} data_file={}", segment->simpleInfo(), data_file->path());
+            return {};
+        }
+
+        auto segment_lock = segment->mustGetUpdateLock();
+        new_segment = segment->dangerouslyReplaceData2(segment_lock, dm_context, data_file, wbs, column_file_persisteds);
+
+        RUNTIME_CHECK(compare(segment->getRowKeyRange().getEnd(), new_segment->getRowKeyRange().getEnd()) == 0, segment->info(), new_segment->info());
+        RUNTIME_CHECK(segment->segmentId() == new_segment->segmentId(), segment->info(), new_segment->info());
+
+        wbs.writeLogAndData();
+        wbs.writeMeta();
+
+        segment->abandon(dm_context);
+        segments[segment->getRowKeyRange().getEnd()] = new_segment;
+        id_to_segment[segment->segmentId()] = new_segment;
+
+        LOG_INFO(log, "ReplaceData - Finish, old_segment={} new_segment={}", segment->info(), new_segment->info());
+    }
+
+    wbs.writeRemoves();
 
     if constexpr (DM_RUN_CHECK)
         check(dm_context.db_context);

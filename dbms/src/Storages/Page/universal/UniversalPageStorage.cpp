@@ -20,6 +20,7 @@
 #include <Storages/Page/V3/PageStorageImpl.h>
 #include <Storages/Page/V3/WAL/WALConfig.h>
 #include <Storages/Page/universal/UniversalPageStorage.h>
+#include <Storages/Page/universal/RemotePageReader.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ UniversalPageStoragePtr UniversalPageStorage::create(
     String name,
     PSDiskDelegatorPtr delegator,
     const PageStorageConfig & config,
+    const String & remote_dir,
     const FileProviderPtr & file_provider)
 {
     UniversalPageStoragePtr storage = std::make_shared<UniversalPageStorage>(name, delegator, config, file_provider);
@@ -35,7 +37,8 @@ UniversalPageStoragePtr UniversalPageStorage::create(
         name,
         file_provider,
         delegator,
-        PS::V3::BlobConfig::from(config));
+        PS::V3::BlobConfig::from(config),
+        remote_dir);
     return storage;
 }
 
@@ -67,8 +70,8 @@ Page UniversalPageStorage::read(const UniversalPageId & page_id, const ReadLimit
         snapshot = this->getSnapshot("");
     }
 
-    auto page_entry = throw_on_not_exist ? page_directory->getByID(page_id, snapshot) : page_directory->getByIDOrNull(page_id, snapshot);
-    return blob_store->read(page_entry, read_limiter);
+    auto page_id_and_entry = throw_on_not_exist ? page_directory->getByID(page_id, snapshot) : page_directory->getByIDOrNull(page_id, snapshot);
+    return blob_store->read(page_id_and_entry, read_limiter);
 }
 
 UniversalPageMap UniversalPageStorage::read(const UniversalPageIds & page_ids, const ReadLimiterPtr & read_limiter, SnapshotPtr snapshot, bool throw_on_not_exist)
@@ -136,6 +139,19 @@ Page UniversalPageStorage::read(const PageReadFields & page_field, const ReadLim
     throw Exception("Not support read single filed on Universal", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+void UniversalPageStorage::traverseEntries(const std::function<void(UniversalPageId page_id, DB::PageEntry entry)> & acceptor, SnapshotPtr snapshot)
+{
+    if (!snapshot)
+    {
+        snapshot = this->getSnapshot("");
+    }
+
+    // TODO: This could hold the read lock of `page_directory` for a long time
+    const auto & page_ids = page_directory->getAllPageIds();
+    for (const auto & valid_page : page_ids)
+        acceptor(valid_page, getEntry(valid_page, snapshot));
+}
+
 UniversalPageId UniversalPageStorage::getNormalPageId(const UniversalPageId & page_id, SnapshotPtr snapshot, bool throw_on_not_exist)
 {
     if (!snapshot)
@@ -166,6 +182,26 @@ DB::PageEntry UniversalPageStorage::getEntry(const UniversalPageId & page_id, Sn
         entry_ret.checksum = entry.checksum;
 
         return entry_ret;
+    }
+    catch (DB::Exception & e)
+    {
+        LOG_WARNING(log, "{}", e.message());
+        return {.file_id = INVALID_BLOBFILE_ID}; // return invalid PageEntry
+    }
+}
+
+DB::PS::V3::PageEntryV3 UniversalPageStorage::getEntryV3(const UniversalPageId & page_id, SnapshotPtr snapshot)
+{
+    if (!snapshot)
+    {
+        snapshot = this->getSnapshot("");
+    }
+
+    try
+    {
+        const auto & [id, entry] = page_directory->getByIDOrNull(page_id, snapshot);
+        (void)id;
+        return entry;
     }
     catch (DB::Exception & e)
     {
@@ -317,6 +353,37 @@ void UniversalPageStorage::cleanExternalPage(Stopwatch & /* gc_watch */, GCTimeS
             ns_callbacks = iter->second;
         }
     }
+}
+
+void UniversalPageStorage::checkpointImpl(std::shared_ptr<const PS::V3::Remote::WriterInfo> writer_info, const std::string & remote_directory)
+{
+    if (writer_info->store_id() == 0)
+    {
+        LOG_INFO(log, "Skipped checkpoint because store_id == 0");
+        return;
+    }
+
+    LOG_INFO(log, "Start checkpoint, writer_store_id={}, remote_directory={}", writer_info->store_id(), remote_directory);
+
+    RUNTIME_CHECK(endsWith(remote_directory, "/"));
+
+    // TODO: The List API supports listing up to 1000 keys, not sure whether it would be a limit for us.
+    //   See https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
+    page_directory->dumpRemoteCheckpoint(PS::V3::PageDirectory<PS::V3::universal::PageDirectoryTrait>::DumpRemoteCheckpointOptions<PS::V3::universal::BlobStoreTrait>{
+        // FIXME: This is a hack. May be better to create a new delegator.
+        .temp_directory = delegator->choosePath({0, 0}) + "/checkpoint_temp/",
+        .remote_directory = remote_directory,
+        .data_file_name_pattern = fmt::format(
+            "store_{}/ps_{}_data/{{sequence}}_{{sub_file_index}}.data",
+            writer_info->store_id(),
+            storage_name),
+        .manifest_file_name_pattern = fmt::format(
+            "store_{}/ps_{}_manifest/{{sequence}}.manifest",
+            writer_info->store_id(),
+            storage_name),
+        .writer_info = writer_info,
+        .blob_store = *blob_store,
+    });
 }
 
 UniversalPageStorage::GCTimeStatistics UniversalPageStorage::doGC(const WriteLimiterPtr & write_limiter, const ReadLimiterPtr & read_limiter)

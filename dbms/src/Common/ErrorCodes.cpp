@@ -385,6 +385,7 @@ extern const int QUERY_WAS_CANCELLED = 394;
 extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
 extern const int TOO_MANY_ROWS_OR_BYTES = 396;
 extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
+extern const int CANNOT_SCHEDULE_TASK = 439;
 extern const int CANNOT_MPROTECT = 445;
 extern const int DECIMAL_OVERFLOW = 446;
 extern const int CANNOT_PARSE_BOOL = 447;
@@ -406,6 +407,7 @@ extern const int PAGE_SIZE_NOT_MATCH = 9006;
 extern const int ILLFORMED_PAGE_NAME = 9007;
 extern const int ILLFORMAT_RAFT_ROW = 9008;
 extern const int REGION_DATA_SCHEMA_UPDATED = 9009;
+extern const int REGION_EPOCH_NOT_MATCH = 9010;
 
 extern const int LOCK_EXCEPTION = 10000;
 extern const int VERSION_ERROR = 10001;
@@ -425,6 +427,8 @@ extern const int PTHREAD_ERROR = 10014;
 extern const int PS_ENTRY_NOT_EXISTS = 10015;
 extern const int PS_ENTRY_NO_VALID_VERSION = 10016;
 extern const int PS_DIR_APPLY_INVALID_STATUS = 10017;
+
+extern const int S3_ERROR = 11000;
 } // namespace ErrorCodes
 
 } // namespace DB

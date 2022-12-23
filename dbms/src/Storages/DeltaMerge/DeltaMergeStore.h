@@ -20,11 +20,14 @@
 #include <Interpreters/Context.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/BackgroundProcessingPool.h>
+#include <Storages/DeltaMerge/ColumnFile/ColumnFilePersisted.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
+#include <Storages/DeltaMerge/Remote/DisaggregatedSnapshot.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/DeltaMerge/StoragePool.h>
+#include <Storages/Page/universal/UniversalPageStorage.h>
 #include <Storages/PathPool.h>
 #include <Storages/Transaction/DecodingStorageSchemaSnapshot.h>
 #include <Storages/Transaction/TiDB.h>
@@ -274,7 +277,7 @@ public:
 
     std::tuple<String, PageId> preAllocateIngestFile();
 
-    void preIngestFile(const String & parent_path, PageId file_id, size_t file_size);
+    void preIngestFile(const Context & db_context, const DMFilePtr & dtfile);
 
     /// You must ensure external files are ordered and do not overlap. Otherwise exceptions will be thrown.
     /// You must ensure all of the external files are contained by the range. Otherwise exceptions will be thrown.
@@ -293,6 +296,32 @@ public:
     {
         auto dm_context = newDMContext(db_context, db_settings);
         return ingestFiles(dm_context, range, external_files, clear_data_in_range);
+    }
+
+    std::vector<SegmentPtr> ingestSegmentsUsingSplit(
+        const DMContextPtr & dm_context,
+        const RowKeyRange & ingest_range,
+        const std::vector<SegmentPtr> & target_segments);
+
+    bool ingestSegmentIntoSegmentUsingSplit(
+        DMContext & dm_context,
+        const SegmentPtr & segment,
+        const RowKeyRange & ingest_range,
+        const SegmentPtr & target_segment);
+
+    void ingestSegmentFromCheckpointPath(const DMContextPtr & dm_context, //
+                                         const DM::RowKeyRange & range,
+                                         UniversalPageStoragePtr temp_ps,
+                                         const PS::V3::CheckpointInfo & checkpoint_info);
+
+    void ingestSegmentFromCheckpointPath(const Context & db_context, //
+                                         const DB::Settings & db_settings,
+                                         const DM::RowKeyRange & range,
+                                         UniversalPageStoragePtr temp_ps,
+                                         const PS::V3::CheckpointInfo & checkpoint_info)
+    {
+        auto dm_context = newDMContext(db_context, db_settings);
+        return ingestSegmentFromCheckpointPath(dm_context, range, temp_ps, checkpoint_info);
     }
 
     /// Read all rows without MVCC filtering
@@ -323,6 +352,23 @@ public:
                            const SegmentIdSet & read_segments = {},
                            size_t extra_table_id_index = InvalidColumnID,
                            const ScanContextPtr & scan_context = std::make_shared<ScanContext>());
+
+    DisaggregatedTableReadSnapshotPtr
+    buildRemoteReadSnapshot(const Context & db_context,
+                            const DB::Settings & db_settings,
+                            const RowKeyRanges & sorted_ranges,
+                            const RSOperatorPtr & filter,
+                            size_t num_streams,
+                            const String & tracing_id,
+                            const SegmentIdSet & read_segments = {},
+                            const ScanContextPtr & scan_context = std::make_shared<ScanContext>());
+
+#if 0
+    PageMap readPages(const SegmentReadTasks & tasks,
+                      const std::unordered_map<UInt64, PageIds> & read_segments,
+                      const String & tracing_id,
+                      const ScanContextPtr & scan_context = std::make_shared<ScanContext>());
+#endif
 
     /// Try flush all data in `range` to disk and return whether the task succeed.
     bool flushCache(const Context & context, const RowKeyRange & range, bool try_until_succeed = true)
@@ -537,6 +583,12 @@ private:
         const SegmentPtr & segment,
         const DMFilePtr & data_file,
         bool clear_all_data_in_segment);
+
+    SegmentPtr segmentDangerouslyReplaceData2(
+        DMContext & dm_context,
+        const SegmentPtr & segment,
+        const DMFilePtr & data_file,
+        const ColumnFilePersisteds & column_file_persisteds);
 
     // isSegmentValid should be protected by lock on `read_write_mutex`
     bool isSegmentValid(const std::shared_lock<std::shared_mutex> &, const SegmentPtr & segment)

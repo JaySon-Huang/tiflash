@@ -214,6 +214,11 @@ public:
     void enableGC();
     void remove(const FileProviderPtr & file_provider);
 
+    String remotePath() const;
+    void clearRemote();
+    void setRemote();
+    bool isRemote();
+
     // The ID for locating DTFile on disk
     UInt64 fileId() const { return file_id; }
     // The PageID for locating this object in the StoragePool.data
@@ -383,6 +388,7 @@ private:
     Status getStatus() const { return status; }
     void setStatus(Status status_) { status = status_; }
 
+    void finalizeForRemote(const FileProviderPtr & file_provider);
     void finalizeForFolderMode(const FileProviderPtr & file_provider, const WriteLimiterPtr & write_limiter);
     void finalizeForSingleFileMode(WriteBuffer & buffer);
 
@@ -424,6 +430,7 @@ private:
     friend class DMFileReader;
     friend class DMFilePackFilter;
     friend class DMFileBlockInputStreamBuilder;
+    friend class DMFileWriterRemote;
     friend int ::DTTool::Migrate::migrateServiceMain(DB::Context & context, const ::DTTool::Migrate::MigrateArgs & args);
     friend bool ::DTTool::Migrate::isRecognizable(const DB::DM::DMFile & file, const std::string & target);
     friend bool ::DTTool::Migrate::needFrameMigration(const DB::DM::DMFile & file, const std::string & target);

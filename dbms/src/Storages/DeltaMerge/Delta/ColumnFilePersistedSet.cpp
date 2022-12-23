@@ -19,6 +19,7 @@
 #include <Storages/DeltaMerge/Delta/ColumnFilePersistedSet.h>
 #include <Storages/DeltaMerge/DeltaIndexManager.h>
 #include <Storages/DeltaMerge/WriteBatches.h>
+#include <Storages/Page/universal/Readers.h>
 #include <Storages/PathPool.h>
 
 #include <ext/scope_guard.h>
@@ -89,10 +90,69 @@ ColumnFilePersistedSetPtr ColumnFilePersistedSet::restore( //
     const RowKeyRange & segment_range,
     PageId id)
 {
-    Page page = context.storage_pool.metaReader()->read(id);
+    Page page = context.storage_pool->metaReader()->read(id);
     ReadBufferFromMemory buf(page.data.begin(), page.data.size());
     auto column_files = deserializeSavedColumnFiles(context, segment_range, buf);
     return std::make_shared<ColumnFilePersistedSet>(id, column_files);
+}
+
+ColumnFilePersistedSetPtr ColumnFilePersistedSet::restoreFromCheckpoint( //
+    DMContext & context,
+    UniversalPageStoragePtr temp_ps,
+    const PS::V3::CheckpointInfo & checkpoint_info,
+    const RowKeyRange & segment_range,
+    NamespaceId ns_id,
+    PageId id,
+    WriteBatches & wbs)
+{
+    auto & storage_pool = context.storage_pool;
+    auto target_id = StorageReader::toFullUniversalPageId(getStoragePrefix(TableStorageTag::Meta), ns_id, id);
+    auto meta_page = temp_ps->read(target_id);
+    ReadBufferFromMemory meta_buf(meta_page.data.begin(), meta_page.data.size());
+    auto column_files = deserializeSavedRemoteColumnFiles(
+        context,
+        segment_range,
+        meta_buf,
+        temp_ps,
+        checkpoint_info.checkpoint_store_id,
+        ns_id,
+        wbs);
+    ColumnFilePersisteds new_column_files;
+    for (auto & column_file : column_files)
+    {
+        if (auto * t = column_file->tryToTinyFile(); t)
+        {
+            auto target_cf_id = StorageReader::toFullUniversalPageId(getStoragePrefix(TableStorageTag::Log), ns_id, t->getDataPageId());
+            auto entry = temp_ps->getEntryV3(target_cf_id, nullptr);
+            auto new_cf_id = storage_pool->newLogPageId();
+            wbs.log.putRemotePage(new_cf_id, 0, entry.remote_info->data_location, std::move(entry.field_offsets));
+            new_column_files.push_back(t->cloneWith(new_cf_id));
+        }
+        else if (auto * d = column_file->tryToDeleteRange(); d)
+        {
+            new_column_files.push_back(column_file);
+        }
+        else if (auto * b = column_file->tryToBigFile(); b)
+        {
+            auto old_page_id = b->getDataPageId();
+            auto old_file_id = b->getFile()->fileId();
+            auto delegator = context.path_pool->getStableDiskDelegator();
+            auto parent_path = delegator.getDTFilePath(old_file_id);
+            auto new_file_id = storage_pool->newDataPageIdForDTFile(delegator, __PRETTY_FUNCTION__);
+            auto new_dmfile = DMFile::restore(context.db_context.getFileProvider(), old_file_id, new_file_id, parent_path, DMFile::ReadMetaMode::all());
+            wbs.data.putRefPage(new_file_id, old_page_id);
+            auto new_column_file = b->cloneWith(context, new_dmfile, segment_range);
+            new_column_files.push_back(new_column_file);
+        }
+        else
+        {
+            RUNTIME_CHECK_MSG(false, "shouldn't reach here");
+        }
+    }
+    auto new_delta_id = storage_pool->newMetaPageId();
+    auto new_persisted_set = std::make_shared<ColumnFilePersistedSet>(new_delta_id, new_column_files);
+    new_persisted_set->saveMeta(wbs);
+    return new_persisted_set;
 }
 
 void ColumnFilePersistedSet::saveMeta(WriteBatches & wbs) const

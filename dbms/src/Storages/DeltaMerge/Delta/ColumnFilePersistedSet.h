@@ -34,13 +34,18 @@
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/StoragePool.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/V3/PageDirectory.h>
 #include <fmt/format.h>
+
+#include "Storages/Page/V3/Remote/CheckpointPageManager.h"
 
 
 namespace DB
 {
 namespace DM
 {
+using PS::V3::universal::PageDirectoryTrait;
+
 class ColumnFilePersistedSet;
 using ColumnFilePersistedSetPtr = std::shared_ptr<ColumnFilePersistedSet>;
 
@@ -76,6 +81,15 @@ public:
     /// Restore the metadata of this instance.
     /// Only called after reboot.
     static ColumnFilePersistedSetPtr restore(DMContext & context, const RowKeyRange & segment_range, PageId id);
+
+    static ColumnFilePersistedSetPtr restoreFromCheckpoint( //
+        DMContext & context,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info,
+        const RowKeyRange & segment_range,
+        NamespaceId ns_id,
+        PageId id,
+        WriteBatches & wbs);
 
     /**
      * Resets the logger by using the one from the segment.

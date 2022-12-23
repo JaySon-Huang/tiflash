@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/CPUAffinityManager.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadMetricUtil.h>
 #include <Common/TiFlashMetrics.h>
@@ -20,6 +21,8 @@
 #include <Common/getNumberOfCPUCores.h>
 #include <Common/setThreadName.h>
 #include <Flash/BatchCoprocessorHandler.h>
+#include <Flash/Disaggregated/EstablishDisaggregatedTask.h>
+#include <Flash/Disaggregated/PageTunnel.h>
 #include <Flash/EstablishCall.h>
 #include <Flash/FlashService.h>
 #include <Flash/Management/ManualCompact.h>
@@ -29,9 +32,12 @@
 #include <Flash/ServiceUtils.h>
 #include <Interpreters/Context.h>
 #include <Server/IServer.h>
+#include <Storages/DeltaMerge/Remote/DisaggregatedTaskId.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <grpcpp/server_builder.h>
+#include <grpcpp/support/status.h>
+#include <kvproto/mpp.pb.h>
 
 #include <ext/scope_guard.h>
 
@@ -40,7 +46,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-}
+extern const int UNKNOWN_EXCEPTION;
+} // namespace ErrorCodes
 
 #define CATCH_FLASHSERVICE_EXCEPTION                                                                                                        \
     catch (Exception & e)                                                                                                                   \
@@ -79,12 +86,12 @@ void FlashService::init(Context & context_)
     auto cop_pool_size = static_cast<size_t>(settings.cop_pool_size);
     cop_pool_size = cop_pool_size ? cop_pool_size : default_size;
     LOG_INFO(log, "Use a thread pool with {} threads to handle cop requests.", cop_pool_size);
-    cop_pool = std::make_unique<ThreadPool>(cop_pool_size, [] { setThreadName("cop-pool"); });
+    cop_pool = std::make_unique<ThreadPool>(cop_pool_size);
 
     auto batch_cop_pool_size = static_cast<size_t>(settings.batch_cop_pool_size);
     batch_cop_pool_size = batch_cop_pool_size ? batch_cop_pool_size : default_size;
     LOG_INFO(log, "Use a thread pool with {} threads to handle batch cop requests.", batch_cop_pool_size);
-    batch_cop_pool = std::make_unique<ThreadPool>(batch_cop_pool_size, [] { setThreadName("batch-cop-pool"); });
+    batch_cop_pool = std::make_unique<ThreadPool>(batch_cop_pool_size);
 }
 
 FlashService::~FlashService() = default;
@@ -94,7 +101,7 @@ grpc::Status executeInThreadPool(ThreadPool & pool, std::function<grpc::Status()
 {
     std::packaged_task<grpc::Status()> task(job);
     std::future<grpc::Status> future = task.get_future();
-    pool.schedule([&task] { task(); });
+    pool.scheduleOrThrowOnError([&task] { task(); });
     return future.get();
 }
 
@@ -138,7 +145,7 @@ grpc::Status FlashService::Coprocessor(
     context->setMockStorage(mock_storage);
 
     const auto & settings = context->getSettingsRef();
-    auto handle_limit = settings.cop_pool_handle_limit != 0 ? settings.cop_pool_handle_limit.get() : 10 * cop_pool->size();
+    auto handle_limit = settings.cop_pool_handle_limit != 0 ? settings.cop_pool_handle_limit.get() : 10 * cop_pool->getMaxThreads();
     auto max_queued_duration_seconds = std::min(settings.cop_pool_max_queued_seconds, 20);
 
     if (handle_limit > 0)
@@ -488,6 +495,130 @@ grpc::Status FlashService::Compact(grpc::ServerContext * grpc_context, const kvr
         return check_result;
 
     return manual_compact_manager->handleRequest(request, response);
+}
+grpc::Status FlashService::EstablishDisaggregatedTask(grpc::ServerContext * grpc_context, const mpp::EstablishDisaggregatedTaskRequest * request, mpp::EstablishDisaggregatedTaskResponse * response)
+{
+    CPUAffinityManager::getInstance().bindSelfGrpcThread();
+    LOG_DEBUG(log, "Handling EstablishDisaggregatedTask request: {}", request->ShortDebugString());
+    if (auto check_result = checkGrpcContext(grpc_context); !check_result.ok())
+        return check_result;
+    // TODO metrics
+    auto [db_context, status] = createDBContext(grpc_context);
+    if (!status.ok())
+        return status;
+    db_context->setMockStorage(mock_storage);
+    db_context->setMockMPPServerInfo(mpp_test_info);
+
+    RUNTIME_CHECK(context->isDisaggregatedStorageMode());
+
+    EstablishDisaggregatedTaskPtr task = nullptr;
+    SCOPE_EXIT({
+        current_memory_tracker = nullptr;
+    });
+
+    try
+    {
+        task = std::make_shared<DB::EstablishDisaggregatedTask>(db_context);
+        task->prepare(request);
+        task->execute(response);
+    }
+    catch (Exception & e)
+    {
+        auto * err = response->mutable_error();
+        err->set_code(e.code());
+        err->set_msg(e.message());
+        // TODO unregister
+    }
+    catch (std::exception & e)
+    {
+        auto * err = response->mutable_error();
+        err->set_code(ErrorCodes::UNKNOWN_EXCEPTION);
+        err->set_msg(e.what());
+        // TODO unregister
+    }
+    catch (...)
+    {
+        auto * err = response->mutable_error();
+        err->set_code(ErrorCodes::UNKNOWN_EXCEPTION);
+        err->set_msg("Unknown exception");
+        // TODO unregister
+    }
+
+    // There may be region errors. Add information about which region to retry.
+    for (const auto & region : db_context->getDAGContext()->retry_regions)
+    {
+        auto * retry_region = response->add_retry_regions();
+        retry_region->set_id(region.region_id);
+        retry_region->mutable_region_epoch()->set_conf_ver(region.region_conf_version);
+        retry_region->mutable_region_epoch()->set_version(region.region_version);
+    }
+
+    LOG_DEBUG(log, "Handle EstablishDisaggregatedTask request done, resp_err={}", response->error().ShortDebugString());
+    return grpc::Status::OK;
+}
+
+grpc::Status FlashService::FetchDisaggregatedPages(
+    grpc::ServerContext * grpc_context,
+    const mpp::FetchDisaggregatedPagesRequest * request,
+    grpc::ServerWriter<::mpp::PagesPacket> * sync_writer)
+{
+    LOG_DEBUG(log, "Handling fetch pages request: {}", request->ShortDebugString());
+    if (auto check_result = checkGrpcContext(grpc_context); !check_result.ok())
+        return check_result;
+
+    mpp::PagesPacket err_response;
+    auto record_error = [&](grpc::StatusCode err_code, const String & err_msg) {
+        *err_response.mutable_error()->mutable_msg() = err_msg;
+        sync_writer->Write(err_response);
+
+        return grpc::Status(err_code, err_msg);
+    };
+
+    const DM::DisaggregatedTaskId task_id(request->meta());
+    LOG_DEBUG(log, "Fetching pages, task_id={}", task_id);
+    try
+    {
+        PageIds read_ids;
+        read_ids.reserve(request->pages_size());
+        for (auto page_id : request->pages())
+            read_ids.emplace_back(page_id);
+
+        auto tunnel = PageTunnel::build(
+            *context,
+            task_id,
+            request->table_id(),
+            request->segment_id(),
+            read_ids);
+
+        tunnel->connect(sync_writer);
+
+        return grpc::Status::OK;
+    }
+    catch (const TiFlashException & e)
+    {
+        LOG_ERROR(log, "TiFlash Exception: {}\n{}", e.displayText(), e.getStackTrace().toString());
+        return record_error(grpc::StatusCode::INTERNAL, e.standardText());
+    }
+    catch (const Exception & e)
+    {
+        LOG_ERROR(log, "DB Exception: {}\n{}", e.message(), e.getStackTrace().toString());
+        return record_error(tiflashErrorCodeToGrpcStatusCode(e.code()), e.message());
+    }
+    catch (const pingcap::Exception & e)
+    {
+        LOG_ERROR(log, "KV Client Exception: {}", e.message());
+        return record_error(grpc::StatusCode::INTERNAL, e.message());
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(log, "std exception: {}", e.what());
+        return record_error(grpc::StatusCode::INTERNAL, e.what());
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "other exception");
+        return record_error(grpc::StatusCode::INTERNAL, "other exception");
+    }
 }
 
 void FlashService::setMockStorage(MockStorage & mock_storage_)

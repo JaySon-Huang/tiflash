@@ -20,9 +20,11 @@
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Poco/Logger.h>
+#include <Storages/DeltaMerge/ColumnFile/ColumnFileSchema.h>
 #include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/DMDecoratorStreams.h>
 #include <Storages/DeltaMerge/DMVersionFilterBlockInputStream.h>
+#include <Storages/DeltaMerge/DeltaIndex.h>
 #include <Storages/DeltaMerge/DeltaIndexManager.h>
 #include <Storages/DeltaMerge/DeltaMerge.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
@@ -31,12 +33,19 @@
 #include <Storages/DeltaMerge/File/DMFile.h>
 #include <Storages/DeltaMerge/File/DMFileBlockInputStream.h>
 #include <Storages/DeltaMerge/File/DMFileBlockOutputStream.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Filter/FilterHelper.h>
 #include <Storages/DeltaMerge/PKSquashingBlockInputStream.h>
+#include <Storages/DeltaMerge/Remote/DeltaIndexCache.h>
+#include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/StoragePool.h>
 #include <Storages/DeltaMerge/WriteBatches.h>
+#include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
+#include <Storages/Page/universal/Readers.h>
 #include <Storages/PathPool.h>
+#include <Storages/Transaction/KVStore.h>
+#include <Storages/Transaction/TMTContext.h>
 #include <common/logger_useful.h>
 #include <fiu.h>
 #include <fmt/core.h>
@@ -102,6 +111,100 @@ extern const int UNKNOWN_FORMAT_VERSION;
 
 namespace DM
 {
+
+dtpb::DisaggregatedSegment SegmentSnapshot::serializeToRemoteProtocol(
+    PageId segment_id,
+    UInt64 segment_epoch,
+    const RowKeyRange & segment_range,
+    const RowKeyRanges & read_ranges) const
+{
+    dtpb::DisaggregatedSegment remote;
+    remote.set_segment_id(segment_id);
+    remote.set_segment_epoch(segment_epoch);
+
+    WriteBufferFromOwnString wb;
+    {
+        // segment key_range
+        segment_range.serialize(wb);
+        remote.set_key_range(wb.releaseStr());
+    }
+
+    // stable
+    for (const auto & dt_file : stable->getDMFiles())
+    {
+        auto * remote_file = remote.add_stable_pages();
+        remote_file->set_page_id(dt_file->pageId());
+        remote_file->set_file_id(dt_file->fileId());
+    }
+    remote.mutable_column_files_memtable()->CopyFrom(delta->getMemTableSetSnapshot()->serializeToRemoteProtocol());
+    remote.mutable_column_files_persisted()->CopyFrom(delta->getPersistedFileSetSnapshot()->serializeToRemoteProtocol());
+
+    // serialize the read ranges to read node
+    for (const auto & read_range : read_ranges)
+    {
+        wb.restart();
+        read_range.serialize(wb);
+        remote.add_read_key_ranges()->assign(wb.releaseStr());
+    }
+    // LOG_DEBUG(Logger::get(), "serialize to remote {}", remote.DebugString());
+
+    return remote;
+}
+
+SegmentSnapshotPtr SegmentSnapshot::deserializeFromRemoteProtocol(
+    const Context & db_context,
+    UInt64 write_node_id,
+    Int64 table_id,
+    const dtpb::DisaggregatedSegment & proto)
+{
+    RowKeyRange segment_range;
+    {
+        ReadBufferFromString rb(proto.key_range());
+        segment_range = RowKeyRange::deserialize(rb);
+    }
+
+    auto remote_manager = db_context.getDMRemoteManager();
+    auto delta_snap = DeltaValueSnapshot::createSnapshotForRead(CurrentMetrics::DT_SnapshotOfRead);
+    delta_snap->mem_table_snap = ColumnFileSetSnapshot::deserializeFromRemoteProtocol(
+        proto.column_files_memtable(),
+        remote_manager,
+        write_node_id,
+        table_id,
+        segment_range);
+    delta_snap->persisted_files_snap = ColumnFileSetSnapshot::deserializeFromRemoteProtocol(
+        proto.column_files_persisted(),
+        remote_manager,
+        write_node_id,
+        table_id,
+        segment_range);
+    delta_snap->shared_delta_index = remote_manager->getDeltaIndexCache()->getDeltaIndex({
+        .write_node_id = write_node_id,
+        .segment_id = proto.segment_id(),
+        .segment_epoch = proto.segment_epoch(),
+    });
+
+    auto data_store = remote_manager->getDataStore();
+    auto new_stable = std::make_shared<StableValueSpace>(/* id */ 0);
+    DMFiles dmfiles;
+    for (const auto & stable_file : proto.stable_pages())
+    {
+        auto oid = Remote::DMFileOID{
+            .write_node_id = write_node_id,
+            .table_id = table_id,
+            .file_id = stable_file.file_id(),
+        };
+        auto prepared = data_store->prepareDMFile(oid);
+        auto dmfile = prepared->restore(DMFile::ReadMetaMode::all());
+        dmfiles.emplace_back(std::move(dmfile));
+    }
+    new_stable->setFiles(dmfiles, segment_range, db_context);
+    auto stable_snap = new_stable->createSnapshot(db_context);
+
+    return std::make_shared<SegmentSnapshot>(
+        std::move(delta_snap),
+        std::move(stable_snap));
+}
+
 const static size_t SEGMENT_BUFFER_SIZE = 128; // More than enough.
 
 DMFilePtr writeIntoNewDMFile(DMContext & dm_context, //
@@ -170,7 +273,7 @@ StableValueSpacePtr createNewStable( //
     PageId stable_id,
     WriteBatches & wbs)
 {
-    auto delegator = context.path_pool.getStableDiskDelegator();
+    auto delegator = context.path_pool->getStableDiskDelegator();
     auto store_path = delegator.choosePath();
 
     const auto & db_context = context.db_context;
@@ -178,19 +281,26 @@ StableValueSpacePtr createNewStable( //
     DMFileBlockOutputStream::Flags flags;
     flags.setSingleFile(db_context.getSettingsRef().dt_enable_single_file_mode_dmfile);
 
-    PageId dtfile_id = context.storage_pool.newDataPageIdForDTFile(delegator, __PRETTY_FUNCTION__);
+    PageId dtfile_id = context.storage_pool->newDataPageIdForDTFile(delegator, __PRETTY_FUNCTION__);
     auto dtfile = writeIntoNewDMFile(context, schema_snap, input_stream, dtfile_id, store_path, flags);
 
     auto stable = std::make_shared<StableValueSpace>(stable_id);
-    stable->setFiles({dtfile}, RowKeyRange::newAll(context.is_common_handle, context.rowkey_column_size));
+    stable->setFiles({dtfile}, RowKeyRange::newAll(context.is_common_handle, context.rowkey_column_size), context.db_context);
     stable->saveMeta(wbs.meta);
     wbs.data.putExternal(dtfile_id, 0);
     delegator.addDTFile(dtfile_id, dtfile->getBytesOnDisk(), store_path);
 
     if (const auto & remote_manager = db_context.getDMRemoteManager(); remote_manager != nullptr)
     {
+        UInt64 store_id;
+        {
+            auto & tmt = context.db_context.getTMTContext();
+            auto kvstore = tmt.getKVStore();
+            auto store_meta = kvstore->getStoreMeta();
+            store_id = store_meta.id();
+        }
         auto oid = Remote::DMFileOID{
-            .write_node_id = 0,
+            .write_node_id = store_id,
             .table_id = context.table_id,
             .file_id = dtfile->fileId(),
         };
@@ -280,8 +390,37 @@ SegmentPtr Segment::newSegment( //
         rowkey_range,
         segment_id,
         next_segment_id,
-        context.storage_pool.newMetaPageId(),
-        context.storage_pool.newMetaPageId());
+        context.storage_pool->newMetaPageId(),
+        context.storage_pool->newMetaPageId());
+}
+
+inline void readSegmentMetaInfo(ReadBuffer & buf, Segment::SegmentMetaInfo & segment_info)
+{
+    readIntBinary(segment_info.version, buf);
+    readIntBinary(segment_info.epoch, buf);
+
+    switch (segment_info.version)
+    {
+    case SegmentFormat::V1:
+    {
+        HandleRange range;
+        readIntBinary(range.start, buf);
+        readIntBinary(range.end, buf);
+        segment_info.rowkey_range = RowKeyRange::fromHandleRange(range);
+        break;
+    }
+    case SegmentFormat::V2:
+    {
+        segment_info.rowkey_range = RowKeyRange::deserialize(buf);
+        break;
+    }
+    default:
+        throw Exception(fmt::format("Illegal version: {}", segment_info.version), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    readIntBinary(segment_info.next_segment_id, buf);
+    readIntBinary(segment_info.delta_id, buf);
+    readIntBinary(segment_info.stable_id, buf);
 }
 
 SegmentPtr Segment::restoreSegment( //
@@ -289,46 +428,72 @@ SegmentPtr Segment::restoreSegment( //
     DMContext & context,
     PageId segment_id)
 {
-    Page page = context.storage_pool.metaReader()->read(segment_id); // not limit restore
+    Page page = context.storage_pool->metaReader()->read(segment_id); // not limit restore
 
     ReadBufferFromMemory buf(page.data.begin(), page.data.size());
-    SegmentFormat::Version version;
+    Segment::SegmentMetaInfo segment_info;
+    readSegmentMetaInfo(buf, segment_info);
 
-    readIntBinary(version, buf);
-    UInt64 epoch;
-    RowKeyRange rowkey_range;
-    PageId next_segment_id, delta_id, stable_id;
-
-    readIntBinary(epoch, buf);
-
-    switch (version)
-    {
-    case SegmentFormat::V1:
-    {
-        HandleRange range;
-        readIntBinary(range.start, buf);
-        readIntBinary(range.end, buf);
-        rowkey_range = RowKeyRange::fromHandleRange(range);
-        break;
-    }
-    case SegmentFormat::V2:
-    {
-        rowkey_range = RowKeyRange::deserialize(buf);
-        break;
-    }
-    default:
-        throw Exception(fmt::format("Illegal version: {}", version), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    readIntBinary(next_segment_id, buf);
-    readIntBinary(delta_id, buf);
-    readIntBinary(stable_id, buf);
-
-    auto delta = DeltaValueSpace::restore(context, rowkey_range, delta_id);
-    auto stable = StableValueSpace::restore(context, stable_id);
-    auto segment = std::make_shared<Segment>(parent_log, epoch, rowkey_range, segment_id, next_segment_id, delta, stable);
+    auto delta = DeltaValueSpace::restore(context, segment_info.rowkey_range, segment_info.delta_id);
+    auto stable = StableValueSpace::restore(context, segment_info.stable_id);
+    auto segment = std::make_shared<Segment>(parent_log, segment_info.epoch, segment_info.rowkey_range, segment_id, segment_info.next_segment_id, delta, stable);
 
     return segment;
+}
+
+Segment::SegmentMetaInfos Segment::restoreAllSegmentsMetaInfo( //
+    NamespaceId ns_id,
+    const RowKeyRange & range,
+    UniversalPageStoragePtr temp_ps,
+    const PS::V3::CheckpointInfo & checkpoint_info)
+{
+    UNUSED(checkpoint_info);
+    PageId target_segment_id = 1;
+    SegmentMetaInfos segment_infos;
+    while (target_segment_id != 0)
+    {
+        Segment::SegmentMetaInfo segment_info;
+        auto target_id = StorageReader::toFullUniversalPageId(getStoragePrefix(TableStorageTag::Meta), ns_id, target_segment_id);
+        auto page = temp_ps->read(target_id);
+        ReadBufferFromMemory buf(page.data.begin(), page.data.size());
+        readSegmentMetaInfo(buf, segment_info);
+
+        target_segment_id = segment_info.next_segment_id;
+        if (!(segment_info.rowkey_range.shrink(range).none()))
+        {
+            segment_infos.emplace_back(segment_info);
+        }
+        if (segment_info.rowkey_range.end.value->compare(*range.end.value) >= 0)
+        {
+            break;
+        }
+    }
+    return segment_infos;
+}
+
+Segments Segment::restoreSegmentsFromCheckpoint( //
+    const LoggerPtr & parent_log,
+    DMContext & context,
+    NamespaceId ns_id,
+    const Segment::SegmentMetaInfos & meta_infos,
+    const RowKeyRange & range,
+    UniversalPageStoragePtr temp_ps,
+    const PS::V3::CheckpointInfo & checkpoint_info,
+    WriteBatches & wbs)
+{
+    Segments segments;
+    for (const auto & segment_info : meta_infos)
+    {
+        LOG_DEBUG(parent_log, "Restore segment begin. Delta id {} stable id {} range {} epoch {} next_segment_id {}", segment_info.delta_id, segment_info.stable_id, segment_info.rowkey_range.toDebugString(), segment_info.epoch, segment_info.next_segment_id);
+        auto stable = StableValueSpace::restoreFromCheckpoint(context, temp_ps, checkpoint_info, ns_id, segment_info.stable_id, wbs);
+        auto delta = DeltaValueSpace::restoreFromCheckpoint(context, temp_ps, checkpoint_info, segment_info.rowkey_range, ns_id, segment_info.delta_id, wbs);
+
+        auto new_segment_id = context.storage_pool->newMetaPageId();
+        auto segment = std::make_shared<Segment>(parent_log, segment_info.epoch, segment_info.rowkey_range.shrink(range), new_segment_id, /* next_segment_id */ 0, delta, stable);
+        segments.push_back(segment);
+        LOG_DEBUG(parent_log, "Restore segment end. Delta id {} stable id {} range {} epoch {} next_segment_id {}", segment_info.delta_id, segment_info.stable_id, segment_info.rowkey_range.toDebugString(), segment_info.epoch, segment_info.next_segment_id);
+    }
+    return segments;
 }
 
 void Segment::serialize(WriteBatch & wb)
@@ -584,7 +749,7 @@ SegmentSnapshotPtr Segment::createSnapshot(const DMContext & dm_context, bool fo
     SCOPE_EXIT(
         dm_context.scan_context->total_create_snapshot_time_ms += watch.elapsedMilliseconds(););
     auto delta_snap = delta->createSnapshot(dm_context, for_update, metric);
-    auto stable_snap = stable->createSnapshot();
+    auto stable_snap = stable->createSnapshot(dm_context.db_context, dm_context.table_id);
     if (!delta_snap || !stable_snap)
         return {};
     return std::make_shared<SegmentSnapshot>(std::move(delta_snap), std::move(stable_snap));
@@ -1027,7 +1192,7 @@ SegmentPtr Segment::replaceData(const Segment::Lock & lock, //
     new_delta->saveMeta(wbs);
 
     auto new_stable = std::make_shared<StableValueSpace>(stable->getId());
-    new_stable->setFiles({data_file}, rowkey_range, &context);
+    new_stable->setFiles({data_file}, rowkey_range, context.db_context);
     new_stable->saveMeta(wbs.meta);
 
     auto new_me = std::make_shared<Segment>( //
@@ -1044,6 +1209,58 @@ SegmentPtr Segment::replaceData(const Segment::Lock & lock, //
     stable->recordRemovePacksPages(wbs);
 
     wbs.writeAll();
+
+    LOG_DEBUG(log, "ReplaceData - Finish, old_me={} new_me={}", info(), new_me->info());
+
+    return new_me;
+}
+
+// TODO: avoid duplicate code
+SegmentPtr Segment::dangerouslyReplaceData2(const Segment::Lock &, //
+                                            DMContext & dm_context,
+                                            const DMFilePtr & data_file,
+                                            WriteBatches & wbs,
+                                            const ColumnFilePersisteds & column_file_persisteds) const
+{
+    LOG_DEBUG(log, "ReplaceData - Begin, data_file={}", data_file->path());
+
+    auto & storage_pool = dm_context.storage_pool;
+    auto delegate = dm_context.path_pool->getStableDiskDelegator();
+
+    RUNTIME_CHECK(delegate.getDTFilePath(data_file->fileId()) == data_file->parentPath());
+
+    // Always create a ref to the file to allow `data_file` being shared.
+    auto new_page_id = storage_pool->newDataPageIdForDTFile(delegate, __PRETTY_FUNCTION__);
+    // TODO: We could allow assigning multiple DMFiles in future.
+    auto ref_file = DMFile::restore(
+        dm_context.db_context.getFileProvider(),
+        data_file->fileId(),
+        new_page_id,
+        data_file->parentPath(),
+        DMFile::ReadMetaMode::all());
+    wbs.data.putRefPage(new_page_id, data_file->pageId());
+
+    auto new_stable = std::make_shared<StableValueSpace>(stable->getId());
+    new_stable->setFiles({ref_file}, rowkey_range, dm_context.db_context);
+    new_stable->saveMeta(wbs.meta);
+
+    auto new_delta = std::make_shared<DeltaValueSpace>(
+        delta->getId(),
+        column_file_persisteds);
+    new_delta->saveMeta(wbs);
+
+    auto new_me = std::make_shared<Segment>( //
+        parent_log,
+        epoch + 1,
+        rowkey_range,
+        segment_id,
+        next_segment_id,
+        new_delta,
+        new_stable);
+    new_me->serialize(wbs.meta);
+
+    delta->recordRemoveColumnFilesPages(wbs);
+    stable->recordRemovePacksPages(wbs);
 
     LOG_DEBUG(log, "ReplaceData - Finish, old_me={} new_me={}", info(), new_me->info());
 
@@ -1368,21 +1585,21 @@ Segment::prepareSplitLogical( //
     }
 
     GenPageId log_gen_page_id = [&]() {
-        return storage_pool.newLogPageId();
+        return storage_pool->newLogPageId();
     };
 
     DMFiles my_stable_files;
     DMFiles other_stable_files;
 
-    auto delegate = dm_context.path_pool.getStableDiskDelegator();
+    auto delegate = dm_context.path_pool->getStableDiskDelegator();
     for (const auto & dmfile : segment_snap->stable->getDMFiles())
     {
         auto ori_page_id = dmfile->pageId();
         auto file_id = dmfile->fileId();
         auto file_parent_path = delegate.getDTFilePath(file_id);
 
-        auto my_dmfile_page_id = storage_pool.newDataPageIdForDTFile(delegate, __PRETTY_FUNCTION__);
-        auto other_dmfile_page_id = storage_pool.newDataPageIdForDTFile(delegate, __PRETTY_FUNCTION__);
+        auto my_dmfile_page_id = storage_pool->newDataPageIdForDTFile(delegate, __PRETTY_FUNCTION__);
+        auto other_dmfile_page_id = storage_pool->newDataPageIdForDTFile(delegate, __PRETTY_FUNCTION__);
 
         // Note that the file id may has already been mark as deleted. We must
         // create a reference to the page id itself instead of create a reference
@@ -1408,13 +1625,13 @@ Segment::prepareSplitLogical( //
         other_stable_files.push_back(other_dmfile);
     }
 
-    auto other_stable_id = storage_pool.newMetaPageId();
+    auto other_stable_id = storage_pool->newMetaPageId();
 
     auto my_stable = std::make_shared<StableValueSpace>(segment_snap->stable->getId());
     auto other_stable = std::make_shared<StableValueSpace>(other_stable_id);
 
-    my_stable->setFiles(my_stable_files, my_range, &dm_context);
-    other_stable->setFiles(other_stable_files, other_range, &dm_context);
+    my_stable->setFiles(my_stable_files, my_range, dm_context.db_context);
+    other_stable->setFiles(other_stable_files, other_range, dm_context.db_context);
 
     LOG_DEBUG(log, "Split - SplitLogical - Finish prepare, segment={} split_point={}", info(), opt_split_point->toDebugString());
 
@@ -1513,7 +1730,7 @@ std::optional<Segment::SplitInfo> Segment::prepareSplitPhysical( //
             *read_info.read_columns,
             dm_context.min_version,
             is_common_handle);
-        auto other_stable_id = dm_context.storage_pool.newMetaPageId();
+        auto other_stable_id = dm_context.storage_pool->newMetaPageId();
         other_stable = createNewStable(dm_context, schema_snap, other_data, other_stable_id, wbs);
     }
 
@@ -1561,8 +1778,8 @@ SegmentPair Segment::applySplit( //
     // Created references to tail pages' pages in "log" storage, we need to write them down.
     wbs.writeLogAndData();
 
-    auto other_segment_id = dm_context.storage_pool.newMetaPageId();
-    auto other_delta_id = dm_context.storage_pool.newMetaPageId();
+    auto other_segment_id = dm_context.storage_pool->newMetaPageId();
+    auto other_delta_id = dm_context.storage_pool->newMetaPageId();
 
     auto my_delta = std::make_shared<DeltaValueSpace>( //
         delta->getId(),
@@ -1831,10 +2048,15 @@ bool Segment::compactDelta(DMContext & dm_context)
 
 void Segment::placeDeltaIndex(DMContext & dm_context)
 {
-    // Update delta-index with persisted packs.
+    // Update delta-index with persisted packs. TODO: can use a read snapshot here?
     auto segment_snap = createSnapshot(dm_context, /*for_update=*/true, CurrentMetrics::DT_SnapshotOfPlaceIndex);
     if (!segment_snap)
         return;
+    placeDeltaIndex(dm_context, segment_snap);
+}
+
+void Segment::placeDeltaIndex(DMContext & dm_context, const SegmentSnapshotPtr & segment_snap)
+{
     getReadInfo(dm_context,
                 /*read_columns=*/{getExtraHandleColumnDefine(is_common_handle)},
                 segment_snap,

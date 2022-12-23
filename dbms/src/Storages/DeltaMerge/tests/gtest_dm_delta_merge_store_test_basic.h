@@ -118,9 +118,18 @@ public:
     void SetUp() override
     {
         // For testing remote storage service
-        auto remote_source = TiFlashTestEnv::getTemporaryPath(TRACING_NAME);
+        auto remote_source = TiFlashTestEnv::getTemporaryPath(TRACING_NAME) + "/";
         TiFlashTestEnv::tryRemovePath(remote_source, true);
         TiFlashTestEnv::getGlobalContext().setRemoteDataServiceSource(remote_source);
+        TiFlashTestEnv::getGlobalContext().initializeWriteNodePageStorage(TiFlashTestEnv::getGlobalContext().getPathPool(), TiFlashTestEnv::getGlobalContext().getFileProvider());
+        if (!TiFlashTestEnv::getGlobalContext().getReadNodePageStorage())
+        {
+            TiFlashTestEnv::getGlobalContext().initializeReadNodePageStorage(TiFlashTestEnv::getGlobalContext().getPathPool(), TiFlashTestEnv::getGlobalContext().getFileProvider());
+        }
+        if (!TiFlashTestEnv::getGlobalContext().getDMRemoteManager())
+        {
+            TiFlashTestEnv::getGlobalContext().initializeDeltaMergeRemoteManager();
+        }
 
         TiFlashStorageTestBasic::SetUp();
         store = reload();
@@ -173,7 +182,8 @@ public:
             store_path,
             flags);
 
-        store->preIngestFile(store_path, file_id, dmfile->getBytesOnDisk());
+        // store->preIngestFile(store_path, file_id, dmfile->getBytesOnDisk());
+        store->preIngestFile(context.db_context, dmfile);
 
         const auto & pk_column = block.getByPosition(0).column;
         auto min_pk = pk_column->getInt(0);

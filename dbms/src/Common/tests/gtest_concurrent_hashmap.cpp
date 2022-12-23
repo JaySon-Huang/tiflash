@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Common/HashTable/HashMap.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <gtest/gtest.h>
 
 #include <ext/singleton.h>
@@ -33,8 +33,8 @@ size_t TestConcurrentHashMap::test_loop = 1;
 
 struct MapType
 {
-    std::atomic_int value;
-    MapType() { value.store(0); }
+    std::atomic_int value{0};
+    MapType() = default;
 };
 
 TEST(TestConcurrentHashMap, ConcurrentInsert)
@@ -47,7 +47,7 @@ TEST(TestConcurrentHashMap, ConcurrentInsert)
         ThreadPool insert_pool(test_concurrency);
         for (size_t i = 0; i < test_concurrency; i++)
         {
-            insert_pool.schedule([&] {
+            insert_pool.scheduleOrThrowOnError([&] {
                 for (size_t insert_value = 0; insert_value < 10000; insert_value++)
                 {
                     typename ConcurrentMap::SegmentType::IteratorWithLock it;
@@ -77,7 +77,7 @@ TEST(TestConcurrentHashMap, ConcurrentInsertWithExplicitLock)
         ThreadPool insert_pool(test_concurrency);
         for (size_t i = 0; i < test_concurrency; i++)
         {
-            insert_pool.schedule([&] {
+            insert_pool.scheduleOrThrowOnError([&] {
                 for (size_t insert_value = 0; insert_value < 10000; insert_value++)
                 {
                     size_t segment_index = 0;
@@ -124,7 +124,7 @@ TEST(TestConcurrentHashMap, ConcurrentRandomInsert)
         ThreadPool insert_pool(test_concurrency);
         for (size_t i = 0; i < test_concurrency; i++)
         {
-            insert_pool.schedule([&, i] {
+            insert_pool.scheduleOrThrowOnError([&, i] {
                 std::default_random_engine e;
                 e.seed(std::chrono::system_clock::now().time_since_epoch().count());
                 std::uniform_int_distribution<unsigned> u(0, 100);
@@ -187,7 +187,7 @@ TEST(TestConcurrentHashMap, ConcurrentRandomInsertWithExplicitLock)
         ThreadPool insert_pool(test_concurrency);
         for (size_t i = 0; i < test_concurrency; i++)
         {
-            insert_pool.schedule([&, i] {
+            insert_pool.scheduleOrThrowOnError([&, i] {
                 std::default_random_engine e;
                 e.seed(std::chrono::system_clock::now().time_since_epoch().count());
                 std::uniform_int_distribution<unsigned> u(0, 100);

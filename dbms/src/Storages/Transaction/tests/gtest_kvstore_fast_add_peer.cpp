@@ -14,12 +14,25 @@
 
 #include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
 #include <Storages/Transaction/FastAddPeer.h>
+#include <Storages/Transaction/FastAddPeerContext.h>
+
+#include <chrono>
+#include <numeric>
+#include <optional>
+#include <thread>
 
 #include "Debug/MockRaftStoreProxy.h"
+#include "Storages/Transaction/ProxyFFI.h"
+#include "common/logger_useful.h"
 #include "kvstore_helper.h"
 
 namespace DB
 {
+FastAddPeerRes genFastAddPeerRes(FastAddPeerStatus status, std::string && apply_str, std::string && region_str);
+namespace FailPoints
+{
+extern const char fast_add_peer_sleep[];
+} // namespace FailPoints
 namespace tests
 {
 
@@ -46,12 +59,220 @@ std::string readData(const std::string & output_directory, const RemoteDataLocat
     return ret;
 }
 
+
+TEST_F(RegionKVStoreTest, FAPThreadPool)
+{
+    auto * log = &Poco::Logger::get("fast add");
+    using namespace std::chrono_literals;
+    auto async_tasks = std::make_unique<FastAddPeerContext::AsyncTasks>(1, 1, 1);
+
+    int total = 5;
+    std::vector<bool> f(total, false);
+    while (true)
+    {
+        auto count = std::accumulate(f.begin(), f.end(), 0, [&](int a, bool b) -> int {
+            return a + int(b);
+        });
+        if (count >= total)
+        {
+            break;
+        }
+        else
+        {
+            LOG_DEBUG(log, "finished {}/{}", count, total);
+        }
+        for (int i = 0; i < total; i++)
+        {
+            if (!async_tasks->isScheduled(i))
+            {
+                auto res = async_tasks->addTask(i, []() {
+                    std::this_thread::sleep_for(1000ms);
+                    return genFastAddPeerRes(FastAddPeerStatus::WaitForData, "", "");
+                });
+                UNUSED(res);
+            }
+        }
+
+        for (int i = 0; i < total; i++)
+        {
+            if (!f[i])
+            {
+                if (async_tasks->isReady(i))
+                {
+                    auto r = async_tasks->fetchResult(i);
+                    UNUSED(r);
+                    f[i] = true;
+                }
+            }
+        }
+        std::this_thread::sleep_for(1000ms);
+    }
+}
+
+TEST_F(RegionKVStoreTest, FAPPSCache)
+{
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(1, 10, 1);
+        cache.guardedMaybeEvict(1);
+        cache.guardedMaybeEvict(2);
+        ASSERT_TRUE(cache.maybeGet(1, 10) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(2, 0, 1);
+        cache.guardedMaybeEvict(1);
+        cache.guardedMaybeEvict(2);
+        cache.guardedMaybeEvict(3);
+        ASSERT_TRUE(cache.maybeGet(2, 0) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(1, 10, 1);
+        cache.insert(1, 11, 1);
+        cache.guardedMaybeEvict(1);
+        ASSERT_TRUE(cache.maybeGet(1, 10) == std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 11) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(1, 10, 1);
+        cache.insert(1, 11, 1);
+        cache.insert(2, 0, 1);
+        cache.guardedMaybeEvict(1);
+        ASSERT_TRUE(cache.maybeGet(1, 10) == std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 11) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(1, 0, 1);
+        cache.insert(1, 10, 1);
+        cache.insert(1, 11, 1);
+        cache.guardedMaybeEvict(1);
+        ASSERT_TRUE(cache.maybeGet(1, 0) == std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 10) == std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 11) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(2, 0, 1);
+        cache.insert(2, 10, 1);
+        cache.insert(2, 11, 1);
+        cache.guardedMaybeEvict(1);
+        cache.guardedMaybeEvict(3);
+        ASSERT_TRUE(cache.maybeGet(2, 0) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(2, 10) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(2, 11) != std::nullopt);
+    }
+    {
+        LocalPageStorageCache<int> cache(1);
+        cache.insert(1, 0, 1);
+        cache.insert(1, 10, 1);
+        cache.insert(2, 0, 1);
+        cache.insert(2, 10, 1);
+        cache.insert(2, 11, 1);
+        cache.insert(3, 0, 1);
+        cache.insert(3, 10, 1);
+        cache.guardedMaybeEvict(1);
+        cache.guardedMaybeEvict(3);
+        ASSERT_TRUE(cache.maybeGet(2, 10) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(2, 11) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 10) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(3, 10) != std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(1, 0) == std::nullopt);
+        ASSERT_TRUE(cache.maybeGet(3, 0) == std::nullopt);
+    }
+}
+
+void dumpPageStorage(UniversalPageStoragePtr page_storage, uint64_t store_id)
+{
+    auto * log = &Poco::Logger::get("fast add");
+    auto remote_directory = TiFlashTestEnv::getTemporaryPath("FastAddPeer");
+    page_storage->config.ps_remote_directory.set(remote_directory + "/");
+    const auto & storage_name = page_storage->storage_name;
+    std::string output_directory = page_storage->config.ps_remote_directory;
+    LOG_DEBUG(log, "output_directory {}", output_directory);
+    {
+        auto writer_info = std::make_shared<WriterInfo>();
+        // write to a remote store
+        writer_info->set_store_id(store_id + 1);
+        page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
+            .temp_directory = output_directory,
+            .remote_directory = output_directory,
+            .data_file_name_pattern = fmt::format(
+                "store_{}/ps_{}_data/{{sequence}}_{{sub_file_index}}.data",
+                writer_info->store_id(),
+                storage_name),
+            .manifest_file_name_pattern = fmt::format(
+                "store_{}/ps_{}_manifest/{{sequence}}.manifest",
+                writer_info->store_id(),
+                storage_name),
+            .writer_info = writer_info,
+            .blob_store = *page_storage->blob_store,
+        });
+    }
+}
+
+void persistAfterWrite(Context & ctx, KVStore & kvs, std::unique_ptr<MockRaftStoreProxy> & proxy_instance, UniversalPageStoragePtr page_storage, uint64_t region_id, uint64_t index)
+{
+    MockRaftStoreProxy::FailCond cond;
+    proxy_instance->doApply(kvs, ctx.getTMTContext(), cond, region_id, index);
+    auto region = proxy_instance->getRegion(region_id);
+    auto wb = region->persistMeta();
+    page_storage->write(std::move(wb), nullptr);
+    // There shall be data to flush.
+    ASSERT_EQ(kvs.needFlushRegionData(region_id, ctx.getTMTContext()), true);
+    ASSERT_EQ(kvs.tryFlushRegionData(region_id, false, false, ctx.getTMTContext(), 0, 0), true);
+}
+
+TEST_F(RegionKVStoreTest, FAPE2E)
+{
+    auto ctx = TiFlashTestEnv::getGlobalContext();
+    {
+        uint64_t region_id = 1;
+        auto peer_id = 1;
+        {
+            KVStore & kvs = getKVS();
+            auto & page_storage = kvs.region_persister->global_uni_page_storage;
+
+            proxy_instance->bootstrap(kvs, ctx.getTMTContext(), region_id);
+
+            auto region = proxy_instance->getRegion(region_id);
+            auto store_id = kvs.getStore().store_id.load();
+            region->addPeer(store_id, peer_id, metapb::PeerRole::Learner);
+
+            // Write some data, and persist meta.
+            auto [index, term] = proxy_instance->normalWrite(region_id, {34}, {"v2"}, {WriteCmdType::Put}, {ColumnFamilyType::Default});
+            persistAfterWrite(ctx, kvs, proxy_instance, page_storage, region_id, index);
+            dumpPageStorage(page_storage, store_id);
+
+            auto proxy_helper = std::make_unique<TiFlashRaftProxyHelper>(MockRaftStoreProxy::SetRaftStoreProxyFFIHelper(
+                RaftStoreProxyPtr{proxy_instance.get()}));
+            ;
+            EngineStoreServerWrap server_wrap = {
+                .tmt = &ctx.getTMTContext(),
+                .proxy_helper = proxy_helper.get(),
+                .status = std::atomic<EngineStoreServerStatus>{EngineStoreServerStatus::Running},
+            };
+
+            FailPointHelper::enableFailPoint(FailPoints::fast_add_peer_sleep);
+            auto res = FastAddPeer(&server_wrap, region_id, peer_id);
+            FailPointHelper::disableFailPoint(FailPoints::fast_add_peer_sleep);
+            ASSERT_EQ(res.status, FastAddPeerStatus::WaitForData);
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(1000ms);
+            auto res2 = FastAddPeer(&server_wrap, region_id, peer_id);
+            ASSERT_EQ(res2.status, FastAddPeerStatus::Ok);
+        }
+    }
+}
+
 TEST_F(RegionKVStoreTest, FAPRestorePS)
 {
     auto ctx = TiFlashTestEnv::getGlobalContext();
-    auto log = &Poco::Logger::get("fast add");
+    auto * log = &Poco::Logger::get("fast add");
     {
-        auto region_id = 1;
+        uint64_t region_id = 1;
         auto peer_id = 1;
         {
             KVStore & kvs = getKVS();
@@ -61,72 +282,53 @@ TEST_F(RegionKVStoreTest, FAPRestorePS)
             auto region = proxy_instance->getRegion(region_id);
             auto store_id = kvs.getStore().store_id.load();
             region->addPeer(store_id, peer_id, metapb::PeerRole::Learner);
+
+            // Write some data, and persist meta.
             auto [index, term] = proxy_instance->normalWrite(region_id, {34}, {"v2"}, {WriteCmdType::Put}, {ColumnFamilyType::Default});
-            MockRaftStoreProxy::FailCond cond;
-            proxy_instance->doApply(kvs, ctx.getTMTContext(), cond, region_id, index);
-            auto wb = region->persistMeta();
-            page_storage->write(std::move(wb), nullptr);
+            persistAfterWrite(ctx, kvs, proxy_instance, page_storage, region_id, index);
+            dumpPageStorage(page_storage, store_id);
 
-            // There shall be data to flush.
-            ASSERT_EQ(kvs.needFlushRegionData(region_id, ctx.getTMTContext()), true);
-            ASSERT_EQ(kvs.tryFlushRegionData(region_id, false, false, ctx.getTMTContext(), 0, 0), true);
+            RemoteMeta remote_meta;
+            auto current_store_id = store_id;
+            {
+                // Must found the newest manifest
+                auto [_, maybe_remote_meta] = selectRemotePeer(ctx, page_storage, current_store_id, region_id, peer_id);
+                ASSERT_TRUE(maybe_remote_meta.has_value());
+                remote_meta = std::move(maybe_remote_meta.value());
+                auto & local_ps = ctx.getLocalPageStorageCache();
+                LOG_DEBUG(log, "try get {}.{}", remote_meta.remote_store_id, remote_meta.version);
+                ASSERT_TRUE(local_ps.maybeGet(remote_meta.remote_store_id, remote_meta.version) != std::nullopt);
+            }
+            {
+                auto [_, maybe_remote_meta2] = selectRemotePeer(ctx, page_storage, current_store_id, region_id, 42);
+                ASSERT_TRUE(!maybe_remote_meta2.has_value());
+            }
 
-            // Dump PS
-            auto writer_info = std::make_shared<WriterInfo>();
-            writer_info->set_store_id(store_id);
-            auto remote_directory = TiFlashTestEnv::getTemporaryPath("FastAddPeer");
-            page_storage->config.ps_remote_directory.set(remote_directory);
-            std::string output_directory = composeOutputDirectory(remote_directory, store_id, page_storage->storage_name);
-            LOG_DEBUG(log, "output_directory {}", output_directory);
-            page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
-                .temp_directory = output_directory,
-                .remote_directory = output_directory,
-                .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
-                .manifest_file_name_pattern = "{sequence}.manifest",
-                .writer_info = writer_info,
-                .blob_store = *page_storage->blob_store,
-            });
-
-            // Must Found the newest manifest
-            auto maybe_remote_meta = selectRemotePeer(page_storage, region_id, peer_id);
-            ASSERT(maybe_remote_meta.has_value());
-
-            auto maybe_remote_meta2 = selectRemotePeer(page_storage, region_id, 42);
-            ASSERT(!maybe_remote_meta2.has_value());
-
-            auto remote_meta = std::move(maybe_remote_meta.value());
-            const auto & [s_id, restored_region_state, restored_apply_state, optimal] = remote_meta;
-
-            auto reader = CheckpointManifestFileReader<PageDirectoryTrait>::create(CheckpointManifestFileReader<PageDirectoryTrait>::Options{.file_path = output_directory + optimal});
+            auto reader = CheckpointManifestFileReader<PageDirectoryTrait>::create(CheckpointManifestFileReader<PageDirectoryTrait>::Options{
+                .file_path = remote_meta.checkpoint_path});
             auto edit = reader->read();
             auto records = edit.getRecords();
             ASSERT_EQ(3, records.size());
 
-            for (auto iter = records.begin(); iter != records.end(); iter++)
-            {
-                std::string page_id = iter->page_id;
-                if (keys::validateApplyStateKey(page_id.data(), page_id.size(), region_id) || keys::validateRegionStateKey(page_id.data(), page_id.size(), region_id))
-                {
-                }
-                else
-                {
-                    auto & location = iter->entry.remote_info->data_location;
-                    auto buf = ReadBufferFromFile(output_directory + *location.data_file_id);
-                    buf.seek(location.offset_in_file);
+            LOG_DEBUG(log, "APPLY restored {} origin {}", remote_meta.apply_state.ShortDebugString(), region->getApply().ShortDebugString());
+            LOG_DEBUG(log, "REGION restored {} origin {}", remote_meta.region_state.ShortDebugString(), region->getState().ShortDebugString());
+            ASSERT_TRUE(remote_meta.apply_state == region->getApply());
+            ASSERT_TRUE(remote_meta.region_state == region->getState());
 
-                    const auto proxy_helper = std::make_unique<TiFlashRaftProxyHelper>(MockRaftStoreProxy::SetRaftStoreProxyFFIHelper(
-                        RaftStoreProxyPtr{proxy_instance.get()}));
-                    auto decoded_region = Region::deserialize(buf, proxy_helper.get());
-                    ASSERT_EQ(decoded_region->appliedIndex(), index);
-                    auto key = RecordKVFormat::genKey(proxy_instance->table_id, 34, 1);
-                    TiKVValue value = std::string("v2");
-                    EXPECT_THROW(decoded_region->insert(ColumnFamilyType::Default, std::move(key), std::move(value)), Exception);
-                }
+            auto [index2, ter2] = proxy_instance->normalWrite(region_id, {35}, {"v3"}, {WriteCmdType::Put}, {ColumnFamilyType::Default});
+            kvs.setRegionCompactLogConfig(0, 0, 0);
+            persistAfterWrite(ctx, kvs, proxy_instance, page_storage, region_id, index2);
+
+            dumpPageStorage(page_storage, store_id);
+            {
+                auto [_, maybe_remote_meta] = selectRemotePeer(ctx, page_storage, current_store_id, region_id, peer_id);
+                ASSERT_TRUE(maybe_remote_meta.has_value());
+                RemoteMeta remote_meta2;
+                remote_meta2 = maybe_remote_meta.value();
+                auto & local_ps = ctx.getLocalPageStorageCache();
+                ASSERT_TRUE(local_ps.maybeGet(remote_meta.remote_store_id, remote_meta.version) == std::nullopt);
+                ASSERT_TRUE(local_ps.maybeGet(remote_meta2.remote_store_id, remote_meta2.version) != std::nullopt);
             }
-            LOG_DEBUG(log, "APPLY restored {} origin {}", restored_apply_state.ShortDebugString(), region->getApply().ShortDebugString());
-            LOG_DEBUG(log, "REGION restored {} origin {}", restored_region_state.ShortDebugString(), region->getState().ShortDebugString());
-            ASSERT(restored_apply_state == region->getApply());
-            ASSERT(restored_region_state == region->getState());
         }
     }
 }

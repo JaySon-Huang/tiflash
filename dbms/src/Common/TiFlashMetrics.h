@@ -90,6 +90,15 @@ namespace DB
         F(type_mpp_establish_conn, {{"type", "mpp_tunnel"}}),                                                                             \
         F(type_mpp_establish_conn_local, {{"type", "mpp_tunnel_local"}}),                                                                 \
         F(type_cancel_mpp_task, {{"type", "cancel_mpp_task"}}))                                                                           \
+    M(tiflash_disaggregated_breakdown_duration_seconds, "", Histogram,                                                                    \
+        F(type_establish, {{"type", "establish"}}, ExpBuckets{0.001, 2, 20}),   \
+        F(type_build_task, {{"type", "build_task"}}, ExpBuckets{0.001, 2, 20}), \
+        F(type_fetch_page, {{"type", "fetch_page"}}, ExpBuckets{0.001, 2, 20}), \
+        F(type_pop_ready_tasks, {{"type", "pop_ready_tasks"}}, ExpBuckets{0.001, 2, 20}), \
+        F(type_build_stream, {{"type", "build_stream"}}, ExpBuckets{0.001, 2, 20})) \
+    M(tiflash_disaggregated_details, "", Counter,                                                                                         \
+        F(type_cftiny_read, {{"type", "cftiny_read"}}),                                                                                   \
+        F(type_cftiny_fetch, {{"type", "cftiny_fetch"}}))                                                                                 \
     M(tiflash_schema_version, "Current version of tiflash cached schema", Gauge)                                                          \
     M(tiflash_schema_applying, "Whether the schema is applying or not (holding lock)", Gauge)                                             \
     M(tiflash_schema_apply_count, "Total number of each kinds of apply", Counter, F(type_diff, {"type", "diff"}),                         \
@@ -114,7 +123,7 @@ namespace DB
         F(type_syncing_data_freshness, {{"type", "data_freshness"}}, ExpBuckets{0.001, 2, 20}))                                           \
     M(tiflash_storage_read_tasks_count, "Total number of storage engine read tasks", Counter)                                             \
     M(tiflash_storage_command_count, "Total number of storage's command, such as delete range / shutdown /startup", Counter,              \
-        F(type_delete_range, {"type", "delete_range"}), F(type_ingest, {"type", "ingest"}))                                               \
+        F(type_delete_range, {"type", "delete_range"}), F(type_ingest, {"type", "ingest"}), F(type_ingest_checkpoint, {"type", "ingest_check_point"}))                                               \
     M(tiflash_storage_subtask_count, "Total number of storage's sub task", Counter,                                                       \
         F(type_delta_merge_bg, {"type", "delta_merge_bg"}),                                                                               \
         F(type_delta_merge_bg_gc, {"type", "delta_merge_bg_gc"}),                                                                         \

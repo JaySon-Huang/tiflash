@@ -20,8 +20,10 @@
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/SkippableBlockInputStream.h>
 #include <Storages/Page/Page.h>
-#include <Storages/Page/PageStorage.h>
+#include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Page/WriteBatch.h>
+
+#include "Storages/Page/V3/Remote/CheckpointPageManager.h"
 
 namespace DB
 {
@@ -35,6 +37,7 @@ using RSOperatorPtr = std::shared_ptr<RSOperator>;
 class StableValueSpace;
 using StableValueSpacePtr = std::shared_ptr<StableValueSpace>;
 
+using PS::V3::universal::PageDirectoryTrait;
 class StableValueSpace : public std::enable_shared_from_this<StableValueSpace>
 {
 public:
@@ -44,6 +47,14 @@ public:
     {}
 
     static StableValueSpacePtr restore(DMContext & context, PageId id);
+
+    static StableValueSpacePtr restoreFromCheckpoint( //
+        DMContext & context,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info,
+        TableID ns_id,
+        PageId stable_id,
+        WriteBatches & wbs);
 
     /**
      * Resets the logger by using the one from the segment.
@@ -56,9 +67,9 @@ public:
     }
 
     // Set DMFiles for this value space.
-    // If this value space is logical split, specify `range` and `dm_context` so that we can get more precise
+    // If this value space is logical split, specify `range` and `db_context` so that we can get more precise
     // bytes and rows.
-    void setFiles(const DMFiles & files_, const RowKeyRange & range, DMContext * dm_context = nullptr);
+    void setFiles(const DMFiles & files_, const RowKeyRange & range, const Context & db_context);
 
     PageId getId() const { return id; }
     void saveMeta(WriteBatch & meta_wb);
@@ -145,6 +156,8 @@ public:
         UInt64 valid_rows;
         UInt64 valid_bytes;
 
+        DMFiles dm_files;
+
         bool is_common_handle;
         size_t rowkey_column_size;
 
@@ -169,6 +182,10 @@ public:
                 auto column_cache = std::make_shared<ColumnCache>();
                 c->column_caches.emplace_back(column_cache);
             }
+            for (const auto & dmfile : dm_files)
+            {
+                c->dm_files.push_back(dmfile);
+            }
             return c;
         }
 
@@ -182,7 +199,7 @@ public:
          * DTFiles are not fully included in the segment range will be also included in the result.
          * Note: Out-of-range DTFiles may be produced by logical split.
          */
-        const DMFiles & getDMFiles() const { return stable->getDMFiles(); }
+        const DMFiles & getDMFiles() const { return dm_files; }
 
         /**
          * Return the total number of packs of the underlying DTFiles.
@@ -237,9 +254,7 @@ public:
         LoggerPtr log;
     };
 
-    SnapshotPtr createSnapshot();
-
-    SnapshotPtr createSnapshotFromRemote(const DMContext & context, const RowKeyRange & seg_range);
+    SnapshotPtr createSnapshot(const Context & db_context, TableID table_id = -1);
 
     void drop(const FileProviderPtr & file_provider);
 

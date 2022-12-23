@@ -21,12 +21,15 @@
 #include <Storages/DeltaMerge/DeltaIndex.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/DeltaTree.h>
+#include <Storages/DeltaMerge/File/dtpb/column_file.pb.h>
 #include <Storages/DeltaMerge/Range.h>
+#include <Storages/DeltaMerge/Remote/Manager.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/DeltaMerge/SkippableBlockInputStream.h>
 #include <Storages/DeltaMerge/StableValueSpace.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/V3/Remote/CheckpointPageManager.h>
 #include <Storages/Page/WriteBatch.h>
 
 namespace DB::DM
@@ -62,7 +65,22 @@ struct SegmentSnapshot : private boost::noncopyable
     UInt64 getRows() const { return delta->getRows() + stable->getRows(); }
 
     bool isForUpdate() const { return delta->isForUpdate(); }
+
+    dtpb::DisaggregatedSegment serializeToRemoteProtocol(
+        PageId segment_id,
+        UInt64 segment_epoch,
+        const RowKeyRange & segment_range,
+        const RowKeyRanges & read_ranges) const;
+
+    static SegmentSnapshotPtr deserializeFromRemoteProtocol(
+        const Context & db_context,
+        UInt64 write_node_id,
+        Int64 table_id,
+        const dtpb::DisaggregatedSegment & proto);
 };
+
+using PS::V3::CheckpointPageManager;
+using PS::V3::universal::PageDirectoryTrait;
 
 /// A segment contains many rows of a table. A table is split into segments by consecutive ranges.
 ///
@@ -140,7 +158,38 @@ public:
         PageId segment_id,
         PageId next_segment_id);
 
+    struct SegmentMetaInfo
+    {
+        SegmentFormat::Version version;
+        UInt64 epoch;
+        RowKeyRange rowkey_range;
+        PageId next_segment_id;
+        PageId delta_id;
+        PageId stable_id;
+    };
+
     static SegmentPtr restoreSegment(const LoggerPtr & parent_log, DMContext & context, PageId segment_id);
+
+    // find all segments in range
+    using SegmentMetaInfos = std::vector<SegmentMetaInfo>;
+    static SegmentMetaInfos restoreAllSegmentsMetaInfo( //
+        NamespaceId ns_id,
+        const RowKeyRange & range,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info);
+
+    // TODO: use template for CheckpointPageManager
+    // 1. The returned segment's range should be in `range`. Actually, Just change the range in segment meta is enough.
+    // 2. Segment meta should not be write in wbs.
+    static Segments restoreSegmentsFromCheckpoint( //
+        const LoggerPtr & parent_log,
+        DMContext & context,
+        NamespaceId ns_id,
+        const Segment::SegmentMetaInfos & meta_infos,
+        const RowKeyRange & range,
+        UniversalPageStoragePtr temp_ps,
+        const PS::V3::CheckpointInfo & checkpoint_info,
+        WriteBatches & wbs);
 
     void serialize(WriteBatch & wb);
 
@@ -436,6 +485,8 @@ public:
      */
     [[nodiscard]] SegmentPtr replaceData(const Lock &, DMContext & dm_context, const DMFilePtr & data_file, SegmentSnapshotPtr segment_snap_opt = nullptr) const;
 
+    [[nodiscard]] SegmentPtr dangerouslyReplaceData2(const Lock &, DMContext & dm_context, const DMFilePtr & data_file, WriteBatches & wbs, const ColumnFilePersisteds & column_file_persisteds) const;
+
     [[nodiscard]] SegmentPtr dropNextSegment(WriteBatches & wbs, const RowKeyRange & next_segment_range);
 
     /**
@@ -458,6 +509,7 @@ public:
     /// Flush delta's cache packs.
     bool flushCache(DMContext & dm_context);
     void placeDeltaIndex(DMContext & dm_context);
+    void placeDeltaIndex(DMContext & dm_context, const SegmentSnapshotPtr & segment_snap);
 
     /// Compact the delta layer, merging fragment column files into bigger column files.
     /// It does not merge the delta into stable layer.

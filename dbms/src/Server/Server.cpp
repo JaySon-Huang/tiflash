@@ -23,6 +23,7 @@
 #include <Common/RedactHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadManager.h>
+#include <Common/ThreadPool.h>
 #include <Common/TiFlashBuildInfo.h>
 #include <Common/TiFlashException.h>
 #include <Common/TiFlashMetrics.h>
@@ -44,6 +45,7 @@
 #include <Flash/Mpp/GRPCCompletionQueuePool.h>
 #include <Functions/registerFunctions.h>
 #include <IO/HTTPCommon.h>
+#include <IO/IOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/createReadBufferFromFileBase.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -72,6 +74,7 @@
 #include <Storages/FormatVersion.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/PathCapacityMetrics.h>
+#include <Storages/S3/S3Common.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/Transaction/FileEncryption.h>
 #include <Storages/Transaction/KVStore.h>
@@ -906,6 +909,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setDisaggregatedMode(getDisaggregatedMode(config()));
 
+    S3::ClientFactory::instance().init(/*enable_s3_log*/ true);
+
+    GlobalThreadPool::initialize(
+        10000,
+        1000,
+        10000);
+
+    IOThreadPool::initialize(
+        100,
+        0,
+        10000);
+
     /// Init File Provider
     if (proxy_conf.is_proxy_runnable)
     {
@@ -1096,10 +1111,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto & blockable_bg_pool = global_context->initializeBlockableBackgroundPool(settings.background_pool_size);
 
     /// PageStorage run mode has been determined above
-//    global_context->initializeGlobalStoragePoolIfNeed(global_context->getPathPool());
-//    LOG_INFO(log, "Global PageStorage run mode is {}", static_cast<UInt8>(global_context->getPageStorageRunMode()));
+    //    global_context->initializeGlobalStoragePoolIfNeed(global_context->getPathPool());
+    //    LOG_INFO(log, "Global PageStorage run mode is {}", static_cast<UInt8>(global_context->getPageStorageRunMode()));
 
-    ///
+    // TODO: decide by global_context->isDisaggregatedComputeMode();
     global_context->initializeWriteNodePageStorage(global_context->getPathPool(), global_context->getFileProvider());
 
     global_context->initializeReadNodePageStorage(global_context->getPathPool(), global_context->getFileProvider());
@@ -1262,6 +1277,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         // `Context::shutdown()` will destroy `DeltaIndexManager`.
         // So, stop threads explicitly before `TiFlashTestEnv::shutdown()`.
         DB::DM::SegmentReaderPoolManager::instance().stop();
+        S3::ClientFactory::instance().shutdown();
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
     });

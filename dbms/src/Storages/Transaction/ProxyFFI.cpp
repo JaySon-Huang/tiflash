@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "RaftStoreProxyFFI/ProxyFFI.h"
+
 #include <Common/CurrentMetrics.h>
 #include <Common/nocopyable.h>
 #include <Interpreters/Context.h>
@@ -29,6 +31,8 @@
 #include <kvproto/diagnosticspb.pb.h>
 
 #include <ext/scope_guard.h>
+
+#include "common/defines.h"
 
 #define CHECK_PARSE_PB_BUFF_IMPL(n, a, b, c)                                              \
     do                                                                                    \
@@ -161,8 +165,9 @@ uint8_t TryFlushData(EngineStoreServerWrap * server, uint64_t region_id, uint8_t
 }
 
 
-RawCppPtr CreateWriteBatch()
+RawCppPtr CreateWriteBatch(const EngineStoreServerWrap * dummy)
 {
+    UNUSED(dummy);
     //    LOG_DEBUG(&Poco::Logger::get("ProxyFFIDebug"), "create write batch");
     return GenRawCppPtr(new UniversalWriteBatch(), RawCppPtrTypeImpl::WriteBatch);
 }
@@ -227,7 +232,7 @@ void ConsumeWriteBatch(const EngineStoreServerWrap * server, RawVoidPtr ptr)
     }
 }
 
-PageWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id)
+CppStrWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView page_id)
 {
     try
     {
@@ -238,11 +243,11 @@ PageWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView p
         if (page->isValid())
         {
             //            LOG_DEBUG(&Poco::Logger::get("ProxyFFIDebug"), "handle read page");
-            return PageWithView{.inner = GenRawCppPtr(page, RawCppPtrTypeImpl::UniversalPage), .view = BaseBuffView{page->data.begin(), page->data.size()}};
+            return CppStrWithView{.inner = GenRawCppPtr(page, RawCppPtrTypeImpl::UniversalPage), .view = BaseBuffView{page->data.begin(), page->data.size()}};
         }
         else
         {
-            return PageWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{}};
+            return CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{}};
         }
     }
     catch (...)
@@ -252,7 +257,7 @@ PageWithView HandleReadPage(const EngineStoreServerWrap * server, BaseBuffView p
     }
 }
 
-PageAndCppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id)
+RawCppPtrCarr HandleScanPage(const EngineStoreServerWrap * server, BaseBuffView start_page_id, BaseBuffView end_page_id)
 {
     try
     {
@@ -291,23 +296,13 @@ PageAndCppStrWithViewVec HandleScanPage(const EngineStoreServerWrap * server, Ba
             }
         }
         //        LOG_DEBUG(&Poco::Logger::get("ProxyFFIDebug"), "handle scan page {}", pages.size());
-        return PageAndCppStrWithViewVec{.inner = reinterpret_cast<PageAndCppStrWithView *>(data), .len = pages.size()};
+        return RawCppPtrCarr{.inner = reinterpret_cast<PageAndCppStrWithView *>(data), .len = pages.size(), .type = static_cast<RawCppPtrType>(RawCppPtrTypeImpl::PageAndCppStr)};
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         exit(-1);
     }
-}
-
-void GcPageAndCppStrWithViewVec(PageAndCppStrWithView * inner, uint64_t len)
-{
-    for (size_t i = 0; i < len; i++)
-    {
-        GcRawCppPtr(inner[i].page.ptr, inner[i].page.type);
-        GcRawCppPtr(inner[i].key.ptr, inner[i].key.type);
-    }
-    delete inner;
 }
 
 void PurgePageStorage(const EngineStoreServerWrap * server)
@@ -338,7 +333,7 @@ CppStrWithView SeekPSKey(const EngineStoreServerWrap * server, BaseBuffView raw_
         }
         else
         {
-            auto * s = RawCppString::New(page_ids[0]);
+            auto * s = RawCppString::New(page_ids[0].asStr());
             return CppStrWithView{.inner = GenRawCppPtr(s, RawCppPtrTypeImpl::String), .view = BaseBuffView{s->data(), s->size()}};
         }
     }
@@ -581,7 +576,7 @@ RawCppPtr PreHandleSnapshot(
         {
             auto uni_ps = server->tmt->getContext().getWriteNodePageStorage();
             RaftLogReader reader(*uni_ps);
-            auto page_id = RaftLogReader::toRegionMetaKey(new_region->id());
+            auto page_id = RaftLogReader::toRegionLocalStateKey(new_region->id());
             auto value = reader.read(page_id);
             raft_serverpb::RegionLocalState state;
             state.ParseFromArray(value.data.begin(), value.data.size());
@@ -670,6 +665,61 @@ void GcRawCppPtr(RawVoidPtr ptr, RawCppPtrType type)
             break;
         default:
             LOG_ERROR(&Poco::Logger::get(__FUNCTION__), "unknown type {}", type);
+            exit(-1);
+        }
+    }
+}
+
+void GcRawCppPtrCArr(RawVoidPtr ptr, RawCppPtrType type, uint64_t len)
+{
+    if (ptr)
+    {
+        switch (static_cast<RawCppPtrTypeImpl>(type))
+        {
+        case RawCppPtrTypeImpl::PageAndCppStr:
+        {
+            auto inner = reinterpret_cast<PageAndCppStrWithView *>(ptr);
+            for (size_t i = 0; i < len; i++)
+            {
+                GcRawCppPtr(inner[i].page.ptr, inner[i].page.type);
+                GcRawCppPtr(inner[i].key.ptr, inner[i].key.type);
+            }
+            delete inner;
+            break;
+        }
+        default:
+            LOG_ERROR(&Poco::Logger::get(__FUNCTION__), "unknown type arr {}", type);
+            exit(-1);
+        }
+    }
+}
+
+void GcSpecialRawCppPtr(void * ptr, uint64_t hint_size, SpecialCppPtrType type)
+{
+    UNUSED(hint_size);
+    if (ptr)
+    {
+        switch (static_cast<SpecialCppPtrType>(type))
+        {
+        case SpecialCppPtrType::None:
+            // Do nothing.
+            break;
+        case SpecialCppPtrType::TupleOfRawCppPtr:
+        {
+            auto * special_ptr = reinterpret_cast<RawCppPtrTuple *>(ptr);
+            delete special_ptr->inner;
+            delete special_ptr;
+            break;
+        }
+        case SpecialCppPtrType::ArrayOfRawCppPtr:
+        {
+            auto * special_ptr = reinterpret_cast<RawCppPtrArr *>(ptr);
+            delete special_ptr->inner;
+            delete special_ptr;
+            break;
+        }
+        default:
+            LOG_ERROR(&Poco::Logger::get(__FUNCTION__), "unknown type {}", static_cast<std::underlying_type_t<SpecialCppPtrType>>(type));
             exit(-1);
         }
     }

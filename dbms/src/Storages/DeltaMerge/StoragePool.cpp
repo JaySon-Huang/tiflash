@@ -625,7 +625,7 @@ void StoragePool::dataRegisterExternalPagesCallbacks(const ExternalPageCallbacks
         UniversalExternalPageCallbacks us_callbacks;
         us_callbacks.remover = callbacks.remover;
         us_callbacks.scanner = callbacks.scanner;
-        us_callbacks.prefix = buildTableUniversalPrefix(getStoragePrefix(TableStorageTag::Data), callbacks.ns_id);
+        us_callbacks.prefix = buildTableUniversalPrefix(getStoragePrefix(TableStorageTag::Data), callbacks.ns_id).toStr();
         uni_ps->registerUniversalExternalPagesCallbacks(us_callbacks);
         break;
     }
@@ -653,7 +653,7 @@ void StoragePool::dataUnregisterExternalPagesCallbacks(NamespaceId ns_id)
     }
     case PageStorageRunMode::UNI_PS:
     {
-        uni_ps->unregisterUniversalExternalPagesCallbacks(buildTableUniversalPrefix(getStoragePrefix(TableStorageTag::Data), ns_id));
+        uni_ps->unregisterUniversalExternalPagesCallbacks(buildTableUniversalPrefix(getStoragePrefix(TableStorageTag::Data), ns_id).toStr());
         break;
     }
     default:
@@ -710,7 +710,7 @@ void StoragePool::shutdown()
         global_context.getBackgroundPool().removeTask(gc_handle);
         gc_handle = nullptr;
     }
-    if (run_mode != PageStorageRunMode::ONLY_V3)
+    if (run_mode != PageStorageRunMode::ONLY_V3 && run_mode != PageStorageRunMode::UNI_PS)
     {
         meta_storage_v2->shutdown();
         log_storage_v2->shutdown();

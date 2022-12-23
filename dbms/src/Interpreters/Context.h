@@ -23,7 +23,8 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/TimezoneInfo.h>
-#include <Storages/Page/PageStorage.h>
+#include <Storages/Transaction/FastAddPeerContext.h>
+#include <Storages/Transaction/LocalPageStorageCache.h>
 #include <common/MultiVersion.h>
 
 #include <chrono>
@@ -445,6 +446,9 @@ public:
     void initializeReadNodePageStorage(const PathPool & path_pool, const FileProviderPtr & file_provider);
     UniversalPageStoragePtr getReadNodePageStorage() const;
 
+    LocalPageStorageCache<UniversalPageStoragePtr> & getLocalPageStorageCache();
+    FastAddPeerContext & getFastAddPeerContext();
+
     void initializeDeltaMergeRemoteManager();
     DM::Remote::ManagerPtr getDMRemoteManager() const;
 
@@ -525,7 +529,7 @@ public:
     }
     bool isDisaggregatedStorageMode() const
     {
-        return disaggregated_mode == DisaggregatedMode::Storage;
+        return disaggregated_mode == DisaggregatedMode::Storage || disaggregated_mode == DisaggregatedMode::None;
     }
 
 private:
