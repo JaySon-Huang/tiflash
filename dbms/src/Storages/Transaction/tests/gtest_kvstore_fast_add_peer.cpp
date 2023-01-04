@@ -196,7 +196,7 @@ void dumpPageStorage(UniversalPageStoragePtr page_storage, uint64_t store_id)
         auto writer_info = std::make_shared<WriterInfo>();
         // write to a remote store
         writer_info->set_store_id(store_id + 1);
-        page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
+        page_storage->checkpoint_manager->dumpRemoteCheckpoint(PS::V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
             .temp_directory = output_directory,
             .remote_directory = output_directory,
             .data_file_name_pattern = fmt::format(
@@ -208,7 +208,6 @@ void dumpPageStorage(UniversalPageStoragePtr page_storage, uint64_t store_id)
                 writer_info->store_id(),
                 storage_name),
             .writer_info = writer_info,
-            .blob_store = *page_storage->blob_store,
         });
     }
 }

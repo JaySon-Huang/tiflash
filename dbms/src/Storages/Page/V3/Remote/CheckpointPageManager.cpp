@@ -58,7 +58,8 @@ UniversalPageStoragePtr CheckpointPageManager::createTempPageStorage(Context & c
         }
         else if (record.type == EditRecordType::VAR_EXTERNAL)
         {
-            wb.putExternal(record.page_id, record.entry.tag);
+            // TODO: get the remote location
+            wb.putExternal(record.page_id, record.entry.tag, std::nullopt);
         }
         else
         {

@@ -97,13 +97,12 @@ TEST_F(CheckpointTest, CheckpointManagerGetNormalPageId)
     auto checkpoint_dir = getTemporaryPath() + "/";
     {
         auto writer_info = std::make_shared<PS::V3::Remote::WriterInfo>();
-        page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
+        page_storage->checkpoint_manager->dumpRemoteCheckpoint(V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
             .temp_directory = checkpoint_dir + "temp/",
             .remote_directory = checkpoint_dir,
             .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
             .manifest_file_name_pattern = "{sequence}.manifest",
             .writer_info = writer_info,
-            .blob_store = *page_storage->blob_store,
         });
     }
 

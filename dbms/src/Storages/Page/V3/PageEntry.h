@@ -35,8 +35,8 @@ struct RemoteDataLocation
 
     std::shared_ptr<const std::string> data_file_id;
 
-    uint64_t offset_in_file;
-    uint64_t size_in_file;
+    uint64_t offset_in_file{0};
+    uint64_t size_in_file{0};
 
     Remote::EntryDataLocation toRemote() const
     {

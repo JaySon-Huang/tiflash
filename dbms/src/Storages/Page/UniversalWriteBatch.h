@@ -18,8 +18,10 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/Page/PageDefines.h>
 #include <Storages/Page/V3/PageDirectory/ExternalIdTrait.h>
+#include <Storages/Page/V3/PageEntry.h>
 #include <Storages/Page/WriteBatch.h>
 
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -51,6 +53,7 @@ inline UniversalPageId buildTableUniversalPrefix(const String & prefix, Namespac
 class UniversalWriteBatch : private boost::noncopyable
 {
 private:
+    using RemoteDataLocation = PS::V3::RemoteDataLocation;
     struct Write
     {
         WriteBatchWriteType type;
@@ -64,14 +67,9 @@ private:
         // Fields' offset inside Page's data
         PageFieldOffsetChecksums offsets;
 
-        /// The meta and data may not be the same PageFile, (read_buffer == nullptr)
-        /// use `target_file_id`, `page_offset`, `page_checksum` to indicate where
-        /// data is actually store in.
-        /// Should only use by `UPSERT` now.
-
-        UInt64 page_offset;
-        UInt64 page_checksum;
-        PageFileIdAndLevel target_file_id;
+        // RemoteLocation, file, offset etc
+        // TODO: some fields are duplicated, we can optimize the memory usage
+        std::optional<RemoteDataLocation> remote;
     };
     using Writes = std::vector<Write>;
 
@@ -99,9 +97,7 @@ public:
                 .size = w.size,
                 .ori_page_id = buildTableUniversalPageId(prefix, ns_id, w.ori_page_id),
                 .offsets = std::move(w.offsets),
-                .page_offset = w.page_offset,
-                .page_checksum = w.page_checksum,
-                .target_file_id = w.target_file_id,
+                .remote = RemoteDataLocation{},
             });
         }
         us_batch.total_data_size = batch.getTotalDataSize();
@@ -130,7 +126,7 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
         }
 
-        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, "", std::move(offsets), 0, 0, {}};
+        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, "", std::move(offsets), RemoteDataLocation{}};
         total_data_size += size;
         writes.emplace_back(std::move(w));
     }
@@ -141,23 +137,23 @@ public:
         putPage(page_id, tag, buffer_ptr, data.size());
     }
 
-    void putExternal(UniversalPageId page_id, UInt64 tag)
+    void putExternal(UniversalPageId page_id, UInt64 tag, const std::optional<RemoteDataLocation> & remote_location)
     {
         // External page's data is not managed by PageStorage, which means data is empty.
-        Write w{WriteBatchWriteType::PUT_EXTERNAL, page_id, tag, nullptr, 0, "", {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::PUT_EXTERNAL, page_id, tag, nullptr, 0, "", {}, remote_location};
         writes.emplace_back(std::move(w));
     }
 
     // Add RefPage{ref_id} -> Page{page_id}
     void putRefPage(UniversalPageId ref_id, UniversalPageId page_id)
     {
-        Write w{WriteBatchWriteType::REF, ref_id, 0, nullptr, 0, page_id, {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::REF, ref_id, 0, nullptr, 0, page_id, {}, std::nullopt};
         writes.emplace_back(std::move(w));
     }
 
     void delPage(UniversalPageId page_id)
     {
-        Write w{WriteBatchWriteType::DEL, page_id, 0, nullptr, 0, "", {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::DEL, page_id, 0, nullptr, 0, "", {}, std::nullopt};
         writes.emplace_back(std::move(w));
     }
 
@@ -211,7 +207,10 @@ public:
         return total_data_size;
     }
 
-    static const UniversalPageId & getFullPageId(const UniversalPageId & id) { return id; }
+    static const UniversalPageId & getFullPageId(const UniversalPageId & id)
+    {
+        return id;
+    }
 
     String toString() const
     {

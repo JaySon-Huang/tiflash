@@ -2930,13 +2930,12 @@ try
     auto page_storage = db_context->getWriteNodePageStorage();
     auto writer_info = std::make_shared<WriterInfo>();
     auto checkpoint_dir = getTemporaryPath() + "/";
-    page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
+    page_storage->checkpoint_manager->dumpRemoteCheckpoint(PS::V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
         .temp_directory = checkpoint_dir + "temp/",
         .remote_directory = checkpoint_dir,
         .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
         .manifest_file_name_pattern = "{sequence}.manifest",
         .writer_info = writer_info,
-        .blob_store = *page_storage->blob_store,
     });
 
     UInt64 latest_manifest_sequence = 0;
@@ -3079,13 +3078,12 @@ try
     auto page_storage = db_context->getWriteNodePageStorage();
     auto writer_info = std::make_shared<WriterInfo>();
     auto checkpoint_dir = getTemporaryPath() + "/";
-    page_storage->page_directory->dumpRemoteCheckpoint(PageDirectory<PageDirectoryTrait>::DumpRemoteCheckpointOptions<BlobStoreTrait>{
+    page_storage->checkpoint_manager->dumpRemoteCheckpoint(PS::V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
         .temp_directory = checkpoint_dir + "temp/",
         .remote_directory = checkpoint_dir,
         .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
         .manifest_file_name_pattern = "{sequence}.manifest",
         .writer_info = writer_info,
-        .blob_store = *page_storage->blob_store,
     });
 
     UInt64 latest_manifest_sequence = 0;

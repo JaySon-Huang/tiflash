@@ -58,6 +58,7 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/Common/SyncPoint)
 add_headers_and_sources(clickhouse_common_io src/IO)
+add_headers_and_sources(clickhouse_common_io src/IO/S3)
 
 add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
@@ -205,6 +206,7 @@ target_link_libraries (clickhouse_common_io
     cpptoml
     magic_enum
     libsymbolization
+    tiflash_contrib::aws_s3
 )
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${kvClient_SOURCE_DIR}/include)
 target_compile_definitions(clickhouse_common_io PUBLIC -DTIFLASH_SOURCE_PREFIX=\"${TiFlash_SOURCE_DIR}\")

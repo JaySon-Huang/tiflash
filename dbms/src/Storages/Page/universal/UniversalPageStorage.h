@@ -17,6 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/DeltaMerge/Remote/DataStore/DataStore.h>
 #include <Storages/Page/Config.h>
 #include <Storages/Page/ExternalPageCallbacks.h>
 #include <Storages/Page/FileUsage.h>
@@ -26,6 +27,7 @@
 #include <Storages/Page/V3/BlobStore.h>
 #include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Page/V3/PageDirectory/ExternalIdTrait.h>
+#include <Storages/Page/V3/Remote/CheckpointUploadManager.h>
 #include <common/defines.h>
 
 namespace DB
@@ -198,8 +200,12 @@ public:
     PageStorageConfig config;
     FileProviderPtr file_provider;
 
+    DM::Remote::IDataStorePtr data_store;
+
     PS::V3::universal::PageDirectoryPtr page_directory;
     PS::V3::universal::BlobStorePtr blob_store;
+
+    PS::V3::CheckpointUploadManagerPtr checkpoint_manager;
 
     std::atomic<bool> gc_is_running = false;
 
