@@ -286,9 +286,6 @@ public:
     {
         page_storage->checkpoint_manager->dumpRemoteCheckpoint(V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
             .temp_directory = output_directory,
-            .remote_directory = output_directory,
-            .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
-            .manifest_file_name_pattern = "{sequence}.manifest",
             .writer_info = writer_info,
         });
     }

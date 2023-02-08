@@ -36,6 +36,8 @@ struct S3Filename
     String path;
 
     static S3Filename fromDMFileOID(const DM::Remote::DMFileOID & oid);
+    static S3Filename newCheckpointData(UInt64 store_id, UInt64 upload_seq, UInt64 file_idx);
+    static S3Filename newCheckpointManifest(UInt64 store_id, UInt64 upload_seq);
 
     String toFullKey() const;
 

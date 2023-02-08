@@ -365,15 +365,6 @@ void UniversalPageStorage::checkpointImpl(std::shared_ptr<const PS::V3::Remote::
     checkpoint_manager->dumpRemoteCheckpoint(PS::V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
         // FIXME: This is a hack. May be better to create a new delegator.
         .temp_directory = delegator->choosePath({0, 0}) + "/checkpoint_temp/",
-        .remote_directory = remote_directory,
-        .data_file_name_pattern = fmt::format(
-            "store_{}/ps_{}_data/{{sequence}}_{{sub_file_index}}.data",
-            writer_info->store_id(),
-            storage_name),
-        .manifest_file_name_pattern = fmt::format(
-            "store_{}/ps_{}_manifest/{{sequence}}.manifest",
-            writer_info->store_id(),
-            storage_name),
         .writer_info = writer_info,
     });
 }

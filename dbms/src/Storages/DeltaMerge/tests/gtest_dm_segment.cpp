@@ -207,9 +207,6 @@ try
     auto checkpoint_dir = getTemporaryPath() + "/";
     page_storage->checkpoint_manager->dumpRemoteCheckpoint(PS::V3::CheckpointUploadManager::DumpRemoteCheckpointOptions{
         .temp_directory = checkpoint_dir + "temp/",
-        .remote_directory = checkpoint_dir,
-        .data_file_name_pattern = "{sequence}_{sub_file_index}.data",
-        .manifest_file_name_pattern = "{sequence}.manifest",
         .writer_info = writer_info,
     });
 

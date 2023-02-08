@@ -13,7 +13,7 @@ String S3FilenameView::getLockKey(UInt64 lock_store_id, UInt64 lock_seq) const
 
 S3FilenameView parseFromS3Key(const String & fullpath)
 {
-    re2::RE2 rgx_data_file("^s([0-9]+)/(stable|data|lock)/(.+)(\\.lock_[0-9]+_[0-9]+)?$");
+    const static re2::RE2 rgx_data_file("^s([0-9]+)/(stable|data|lock)/(.+)(\\.lock_[0-9]+_[0-9]+)?$");
     S3FilenameView res{.type = S3FilenameType::Invalid};
     re2::StringPiece type_view, data_filepath, lock_suffix;
     if (re2::RE2::FullMatch(fullpath, rgx_data_file, &res.store_id, &type_view, &data_filepath, &lock_suffix))
@@ -36,7 +36,25 @@ S3Filename S3Filename::fromDMFileOID(const DM::Remote::DMFileOID & oid)
     return S3Filename{
         .type = S3FilenameType::StableFile,
         .store_id = oid.write_node_id,
-        .path = fmt::format("t_{}/dmf_{}", oid.table_id, oid.file_id),
+        .path = fmt::format("/t_{}/dmf_{}", oid.table_id, oid.file_id),
+    };
+}
+
+S3Filename S3Filename::newCheckpointData(UInt64 store_id, UInt64 upload_seq, UInt64 file_idx)
+{
+    return S3Filename{
+        .type = S3FilenameType::CheckpointDataFile,
+        .store_id = store_id,
+        .path = fmt::format("/dat_{}_{}", upload_seq, file_idx),
+    };
+}
+
+S3Filename S3Filename::newCheckpointManifest(UInt64 store_id, UInt64 upload_seq)
+{
+    return S3Filename{
+        .type = S3FilenameType::CheckpointManifest,
+        .store_id = store_id,
+        .path = fmt::format("_{}", upload_seq),
     };
 }
 
@@ -45,7 +63,11 @@ String S3Filename::toFullKey() const
     switch (type)
     {
     case S3FilenameType::StableFile:
-        return fmt::format("s{}/stable/{}", store_id, path);
+        return fmt::format("s{}/stable{}", store_id, path);
+    case S3FilenameType::CheckpointDataFile:
+        return fmt::format("s{}/data{}", store_id, path);
+    case S3FilenameType::CheckpointManifest:
+        return fmt::format("s{}/manifest{}", store_id, path);
     default:
         throw Exception(fmt::format("Not support type! type={}", magic_enum::enum_name(type)));
     }

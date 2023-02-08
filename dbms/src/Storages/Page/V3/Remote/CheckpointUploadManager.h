@@ -53,6 +53,31 @@ public:
         const std::string & temp_directory;
 
         /**
+         * The writer info field in the dumped files.
+         */
+        const std::shared_ptr<const Remote::WriterInfo> writer_info;
+
+        const ReadLimiterPtr read_limiter = nullptr;
+        const WriteLimiterPtr write_limiter = nullptr;
+    };
+
+    struct DumpRemoteCheckpointResult
+    {
+        Strings data_file;
+        String manifest_file;
+    };
+
+    DumpRemoteCheckpointResult dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options);
+#else
+    struct DumpRemoteCheckpointOptions
+    {
+        /**
+         * The directory where temporary files are generated.
+         * Files are first generated in the temporary directory, then copied into the remote directory.
+         */
+        const std::string & temp_directory;
+
+        /**
          * Final files are always named according to `data_file_name_pattern` and `manifest_file_name_pattern`.
          * When we support different remote endpoints, the definition of remote_directory will change.
          */
@@ -86,31 +111,6 @@ public:
     };
 
     DumpRemoteCheckpointResult dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options);
-#else
-    struct DumpRemoteCheckpointOptions
-    {
-        /**
-         * The directory where temporary files are generated.
-         * Files are first generated in the temporary directory, then copied into the remote directory.
-         */
-        const std::string & temp_directory;
-
-        /**
-         * The writer info field in the dumped files.
-         */
-        const std::shared_ptr<const Remote::WriterInfo> writer_info;
-
-        const ReadLimiterPtr read_limiter = nullptr;
-        const WriteLimiterPtr write_limiter = nullptr;
-    };
-
-    struct DumpRemoteCheckpointResult
-    {
-        Strings data_file;
-        String manifest_file;
-    };
-
-    DumpRemoteCheckpointResult dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options);
 #endif
 
 
@@ -133,7 +133,7 @@ private:
     UInt64 last_checkpoint_sequence = 0;
 
     std::shared_mutex mtx_checkpoint_manifest;
-    UInt64 last_upload_sequence = 0;
+    std::atomic<UInt64> last_upload_sequence = 0;
     std::unordered_set<String> pre_locks_files;
 
     LoggerPtr log;

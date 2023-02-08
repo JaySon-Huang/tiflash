@@ -126,7 +126,7 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
         }
 
-        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, "", std::move(offsets), RemoteDataLocation{}};
+        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, "", std::move(offsets), std::nullopt};
         total_data_size += size;
         writes.emplace_back(std::move(w));
     }

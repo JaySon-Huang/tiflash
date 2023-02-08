@@ -17,10 +17,13 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <aws/core/utils/memory/stl/AWSAllocator.h>
+#include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3EndpointProvider.h>
 #include <aws/s3/model/PutObjectRequest.h>
+
+#include <mutex>
 
 namespace DB::PS::V3
 {
@@ -84,6 +87,44 @@ bool CheckpointUploadManager::createS3LockForWriteBatch(UniversalWriteBatch & wr
     return true;
 }
 
+namespace details
+{
+Aws::S3::Model::PutObjectOutcome sendUploadReq(Aws::S3::Model::PutObjectRequest & req)
+{
+    Aws::InitAPI({});
+    // Aws::Client::ClientConfiguration config;
+    // config.region = Aws::Region::AWS_GLOBAL;
+    // Aws::Auth::AWSCredentials credentials("minioadmin", "minioadmin");
+    // auto endpoint = Aws::MakeShared<Aws::S3::S3EndpointProvider>("http://172.16.5.85:9000");
+    String bucket_name = "jayson";
+
+    req.SetBucket(bucket_name);
+
+    // Aws::S3::S3Client s3_client(credentials, endpoint, config);
+    // return s3_client.PutObject(req);
+    MockS3Client mock_s3_client;
+    return mock_s3_client.PutObject(req);
+}
+
+Aws::S3::Model::PutObjectOutcome uploadEmptyFileToS3(const String & s3key)
+{
+    Aws::S3::Model::PutObjectRequest req;
+    req.SetKey(s3key);
+    req.SetBody(std::make_shared<Aws::StringStream>(""));
+    return sendUploadReq(req);
+}
+
+Aws::S3::Model::PutObjectOutcome uploadFileToS3(const String & local_filepath, const String & s3key)
+{
+    Aws::S3::Model::PutObjectRequest req;
+    req.SetKey(s3key);
+    std::shared_ptr<Aws::IOStream> input_data = std::make_shared<Aws::FStream>(local_filepath, std::ios::binary | std::ios::in);
+    req.SetBody(input_data);
+
+    return sendUploadReq(req);
+}
+} // namespace details
+
 CheckpointUploadManager::S3LockCreateResult CheckpointUploadManager::createS3Lock(const S3::S3FilenameView & s3_file, UInt64 lock_store_id)
 {
     RUNTIME_CHECK(s3_file.isDataFile());
@@ -96,26 +137,7 @@ CheckpointUploadManager::S3LockCreateResult CheckpointUploadManager::createS3Loc
     if (s3_file.store_id == lock_store_id)
     {
         // Try to create a lock file for the data file uploaded by this store
-        Aws::S3::Model::PutObjectRequest req;
-        req.SetKey(s3_lockfile_fullpath);
-        std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("");
-        req.SetBody(input_data);
-
-        auto outcome = [](Aws::S3::Model::PutObjectRequest & req) {
-            Aws::InitAPI({});
-            // Aws::Client::ClientConfiguration config;
-            // config.region = Aws::Region::AWS_GLOBAL;
-            // Aws::Auth::AWSCredentials credentials("minioadmin", "minioadmin");
-            // auto endpoint = Aws::MakeShared<Aws::S3::S3EndpointProvider>("http://172.16.5.85:9000");
-            String bucket_name = "jayson";
-
-            req.SetBucket(bucket_name);
-
-            // Aws::S3::S3Client s3_client(credentials, endpoint, config);
-            // return s3_client.PutObject(req);
-            MockS3Client mock_s3_client;
-            return mock_s3_client.PutObject(req);
-        }(req);
+        auto outcome = details::uploadEmptyFileToS3(s3_lockfile_fullpath);
         LOG_DEBUG(log, "S3 lock created: {}", s3_lockfile_fullpath);
         // TODO: handle s3 network error. retry?
         RUNTIME_CHECK(outcome.IsSuccess(), outcome.GetError().GetMessage());
@@ -145,6 +167,124 @@ void CheckpointUploadManager::cleanAppliedS3ExternalFiles(std::unordered_set<Str
 }
 
 #if 1
+CheckpointUploadManager::DumpRemoteCheckpointResult
+CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options)
+{
+    using Trait = PS::V3::universal::PageDirectoryTrait;
+    std::scoped_lock lock(mtx_checkpoint);
+
+    RUNTIME_CHECK(endsWith(options.temp_directory, "/"));
+
+    // FIXME: We need to dump snapshot from files, in order to get a correct `being_ref_count`.
+    //  Note that, snapshots from files does not have a correct remote info, so we cannot simply
+    //  copy logic from `tryDumpSnapshot`.
+    //  Currently this is fine, because we will not reclaim data from the PageStorage.
+
+    LOG_INFO(log, "Start dumpRemoteCheckpoint");
+
+    // Let's keep this snapshot until all finished, so that blob data will not be GCed.
+    auto snap = page_directory->createSnapshot(/*tracing_id*/ "");
+
+    if (snap->sequence == last_checkpoint_sequence)
+    {
+        LOG_INFO(log, "Skipped dump checkpoint because sequence is unchanged, last_seq={} this_seq={}", last_checkpoint_sequence, snap->sequence);
+        return {};
+    }
+
+    auto edit_from_mem = page_directory->dumpSnapshotToEdit(snap);
+    LOG_DEBUG(log, "Dumped edit from PageDirectory, snap_seq={} n_edits={}", snap->sequence, edit_from_mem.size());
+
+    // As a checkpoint, we write both entries (in manifest) and its data.
+    // Some entries' data may be already written by a previous checkpoint. These data will not be written again.
+
+    // TODO: Check temp file exists.
+    UInt64 upload_sequence;
+    String data_file_name;
+    String manifest_file_name;
+    String local_manifest_file_path_temp;
+    {
+        // Acquire as read lock, so that it won't block other thread from
+        // creating new lock on S3 for a long time.
+        std::shared_lock manifest_lock(mtx_checkpoint_manifest);
+        upload_sequence = last_upload_sequence + 1;
+
+        data_file_name = S3::S3Filename::newCheckpointData(options.writer_info->store_id(), upload_sequence, 0).toFullKey();
+        // Always append a suffix, in case of remote_directory == temp_directory
+        auto local_data_file_path_temp = options.temp_directory + data_file_name + ".tmp";
+
+        manifest_file_name = S3::S3Filename::newCheckpointManifest(options.writer_info->store_id(), upload_sequence).toFullKey();
+        // Always append a suffix, in case of remote_directory == temp_directory
+        local_manifest_file_path_temp = options.temp_directory + manifest_file_name + ".tmp";
+
+        Poco::File(Poco::Path(local_data_file_path_temp).parent()).createDirectories();
+        Poco::File(Poco::Path(local_manifest_file_path_temp).parent()).createDirectories();
+
+        LOG_DEBUG(log, "data_file_path_temp={} manifest_file_path_temp={}", local_data_file_path_temp, local_manifest_file_path_temp);
+
+
+        auto data_writer = CheckpointDataFileWriter<Trait>::create(
+            typename CheckpointDataFileWriter<Trait>::Options{
+                .file_path = local_data_file_path_temp,
+                .file_id = data_file_name,
+            });
+        auto manifest_writer = CheckpointManifestFileWriter<Trait>::create(
+            typename CheckpointManifestFileWriter<Trait>::Options{
+                .file_path = local_manifest_file_path_temp,
+                .file_id = manifest_file_name,
+            });
+        auto writer = CheckpointFilesWriter<Trait>::create(
+            typename CheckpointFilesWriter<Trait>::Options{
+                .info = typename CheckpointFilesWriter<Trait>::Info{
+                    .writer = options.writer_info,
+                    .sequence = snap->sequence,
+                    .last_sequence = 0,
+                },
+                .data_writer = std::move(data_writer),
+                .manifest_writer = std::move(manifest_writer),
+                .blob_store = blob_store,
+                .log = log,
+            });
+
+        writer->writePrefix();
+        bool has_new_data = writer->writeEditsAndApplyRemoteInfo(edit_from_mem, pre_locks_files);
+        writer->writeSuffix();
+
+        writer.reset();
+
+        if (has_new_data)
+        {
+            // Copy back the remote info to the current PageStorage. New remote infos are attached in `writeEditsAndApplyRemoteInfo`.
+            // Snapshot cannot prevent obsolete entries from being deleted.
+            // For example, if there is a `Put 1` with sequence 10, `Del 1` with sequence 11,
+            // and the snapshot sequence is 12, Page with id 1 may be deleted by the gc process.
+            page_directory->copyRemoteInfoFromEdit(edit_from_mem, /* allow_missing */ true);
+        }
+
+        if (has_new_data)
+        {
+            details::uploadFileToS3(local_data_file_path_temp, data_file_name);
+        }
+    }
+
+    {
+        // Acquire write lock to ensure all locks with the same upload_sequence are uploaded
+        std::unique_lock manifest_lock(mtx_checkpoint_manifest);
+        details::uploadFileToS3(local_manifest_file_path_temp, manifest_file_name);
+    }
+
+    // TODO: Remove the local temp files after uploaded
+
+    // Move forward
+    last_upload_sequence = upload_sequence;
+    last_checkpoint_sequence = snap->sequence;
+    LOG_DEBUG(log, "Upload checkpoint done, last_upload_sequence={}, last_checkpoint_sequence={}", last_upload_sequence, last_checkpoint_sequence);
+
+    return DumpRemoteCheckpointResult{
+        .data_file = {data_file_name}, // Note: when has_new_data == false, this field will be pointing to a file not exist. To be fixed.
+        .manifest_file = manifest_file_name,
+    };
+}
+#else
 CheckpointUploadManager::DumpRemoteCheckpointResult
 CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options)
 {
