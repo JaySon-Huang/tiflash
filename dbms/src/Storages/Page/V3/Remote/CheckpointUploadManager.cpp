@@ -1,4 +1,5 @@
 
+#include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -8,6 +9,7 @@
 #include <Storages/Page/V3/Remote/CheckpointManifestFileWriter.h>
 #include <Storages/Page/V3/Remote/CheckpointUploadManager.h>
 #include <Storages/Page/WriteBatch.h>
+#include <Storages/S3Filename.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <TestUtils/MockS3Client.h>
@@ -22,11 +24,10 @@
 
 namespace DB::PS::V3
 {
-CheckpointUploadManagerPtr CheckpointUploadManager::createForDebug(UInt64 store_id, PageDirectoryPtr & directory, BlobStorePtr & blob_store, DM::Remote::IDataStorePtr data_store)
+CheckpointUploadManagerPtr CheckpointUploadManager::createForDebug(UInt64 store_id, PageDirectoryPtr & directory, BlobStorePtr & blob_store)
 {
     auto mgr = std::unique_ptr<CheckpointUploadManager>(new CheckpointUploadManager(directory, blob_store));
     mgr->store_id = store_id;
-    mgr->data_store = data_store;
 
     return mgr;
 }
@@ -49,40 +50,50 @@ void CheckpointUploadManager::initStoreInfo(UInt64 actual_store_id)
     cv_init.notify_all();
 }
 
-bool CheckpointUploadManager::createS3LockForWriteBatch(const UniversalWriteBatch & write_batch)
+bool CheckpointUploadManager::createS3LockForWriteBatch(UniversalWriteBatch & write_batch)
 {
     {
         std::unique_lock lock_init(mtx_store_init);
         cv_init.wait(lock_init, [this]() { return this->store_id != 0; });
     }
 
-    for (const auto & w : write_batch.getWrites())
+    for (auto & w : write_batch.getMutWrites())
     {
-        if (w.type == WriteBatchWriteType::PUT_EXTERNAL)
+        switch (w.type)
         {
-            if (w.remote)
-            {
-                auto oid = *data_store->parseFromFullpath(*w.remote->data_file_id);
-                auto s3_fullpath = data_store->getDTFileRemoteFullPath(oid);
-                createS3Lock(s3_fullpath, oid.write_node_id, store_id);
-            }
+        case WriteBatchWriteType::PUT_EXTERNAL:
+        case WriteBatchWriteType::PUT:
+        {
+            // apply a put/put external that is actually stored in S3 instead of local
+            if (!w.remote)
+                continue;
+            auto res = S3::parseFromS3Key(*w.remote->data_file_id);
+            if (!res.isDataFile())
+                continue;
+            auto create_res = createS3Lock(res, store_id);
+            if (!create_res.ok())
+                return false;
+            // TODO: shared the data_file_id
+            w.remote = w.remote->copyWithNewFilename(std::move(create_res.lock_key));
+            break;
         }
-        else if (w.type == WriteBatchWriteType::PUT)
-        {
-            // apply a put that is actually stored in S3 instead of local
+        default:
+            break;
         }
     }
     return true;
 }
 
-bool CheckpointUploadManager::createS3Lock(std::string_view s3_file, UInt64 create_store_id, UInt64 lock_store_id)
+CheckpointUploadManager::S3LockCreateResult CheckpointUploadManager::createS3Lock(const S3::S3FilenameView & s3_file, UInt64 lock_store_id)
 {
+    RUNTIME_CHECK(s3_file.isDataFile());
     bool s3_lock_created = false;
     std::shared_lock manifest_lock(mtx_checkpoint_manifest);
-    UInt64 upload_seq = last_upload_sequence + 1;
-    String s3_lockfile_fullpath = fmt::format("{}.lock_s{}_{}", s3_file, lock_store_id, upload_seq); // TODO: Optimize for the lock path
+    const UInt64 upload_seq = last_upload_sequence + 1;
+    const String s3_lockfile_fullpath = s3_file.getLockKey(lock_store_id, upload_seq);
+    String err_msg;
 
-    if (create_store_id == lock_store_id)
+    if (s3_file.store_id == lock_store_id)
     {
         // Try to create a lock file for the data file uploaded by this store
         Aws::S3::Model::PutObjectRequest req;
@@ -108,21 +119,23 @@ bool CheckpointUploadManager::createS3Lock(std::string_view s3_file, UInt64 crea
         LOG_DEBUG(log, "S3 lock created: {}", s3_lockfile_fullpath);
         // TODO: handle s3 network error. retry?
         RUNTIME_CHECK(outcome.IsSuccess(), outcome.GetError().GetMessage());
+        s3_lock_created = true;
     }
     else
     {
         // TODO: Send rpc to S3LockService
-        RUNTIME_CHECK(create_store_id == lock_store_id, create_store_id, lock_store_id);
+        RUNTIME_CHECK(s3_file.store_id == lock_store_id, s3_file.store_id, lock_store_id);
+        s3_lock_created = true;
     }
 
     if (!s3_lock_created)
-        return false;
+        return S3LockCreateResult{"", std::move(err_msg)};
 
     pre_locks_files.emplace(s3_lockfile_fullpath);
-    return s3_lock_created;
+    return {s3_lockfile_fullpath, std::move(err_msg)};
 }
 
-void CheckpointUploadManager::cleanAppliedS3ExternalFiles(std::set<String> && applied_s3files)
+void CheckpointUploadManager::cleanAppliedS3ExternalFiles(std::unordered_set<String> && applied_s3files)
 {
     std::shared_lock manifest_lock(mtx_checkpoint_manifest);
     for (const auto & file : applied_s3files)
@@ -131,6 +144,7 @@ void CheckpointUploadManager::cleanAppliedS3ExternalFiles(std::set<String> && ap
     }
 }
 
+#if 1
 CheckpointUploadManager::DumpRemoteCheckpointResult
 CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions options)
 {
@@ -215,7 +229,7 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
         });
 
     writer->writePrefix();
-    bool has_new_data = writer->writeEditsAndApplyRemoteInfo(edit_from_mem);
+    bool has_new_data = writer->writeEditsAndApplyRemoteInfo(edit_from_mem, pre_locks_files);
     writer->writeSuffix();
 
     writer.reset();
@@ -269,6 +283,7 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
         .manifest_file = manifest_file,
     };
 }
+#endif
 
 
 } // namespace DB::PS::V3

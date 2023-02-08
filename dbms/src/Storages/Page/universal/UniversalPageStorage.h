@@ -17,7 +17,6 @@
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/DeltaMerge/Remote/DataStore/DataStore.h>
 #include <Storages/Page/Config.h>
 #include <Storages/Page/ExternalPageCallbacks.h>
 #include <Storages/Page/FileUsage.h>
@@ -199,8 +198,6 @@ public:
     PSDiskDelegatorPtr delegator; // Get paths for storing data
     PageStorageConfig config;
     FileProviderPtr file_provider;
-
-    DM::Remote::IDataStorePtr data_store;
 
     PS::V3::universal::PageDirectoryPtr page_directory;
     PS::V3::universal::BlobStorePtr blob_store;

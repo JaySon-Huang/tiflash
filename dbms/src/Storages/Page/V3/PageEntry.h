@@ -38,6 +38,15 @@ struct RemoteDataLocation
     uint64_t offset_in_file{0};
     uint64_t size_in_file{0};
 
+    RemoteDataLocation copyWithNewFilename(String && filename)
+    {
+        return RemoteDataLocation{
+            .data_file_id = std::make_shared<String>(filename),
+            .offset_in_file = offset_in_file,
+            .size_in_file = size_in_file,
+        };
+    }
+
     Remote::EntryDataLocation toRemote() const
     {
         Remote::EntryDataLocation remote_val;

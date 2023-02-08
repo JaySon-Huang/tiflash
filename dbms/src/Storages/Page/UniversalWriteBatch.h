@@ -85,7 +85,7 @@ public:
     {
         UniversalWriteBatch us_batch;
         const auto & writes = batch.getWrites();
-        auto & us_writes = us_batch.getWrites();
+        auto & us_writes = us_batch.getMutWrites();
         auto ns_id = batch.getNamespaceId();
         for (const auto & w : writes)
         {
@@ -166,7 +166,7 @@ public:
     {
         return writes;
     }
-    Writes & getWrites()
+    Writes & getMutWrites()
     {
         return writes;
     }

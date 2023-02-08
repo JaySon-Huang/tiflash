@@ -340,7 +340,10 @@ public:
 
     typename Trait::PageIds getLowerBound(const typename Trait::PageId & start);
 
-    void apply(typename Trait::PageEntriesEdit && edit, const WriteLimiterPtr & write_limiter = nullptr);
+    // Apply the edit into PageDirectory.
+    // If there are remote info along with the applied edit, this function will
+    // returns the remote filepaths.
+    std::unordered_set<String> apply(typename Trait::PageEntriesEdit && edit, const WriteLimiterPtr & write_limiter = nullptr);
 
     std::pair<typename Trait::GcEntriesMap, PageSize>
     getEntriesByBlobIds(const std::vector<BlobFileId> & blob_ids) const;

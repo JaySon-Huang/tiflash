@@ -61,7 +61,7 @@ public:
     // Note: Currently you cannot call write multiple times.
     // You must feed everything you want to write all at once.
     // But we definitely want to change it to some streaming thing.
-    void write(const Remote::ManifestFilePrefix & prefix, const typename PSDirTrait::PageEntriesEdit & edit, const std::set<String> & lock_files)
+    void write(const Remote::ManifestFilePrefix & prefix, const typename PSDirTrait::PageEntriesEdit & edit, const std::unordered_set<String> & lock_files)
     {
         RUNTIME_CHECK(!has_written);
         has_written = true;

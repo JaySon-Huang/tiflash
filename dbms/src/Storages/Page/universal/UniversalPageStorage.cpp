@@ -58,9 +58,7 @@ void UniversalPageStorage::restore()
     // TODO: only init storage->checkpoint_manager if need
     {
         UInt64 store_id = 0;
-        DM::Remote::DataStoreNFS::Config config{.base_directory = "/data1/jaysonhuang/cloud_native/"};
-        DM::Remote::IDataStorePtr data_store = std::make_shared<DM::Remote::DataStoreNFS>(config, FileProvider::createForTest());
-        checkpoint_manager = PS::V3::CheckpointUploadManager::createForDebug(store_id, page_directory, blob_store, data_store);
+        checkpoint_manager = PS::V3::CheckpointUploadManager::createForDebug(store_id, page_directory, blob_store);
     }
 }
 
@@ -73,9 +71,9 @@ void UniversalPageStorage::write(UniversalWriteBatch && write_batch, const Write
     SCOPE_EXIT({ GET_METRIC(tiflash_storage_page_write_duration_seconds, type_total).Observe(watch.elapsedSeconds()); });
     checkpoint_manager->createS3LockForWriteBatch(write_batch);
     auto edit = blob_store->write(write_batch, write_limiter);
-    page_directory->apply(std::move(edit), write_limiter);
-    // TODO: check the edit and remove the checkpoint_manager.pre_lock_files
-    // checkpoint_manager->cleanAppliedS3ExternalFiles(std::set<String> &&applied_s3files);
+    auto applied_s3files = page_directory->apply(std::move(edit), write_limiter);
+    // Remove the applied locks from checkpoint_manager.pre_lock_files
+    checkpoint_manager->cleanAppliedS3ExternalFiles(std::move(applied_s3files));
 }
 
 Page UniversalPageStorage::read(const UniversalPageId & page_id, const ReadLimiterPtr & read_limiter, SnapshotPtr snapshot, bool throw_on_not_exist)

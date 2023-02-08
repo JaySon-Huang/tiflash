@@ -96,30 +96,6 @@ public:
      */
     virtual IPreparedDMFileTokenPtr prepareDMFile(const DMFileOID & oid) = 0;
 
-
-    // Define the key format for S3 objects.
-    static String getDTFileRemoteFullPath(const DMFileOID & oid)
-    {
-        return fmt::format("s{}/stable/{}", oid.write_node_id, getDTFileWithTable(oid));
-    }
-
-    static String getDTFileLockRemoteFullPath(const DMFileOID & oid, const UInt64 lock_store_id, UInt64 lock_seq)
-    {
-        return fmt::format("s{}/lock/{}.lock_s{}_{}", oid.write_node_id, getDTFileWithTable(oid), lock_store_id, lock_seq);
-    }
-
-    static std::optional<DMFileOID> parseFromFullpath(const String & fullpath)
-    {
-        DMFileOID oid;
-        sscanf(fullpath.c_str(), "s%lu/stable/t_%ld/dmf_%lu", &oid.write_node_id, &oid.table_id, &oid.file_id);
-        return oid;
-    }
-
-private:
-    static String getDTFileWithTable(const DMFileOID & oid)
-    {
-        return fmt::format("t_{}/dmf_{}", oid.table_id, oid.file_id);
-    }
 };
 
 using IDataStorePtr = std::shared_ptr<IDataStore>;

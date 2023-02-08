@@ -87,7 +87,7 @@ public:
         data_writer->writeSuffix();
     }
 
-    bool /* has_new_data */ writeEditsAndApplyRemoteInfo(typename PSDirTrait::PageEntriesEdit & edit)
+    bool /* has_new_data */ writeEditsAndApplyRemoteInfo(typename PSDirTrait::PageEntriesEdit & edit, const std::unordered_set<String> & pre_lock_files)
     {
         LOG_DEBUG(log, "Begin writeEditsAndApplyRemoteInfo, edit_n={}", edit.size());
 
@@ -95,7 +95,11 @@ public:
         if (records.empty())
             return false;
 
+        // Copy the pre-defined lock files
+        std::unordered_set<String> lock_files(pre_lock_files);
+
         // 1. Iterate all edits, find these entry edits without the remote info.
+        //    And collect the lock files from applied entries.
         for (auto & rec_edit : records)
         {
             if (rec_edit.type == EditRecordType::VAR_EXTERNAL)
@@ -143,7 +147,6 @@ public:
 
 private:
     const Info info;
-    std::set<String> lock_files;
     const CheckpointDataFileWriterPtr<PSDirTrait> data_writer;
     const CheckpointManifestFileWriterPtr<PSDirTrait> manifest_writer;
     universal::BlobStorePtr blob_store;

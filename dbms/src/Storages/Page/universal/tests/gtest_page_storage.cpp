@@ -26,6 +26,7 @@
 #include "Storages/DeltaMerge/Remote/DataStore/DataStore.h"
 #include "Storages/DeltaMerge/Remote/ObjectId.h"
 #include "Storages/Page/V3/PageEntry.h"
+#include "Storages/S3Filename.h"
 
 namespace DB
 {
@@ -508,7 +509,7 @@ try
     const UInt64 tag = 0;
     {
         UniversalWriteBatch batch;
-        auto s3fullpath = DM::Remote::IDataStore::getDTFileRemoteFullPath(DM::Remote::DMFileOID{.write_node_id = store_id, .table_id = 100, .file_id = 1});
+        auto s3fullpath = S3::S3Filename::fromDMFileOID(DM::Remote::DMFileOID{.write_node_id = store_id, .table_id = 100, .file_id = 1}).toFullKey();
         V3::RemoteDataLocation location{.data_file_id = std::make_shared<String>(s3fullpath)};
         batch.putExternal("1", tag, location);
         page_storage->write(std::move(batch));

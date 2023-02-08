@@ -180,7 +180,7 @@ public:
     {
         return writes;
     }
-    Writes & getWrites()
+    Writes & getMutWrites()
     {
         return writes;
     }

@@ -1450,7 +1450,7 @@ typename Trait::PageIds PageDirectory<Trait>::getLowerBound(const typename Trait
 }
 
 template <typename Trait>
-void PageDirectory<Trait>::apply(typename Trait::PageEntriesEdit && edit, const WriteLimiterPtr & write_limiter)
+std::unordered_set<String> PageDirectory<Trait>::apply(typename Trait::PageEntriesEdit && edit, const WriteLimiterPtr & write_limiter)
 {
     // We need to make sure there is only one apply thread to write wal and then increase `sequence`.
     // Note that, as read threads use current `sequence` as read_seq, we cannot increase `sequence`
@@ -1483,6 +1483,7 @@ void PageDirectory<Trait>::apply(typename Trait::PageEntriesEdit && edit, const 
     watch.restart();
     SCOPE_EXIT({ GET_METRIC(tiflash_storage_page_write_duration_seconds, type_commit).Observe(watch.elapsedSeconds()); });
 
+    std::unordered_set<String> applied_s3files;
     {
         std::unique_lock table_lock(table_rw_mutex);
 
@@ -1530,6 +1531,11 @@ void PageDirectory<Trait>::apply(typename Trait::PageEntriesEdit && edit, const 
                 case EditRecordType::VAR_REF:
                     throw Exception(fmt::format("should not handle edit with invalid type [type={}]", magic_enum::enum_name(r.type)));
                 }
+                // collect the applied remote filepaths
+                if (r.entry.remote_info)
+                {
+                    applied_s3files.emplace(*r.entry.remote_info->data_location.data_file_id);
+                }
             }
             catch (DB::Exception & e)
             {
@@ -1541,6 +1547,7 @@ void PageDirectory<Trait>::apply(typename Trait::PageEntriesEdit && edit, const 
         // stage 3, the edit committed, incr the sequence number to publish changes for `createSnapshot`
         sequence.fetch_add(edit_size);
     }
+    return applied_s3files;
 }
 
 template <typename Trait>
