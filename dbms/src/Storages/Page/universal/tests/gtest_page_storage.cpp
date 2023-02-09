@@ -13,20 +13,19 @@
 // limitations under the License.
 
 #include <IO/ReadBufferFromFile.h>
+#include <Storages/DeltaMerge/Remote/DataStore/DataStore.h>
+#include <Storages/DeltaMerge/Remote/ObjectId.h>
 #include <Storages/Page/PageStorage.h>
 #include <Storages/Page/UniversalWriteBatch.h>
+#include <Storages/Page/V3/PageEntry.h>
 #include <Storages/Page/V3/Remote/CheckpointFilesWriter.h>
 #include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
 #include <Storages/Page/V3/Remote/CheckpointPageManager.h>
 #include <Storages/Page/universal/Readers.h>
 #include <Storages/Page/universal/UniversalPageStorage.h>
+#include <Storages/S3Filename.h>
 #include <Storages/tests/TiFlashStorageTestBasic.h>
 #include <TestUtils/MockDiskDelegator.h>
-
-#include "Storages/DeltaMerge/Remote/DataStore/DataStore.h"
-#include "Storages/DeltaMerge/Remote/ObjectId.h"
-#include "Storages/Page/V3/PageEntry.h"
-#include "Storages/S3Filename.h"
 
 namespace DB
 {

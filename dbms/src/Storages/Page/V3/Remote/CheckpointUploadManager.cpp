@@ -70,7 +70,7 @@ bool CheckpointUploadManager::createS3LockForWriteBatch(UniversalWriteBatch & wr
             // apply a put/put external that is actually stored in S3 instead of local
             if (!w.remote)
                 continue;
-            auto res = S3::parseFromS3Key(*w.remote->data_file_id);
+            auto res = S3::S3FilenameView::fromKey(*w.remote->data_file_id);
             if (!res.isDataFile())
                 continue;
             auto create_res = createS3Lock(res, store_id);

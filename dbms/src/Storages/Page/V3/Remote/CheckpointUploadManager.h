@@ -4,7 +4,6 @@
 #include <Storages/Page/V3/BlobStore.h>
 #include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Page/V3/Remote/Proto/common.pb.h>
-#include <Storages/S3Filename.h>
 #include <common/types.h>
 
 #include <condition_variable>
@@ -12,7 +11,11 @@
 namespace DB
 {
 class Context;
+namespace S3
+{
+struct S3FilenameView;
 }
+} // namespace DB
 
 namespace DB::PS::V3
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/nocopyable.h>
+#include <Core/Types.h>
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
@@ -53,5 +54,16 @@ void uploadFile(const Aws::S3::S3Client & client, const String & bucket, const S
 
 void downloadFile(const Aws::S3::S3Client & client, const String & bucket, const String & local_fname, const String & remote_fname);
 
-std::unordered_map<String, size_t> listPrefix(const Aws::S3::S3Client & client, const String & bucket, const String & prefix);
+Strings listPrefix(const Aws::S3::S3Client & client, const String & bucket, const String & prefix);
+
+std::unordered_map<String, size_t> listPrefixWithSize(const Aws::S3::S3Client & client, const String & bucket, const String & prefix);
+
+
+std::pair<bool, Aws::Utils::DateTime> tryGetObjectModifiedTime(
+    const Aws::S3::S3Client & client,
+    const String & bucket,
+    const String & key);
+
+void deleteObject(const Aws::S3::S3Client & client, const String & bucket, const String & key);
+
 } // namespace DB::S3
