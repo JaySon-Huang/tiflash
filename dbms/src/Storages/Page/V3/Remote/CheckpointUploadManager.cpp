@@ -199,8 +199,8 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
 
     // TODO: Check temp file exists.
     UInt64 upload_sequence;
-    String data_file_name;
-    String manifest_file_name;
+    Strings data_file_keys;
+    String manifest_file_key;
     String local_manifest_file_path_temp;
     {
         // Acquire as read lock, so that it won't block other thread from
@@ -208,13 +208,11 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
         std::shared_lock manifest_lock(mtx_checkpoint_manifest);
         upload_sequence = last_upload_sequence + 1;
 
-        data_file_name = S3::S3Filename::newCheckpointData(options.writer_info->store_id(), upload_sequence, 0).toFullKey();
-        // Always append a suffix, in case of remote_directory == temp_directory
-        auto local_data_file_path_temp = options.temp_directory + data_file_name + ".tmp";
+        data_file_keys.push_back(S3::S3Filename::newCheckpointData(options.writer_info->store_id(), upload_sequence, 0).toFullKey());
+        auto local_data_file_path_temp = options.temp_directory + data_file_keys[0] + ".tmp";
 
-        manifest_file_name = S3::S3Filename::newCheckpointManifest(options.writer_info->store_id(), upload_sequence).toFullKey();
-        // Always append a suffix, in case of remote_directory == temp_directory
-        local_manifest_file_path_temp = options.temp_directory + manifest_file_name + ".tmp";
+        manifest_file_key = S3::S3Filename::newCheckpointManifest(options.writer_info->store_id(), upload_sequence).toFullKey();
+        local_manifest_file_path_temp = options.temp_directory + manifest_file_key + ".tmp";
 
         Poco::File(Poco::Path(local_data_file_path_temp).parent()).createDirectories();
         Poco::File(Poco::Path(local_manifest_file_path_temp).parent()).createDirectories();
@@ -225,12 +223,12 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
         auto data_writer = CheckpointDataFileWriter<Trait>::create(
             typename CheckpointDataFileWriter<Trait>::Options{
                 .file_path = local_data_file_path_temp,
-                .file_id = data_file_name,
+                .file_id = data_file_keys[0],
             });
         auto manifest_writer = CheckpointManifestFileWriter<Trait>::create(
             typename CheckpointManifestFileWriter<Trait>::Options{
                 .file_path = local_manifest_file_path_temp,
-                .file_id = manifest_file_name,
+                .file_id = manifest_file_key,
             });
         auto writer = CheckpointFilesWriter<Trait>::create(
             typename CheckpointFilesWriter<Trait>::Options{
@@ -260,28 +258,35 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
             page_directory->copyRemoteInfoFromEdit(edit_from_mem, /* allow_missing */ true);
         }
 
-        if (has_new_data)
+        if (!has_new_data)
         {
-            details::uploadFileToS3(local_data_file_path_temp, data_file_name);
+            data_file_keys.clear();
+        }
+        else
+        {
+            for (const auto & k : data_file_keys)
+            {
+                details::uploadFileToS3(local_data_file_path_temp, k);
+            }
         }
     }
 
     {
         // Acquire write lock to ensure all locks with the same upload_sequence are uploaded
         std::unique_lock manifest_lock(mtx_checkpoint_manifest);
-        details::uploadFileToS3(local_manifest_file_path_temp, manifest_file_name);
+        details::uploadFileToS3(local_manifest_file_path_temp, manifest_file_key);
+
+        // Move forward
+        last_upload_sequence = upload_sequence;
+        last_checkpoint_sequence = snap->sequence;
     }
+    LOG_DEBUG(log, "Upload checkpoint done, last_upload_sequence={}, last_checkpoint_sequence={}", last_upload_sequence, last_checkpoint_sequence);
 
     // TODO: Remove the local temp files after uploaded
 
-    // Move forward
-    last_upload_sequence = upload_sequence;
-    last_checkpoint_sequence = snap->sequence;
-    LOG_DEBUG(log, "Upload checkpoint done, last_upload_sequence={}, last_checkpoint_sequence={}", last_upload_sequence, last_checkpoint_sequence);
-
     return DumpRemoteCheckpointResult{
-        .data_file = {data_file_name}, // Note: when has_new_data == false, this field will be pointing to a file not exist. To be fixed.
-        .manifest_file = manifest_file_name,
+        .data_file = std::move(data_file_keys),
+        .manifest_file = std::move(manifest_file_key),
     };
 }
 #else
