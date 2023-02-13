@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Common/Exception.h>
-#include <Storages/S3Filename.h>
+#include <Storages/S3/S3Filename.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 
@@ -58,28 +58,40 @@ String S3Filename::toFullKey() const
 
 S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)
 {
-    const static re2::RE2 rgx_data_file("^s([0-9]+)/(stable|data|lock|manifest)/(.+)(\\.lock_[0-9]+_[0-9]+)?$");
+    const static re2::RE2 rgx_data_file("^s([0-9]+)/(stable|data|lock|manifest)/(.+)$");
     S3FilenameView res{.type = S3FilenameType::Invalid};
     re2::StringPiece fullpath_sp{fullpath.data(), fullpath.size()};
-    re2::StringPiece type_view, data_filepath, lock_suffix;
-    if (!re2::RE2::FullMatch(fullpath_sp, rgx_data_file, &res.store_id, &type_view, &data_filepath, &lock_suffix))
+    re2::StringPiece type_view, data_filepath;
+    if (!re2::RE2::FullMatch(fullpath_sp, rgx_data_file, &res.store_id, &type_view, &data_filepath))
         return res;
 
-    if (type_view == "stable")
+    if (type_view == "manifest")
+        res.type = S3FilenameType::CheckpointManifest;
+    else if (type_view == "stable")
         res.type = S3FilenameType::StableFile;
     else if (type_view == "data")
         res.type = S3FilenameType::CheckpointDataFile;
     else if (type_view == "lock")
     {
+        const auto lock_start_npos = data_filepath.find(".lock_");
+        if (lock_start_npos == re2::StringPiece::npos)
+        {
+            res.type = S3FilenameType::Invalid;
+            return res;
+        }
         if (data_filepath.starts_with("t_"))
             res.type = S3FilenameType::LockFileToStableFile;
-        if (data_filepath.starts_with("dat_"))
+        else if (data_filepath.starts_with("dat_"))
             res.type = S3FilenameType::LockFileToCheckpointData;
+        else
+        {
+            res.type = S3FilenameType::Invalid;
+            return res;
+        }
+        res.lock_suffix = std::string_view(data_filepath.begin() + lock_start_npos, data_filepath.size() - lock_start_npos);
+        data_filepath.remove_suffix(res.lock_suffix.size());
     }
-    else if (type_view == "manifest")
-        res.type = S3FilenameType::CheckpointManifest;
     res.path = std::string_view(data_filepath.data(), data_filepath.size());
-    res.lock_suffix = std::string_view(lock_suffix.data(), lock_suffix.size());
     return res;
 }
 
@@ -108,9 +120,9 @@ String S3FilenameView::getDelMarkKey() const
     switch (type)
     {
     case S3FilenameType::StableFile:
-        return fmt::format("s{}/stable/{}.del");
+        return fmt::format("s{}/stable/{}.del", store_id, path);
     case S3FilenameType::CheckpointDataFile:
-        return fmt::format("s{}/data/{}.del");
+        return fmt::format("s{}/data/{}.del", store_id, path);
     default:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport type: {}", magic_enum::enum_name(type));
     }

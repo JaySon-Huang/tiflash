@@ -23,7 +23,7 @@
 #include <Storages/Page/V3/Remote/CheckpointPageManager.h>
 #include <Storages/Page/universal/Readers.h>
 #include <Storages/Page/universal/UniversalPageStorage.h>
-#include <Storages/S3Filename.h>
+#include <Storages/S3/S3Filename.h>
 #include <Storages/tests/TiFlashStorageTestBasic.h>
 #include <TestUtils/MockDiskDelegator.h>
 

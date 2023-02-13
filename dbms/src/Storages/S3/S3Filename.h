@@ -25,9 +25,9 @@ namespace DB::S3
 enum class S3FilenameType
 {
     Invalid,
+    CheckpointManifest,
     StableFile,
     CheckpointDataFile,
-    CheckpointManifest,
     LockFileToStableFile,
     LockFileToCheckpointData,
     StorePrefix,

@@ -17,8 +17,8 @@
 #include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
 #include <Storages/S3/S3Common.h>
-#include <Storages/S3Filename.h>
-#include <Storages/S3GCManager.h>
+#include <Storages/S3/S3Filename.h>
+#include <Storages/S3/S3GCManager.h>
 #include <TestUtils/MockS3Client.h>
 #include <aws/core/utils/DateTime.h>
 #include <aws/s3/S3Client.h>

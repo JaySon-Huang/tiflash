@@ -1,6 +1,9 @@
 
-#include <Storages/S3Filename.h>
+#include <Storages/DeltaMerge/Remote/ObjectId.h>
+#include <Storages/S3/S3Filename.h>
 #include <gtest/gtest.h>
+
+#include <magic_enum.hpp>
 
 namespace DB::S3::tests
 {
@@ -10,7 +13,7 @@ TEST(S3FilenameTest, Manifest)
     UInt64 test_seq = 20;
     String fullkey = "s1027/manifest/mf_20";
     auto check = [&](const S3FilenameView & view) {
-        ASSERT_EQ(view.type, S3FilenameType::CheckpointManifest);
+        ASSERT_EQ(view.type, S3FilenameType::CheckpointManifest) << magic_enum::enum_name(view.type);
         ASSERT_EQ(view.store_id, test_store_id);
         ASSERT_EQ(view.path, "mf_20");
 
@@ -39,7 +42,7 @@ TEST(S3FilenameTest, CheckpointDataFile)
     UInt64 test_file_idx = 1;
     String fullkey = "s2077/data/dat_99_1";
     auto check = [&](const S3FilenameView & view) {
-        ASSERT_EQ(view.type, S3FilenameType::CheckpointDataFile);
+        ASSERT_EQ(view.type, S3FilenameType::CheckpointDataFile) << magic_enum::enum_name(view.type);
         ASSERT_EQ(view.store_id, test_store_id);
         ASSERT_EQ(view.path, "dat_99_1");
 
@@ -51,6 +54,19 @@ TEST(S3FilenameTest, CheckpointDataFile)
         ASSERT_EQ(view.getUploadSequence(), test_seq);
 
         ASSERT_FALSE(view.isLockFile());
+
+        // test lockkey for checkpoint data file
+        const auto lockkey = view.getLockKey(1234, 50);
+        const auto lock_view = S3FilenameView::fromKey(lockkey);
+        ASSERT_EQ(lock_view.type, S3FilenameType::LockFileToCheckpointData) << magic_enum::enum_name(view.type);
+        ASSERT_EQ(lock_view.store_id, test_store_id);
+        ASSERT_EQ(String(lock_view.path), "dat_99_1");
+
+        ASSERT_FALSE(lock_view.isDataFile());
+        ASSERT_TRUE(lock_view.isLockFile());
+        const auto lock_info = lock_view.getLockInfo();
+        ASSERT_EQ(lock_info.store_id, 1234);
+        ASSERT_EQ(lock_info.sequence, 50);
     };
 
     auto view = S3FilenameView::fromKey(fullkey);
@@ -66,7 +82,7 @@ TEST(S3FilenameTest, StableFile)
     UInt64 test_store_id = 2077;
     String fullkey = "s2077/stable/t_44/dmf_57";
     auto check = [&](const S3FilenameView & view) {
-        ASSERT_EQ(view.type, S3FilenameType::StableFile);
+        ASSERT_EQ(view.type, S3FilenameType::StableFile) << magic_enum::enum_name(view.type);
         ASSERT_EQ(view.store_id, test_store_id);
         ASSERT_EQ(view.path, "t_44/dmf_57");
 
@@ -77,8 +93,26 @@ TEST(S3FilenameTest, StableFile)
         ASSERT_EQ(view.getDelMarkKey(), "s2077/stable/t_44/dmf_57.del");
 
         ASSERT_FALSE(view.isLockFile());
+
+        // test lockkey for stable file
+        const auto lockkey = view.getLockKey(1234, 50);
+        const auto lock_view = S3FilenameView::fromKey(lockkey);
+        ASSERT_EQ(lock_view.type, S3FilenameType::LockFileToStableFile) << magic_enum::enum_name(view.type);
+        ASSERT_EQ(lock_view.store_id, test_store_id);
+        ASSERT_EQ(String(lock_view.path), "t_44/dmf_57");
+
+        ASSERT_FALSE(lock_view.isDataFile());
+        ASSERT_TRUE(lock_view.isLockFile());
+        const auto lock_info = lock_view.getLockInfo();
+        ASSERT_EQ(lock_info.store_id, 1234);
+        ASSERT_EQ(lock_info.sequence, 50);
     };
     auto view = S3FilenameView::fromKey(fullkey);
     check(view);
+
+    DM::Remote::DMFileOID oid{.write_node_id = test_store_id, .table_id = 44, .file_id = 57};
+    auto r = S3Filename::fromDMFileOID(oid);
+    ASSERT_EQ(r.toFullKey(), fullkey);
+    check(r.toView());
 }
 } // namespace DB::S3::tests
