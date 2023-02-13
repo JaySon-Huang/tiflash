@@ -87,6 +87,8 @@ struct S3Filename
 
     String toFullKey() const;
 
+    String toManifestPrefix() const;
+
     S3FilenameView toView() const
     {
         return S3FilenameView{

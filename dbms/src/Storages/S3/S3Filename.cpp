@@ -38,7 +38,7 @@ String toFullKey(const S3FilenameType type, const UInt64 store_id, const std::st
     case S3FilenameType::CheckpointManifest:
         return fmt::format("s{}/manifest/{}", store_id, path);
     case S3FilenameType::StorePrefix:
-        return fmt::format("s{}/");
+        return fmt::format("s{}/", store_id);
     default:
         throw Exception(fmt::format("Not support type! type={}", magic_enum::enum_name(type)));
     }
@@ -54,6 +54,12 @@ String S3FilenameView::toFullKey() const
 String S3Filename::toFullKey() const
 {
     return details::toFullKey(type, store_id, path);
+}
+
+String S3Filename::toManifestPrefix() const
+{
+    RUNTIME_CHECK(type == S3FilenameType::StorePrefix);
+    return details::toFullKey(type, store_id, path) + "manifest/";
 }
 
 S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)

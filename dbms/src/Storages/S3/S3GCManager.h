@@ -31,10 +31,14 @@ struct S3FilenameView;
 class S3GCManager
 {
 public:
+    S3GCManager();
+
     void runOnAllStores();
 
 private:
     void runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids);
+
+    std::unordered_set<String> getValidLocksFromManifest(const String & manifest_key);
 
     void cleanExpiredFilesOnPrefix(
         UInt64 gc_store_id,
@@ -44,9 +48,11 @@ private:
 
     void tryCleanExpiredDataFile(const String & lock_key, const S3FilenameView & lock_filename_view);
 
+    String getTemporaryDownloadFile(String s3_key);
+
 private:
     std::shared_ptr<Aws::S3::S3Client> client;
 
-    Logger log;
+    LoggerPtr log;
 };
 } // namespace DB::S3

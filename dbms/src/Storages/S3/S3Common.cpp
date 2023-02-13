@@ -271,7 +271,7 @@ Strings listPrefix(const Aws::S3::S3Client & client, const String & bucket, cons
 
     // TODO: handle the result size over max size
     const auto & result = outcome.GetResult();
-    RUNTIME_CHECK(result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
+    RUNTIME_CHECK(!result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
 
     const auto & objects = outcome.GetResult().GetContents();
     Strings keys;
@@ -303,7 +303,7 @@ std::unordered_map<String, size_t> listPrefixWithSize(const Aws::S3::S3Client & 
 
     // TODO: handle the result size over max size
     const auto & result = outcome.GetResult();
-    RUNTIME_CHECK(result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
+    RUNTIME_CHECK(!result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
 
     const auto & objects = result.GetContents();
     std::unordered_map<String, size_t> keys_with_size;

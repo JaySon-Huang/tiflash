@@ -122,11 +122,13 @@ TEST(S3FilenameTest, StorePrefix)
         auto r = S3FilenameView::fromStoreKeyPrefix("s5/");
         ASSERT_EQ(r.type, S3FilenameType::StorePrefix);
         ASSERT_EQ(r.store_id, 5);
+        ASSERT_EQ(r.toFullKey(), "s5/");
     }
     {
         auto r = S3FilenameView::fromStoreKeyPrefix("s1024/");
         ASSERT_EQ(r.type, S3FilenameType::StorePrefix);
         ASSERT_EQ(r.store_id, 1024);
+        ASSERT_EQ(r.toFullKey(), "s1024/");
     }
 }
 
