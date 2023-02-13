@@ -115,4 +115,19 @@ TEST(S3FilenameTest, StableFile)
     ASSERT_EQ(r.toFullKey(), fullkey);
     check(r.toView());
 }
+
+TEST(S3FilenameTest, StorePrefix)
+{
+    {
+        auto r = S3FilenameView::fromStoreKeyPrefix("s5/");
+        ASSERT_EQ(r.type, S3FilenameType::StorePrefix);
+        ASSERT_EQ(r.store_id, 5);
+    }
+    {
+        auto r = S3FilenameView::fromStoreKeyPrefix("s1024/");
+        ASSERT_EQ(r.type, S3FilenameType::StorePrefix);
+        ASSERT_EQ(r.store_id, 1024);
+    }
+}
+
 } // namespace DB::S3::tests
