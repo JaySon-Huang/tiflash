@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <Common/Logger.h>
+#include <Core/Types.h>
 #include <common/types.h>
 
 #include <memory>
@@ -24,6 +24,11 @@ namespace Aws::S3
 {
 class S3Client;
 }
+namespace DB
+{
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
+} // namespace DB
 namespace DB::S3
 {
 struct S3FilenameView;
@@ -38,8 +43,6 @@ public:
 private:
     void runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids);
 
-    std::unordered_set<String> getValidLocksFromManifest(const String & manifest_key);
-
     void cleanExpiredFilesOnPrefix(
         UInt64 gc_store_id,
         String scan_prefix,
@@ -47,6 +50,21 @@ private:
         const std::unordered_set<String> & valid_lock_files);
 
     void tryCleanExpiredDataFile(const String & lock_key, const S3FilenameView & lock_filename_view);
+
+    std::vector<UInt64> getAllStoreIds() const;
+
+    struct ManifestListResult
+    {
+        Strings all_manifest;
+        const std::string_view latest_manifest;
+        const UInt64 latest_upload_seq;
+    };
+
+    ManifestListResult listManifest(UInt64 store_id);
+
+    std::unordered_set<String> getValidLocksFromManifest(const String & manifest_key);
+
+    void removeOutdatedManifest(const ManifestListResult & manifests);
 
     String getTemporaryDownloadFile(String s3_key);
 
