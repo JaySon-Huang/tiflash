@@ -25,6 +25,7 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/CommonPrefix.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/ListObjectsV2Result.h>
 #include <common/logger_useful.h>
 
 #include <thread>
@@ -73,7 +74,7 @@ void S3GCManager::runForStore(UInt64 gc_store_id, const std::vector<UInt64> & al
 
     LOG_INFO(log, "The latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
     // Parse from the latest manifest and collect valid lock files
-    // const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(latest_manifest);
+    // TODO: const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(latest_manifest);
     const std::unordered_set<String> valid_lock_files;
 
     for (const auto & store_id : all_store_ids)
@@ -101,27 +102,31 @@ void S3GCManager::cleanExpiredFilesOnPrefix(
     const std::unordered_set<String> & valid_lock_files)
 {
     // List the lock files under this prefix
-    const Strings lock_keys = listPrefix(*client, BUCKET_NAME, scan_prefix);
-    for (const auto & lock_key : lock_keys)
-    {
-        LOG_TRACE(log, "lock_key={}", lock_key);
-        const auto lock_filename_view = S3FilenameView::fromKey(lock_key);
-        RUNTIME_CHECK(lock_filename_view.isLockFile(), lock_key);
-        const auto lock_info = lock_filename_view.getLockInfo();
-        // The lock file is not managed by `gc_store_id`, skip
-        if (lock_info.store_id != gc_store_id)
-            continue;
-        // The lock is not managed by the latest manifest yet, wait for
-        // next GC round
-        if (lock_info.sequence > safe_sequence)
-            continue;
-        // The lock is still valid
-        if (valid_lock_files.count(lock_key) > 0)
-            continue;
+    listPrefix(*client, BUCKET_NAME, scan_prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const auto & objects = result.GetContents();
+        for (const auto & object : objects)
+        {
+            const auto & lock_key = object.GetKey();
+            LOG_TRACE(log, "lock_key={}", lock_key);
+            const auto lock_filename_view = S3FilenameView::fromKey(lock_key);
+            RUNTIME_CHECK(lock_filename_view.isLockFile(), lock_key);
+            const auto lock_info = lock_filename_view.getLockInfo();
+            // The lock file is not managed by `gc_store_id`, skip
+            if (lock_info.store_id != gc_store_id)
+                continue;
+            // The lock is not managed by the latest manifest yet, wait for
+            // next GC round
+            if (lock_info.sequence > safe_sequence)
+                continue;
+            // The lock is still valid
+            if (valid_lock_files.count(lock_key) > 0)
+                continue;
 
-        // The data file is not used by `gc_store_id` anymore, remove the lock file
-        tryCleanExpiredDataFile(lock_key, lock_filename_view);
-    }
+            // The data file is not used by `gc_store_id` anymore, remove the lock file
+            tryCleanExpiredDataFile(lock_key, lock_filename_view);
+        }
+        return objects.size();
+    });
 }
 
 void S3GCManager::tryCleanExpiredDataFile(const String & lock_key, const S3FilenameView & lock_filename_view)
@@ -158,49 +163,53 @@ void S3GCManager::tryCleanExpiredDataFile(const String & lock_key, const S3Filen
 
 std::vector<UInt64> S3GCManager::getAllStoreIds() const
 {
+    std::vector<UInt64> all_store_ids;
     // The store key are "s${store_id}/", we need setting delimiter "/" to get the
     // common prefixes result.
-    Aws::S3::Model::ListObjectsV2Request req;
-    req.SetBucket(BUCKET_NAME);
-    req.WithPrefix("s").WithDelimiter("/");
-    auto outcome = client->ListObjectsV2(req);
-    RUNTIME_CHECK(outcome.IsSuccess(), outcome.GetError().GetMessage());
-
-    // TODO: handle the result size over max size
-    const auto & result = outcome.GetResult();
-    RUNTIME_CHECK(!result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
-
-    Aws::Vector<Aws::S3::Model::CommonPrefix> prefixes = result.GetCommonPrefixes();
-
-    std::vector<UInt64> all_store_ids;
-    for (const auto & prefix : prefixes)
-    {
-        const auto filename_view = S3FilenameView::fromStoreKeyPrefix(prefix.GetPrefix());
-        RUNTIME_CHECK(filename_view.type == S3FilenameType::StorePrefix, prefix.GetPrefix());
-        all_store_ids.emplace_back(filename_view.store_id);
-    }
+    // Reference: https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-prefixes.html
+    listPrefix(*client, BUCKET_NAME, "s", "/", [&all_store_ids](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const Aws::Vector<Aws::S3::Model::CommonPrefix> & prefixes = result.GetCommonPrefixes();
+        for (const auto & prefix : prefixes)
+        {
+            const auto filename_view = S3FilenameView::fromStoreKeyPrefix(prefix.GetPrefix());
+            RUNTIME_CHECK(filename_view.type == S3FilenameType::StorePrefix, prefix.GetPrefix());
+            all_store_ids.emplace_back(filename_view.store_id);
+        }
+        return prefixes.size();
+    });
 
     return all_store_ids;
 }
 
 S3GCManager::ManifestListResult S3GCManager::listManifest(UInt64 store_id)
 {
-    const auto store_prefix = S3Filename::fromStoreId(store_id).toManifestPrefix();
-    Strings all_manifest = listPrefix(*client, BUCKET_NAME, store_prefix);
+    Strings all_manifest;
     std::string_view latest_manifest;
     UInt64 latest_upload_seq = 0;
-    for (const auto & mf_key : all_manifest)
-    {
-        LOG_TRACE(log, "mf_key={}", mf_key);
-        const auto filename_view = S3FilenameView::fromKey(mf_key);
-        RUNTIME_CHECK(filename_view.type == S3FilenameType::CheckpointManifest, mf_key);
-        auto upload_seq = filename_view.getUploadSequence();
-        if (upload_seq > latest_upload_seq)
+
+    const auto store_prefix = S3Filename::fromStoreId(store_id).toManifestPrefix();
+
+    listPrefix(*client, BUCKET_NAME, store_prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const auto & objects = result.GetContents();
+        all_manifest.reserve(all_manifest.size() + objects.size());
+        for (const auto & object : objects)
         {
-            latest_upload_seq = upload_seq;
-            latest_manifest = mf_key;
+            const auto & mf_key = object.GetKey();
+            LOG_TRACE(log, "mf_key={}", mf_key);
+            const auto filename_view = S3FilenameView::fromKey(mf_key);
+            RUNTIME_CHECK(filename_view.type == S3FilenameType::CheckpointManifest, mf_key);
+            // TODO: also store the object.GetLastModified() for removing
+            // outdated manifest objects
+            all_manifest.emplace_back(mf_key);
+            auto upload_seq = filename_view.getUploadSequence();
+            if (upload_seq > latest_upload_seq)
+            {
+                latest_upload_seq = upload_seq;
+                latest_manifest = mf_key;
+            }
         }
-    }
+        return objects.size();
+    });
     return ManifestListResult{
         .all_manifest = std::move(all_manifest),
         .latest_manifest = std::move(latest_manifest),
@@ -216,6 +225,7 @@ void S3GCManager::removeOutdatedManifest(const ManifestListResult & manifests)
 
 String S3GCManager::getTemporaryDownloadFile(String s3_key)
 {
+    UNUSED(this);
     std::replace(s3_key.begin(), s3_key.end(), '/', '_');
     return fmt::format("/tmp/{}_{}", s3_key, std::hash<std::thread::id>()(std::this_thread::get_id()));
 }

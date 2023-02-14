@@ -253,67 +253,67 @@ void downloadFile(const Aws::S3::S3Client & client, const String & bucket, const
     LOG_DEBUG(log, "local_fname={}, remote_fname={}, cost={}ms", local_fname, remote_fname, sw.elapsedMilliseconds());
 }
 
-Strings listPrefix(const Aws::S3::S3Client & client, const String & bucket, const String & prefix)
+void listPrefix(
+    const Aws::S3::S3Client & client,
+    const String & bucket,
+    const String & prefix,
+    const String & delimiter,
+    std::function<size_t(const Aws::S3::Model::ListObjectsV2Result & result)> pager)
 {
     Stopwatch sw;
     Aws::S3::Model::ListObjectsV2Request req;
-    req.SetBucket(bucket);
-    req.SetPrefix(prefix);
-    auto outcome = client.ListObjectsV2(req);
-    if (!outcome.IsSuccess())
+    req.WithBucket(bucket).WithPrefix(prefix);
+    if (!delimiter.empty())
     {
-        throw Exception(ErrorCodes::S3_ERROR,
-                        "S3 ListObjects failed, prefix={}, exception={}, message={}",
-                        prefix,
-                        outcome.GetError().GetExceptionName(),
-                        outcome.GetError().GetMessage());
+        req.SetDelimiter(delimiter);
     }
 
-    // TODO: handle the result size over max size
-    const auto & result = outcome.GetResult();
-    RUNTIME_CHECK(!result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
+    static auto log = Logger::get("S3ListPrefix");
 
-    const auto & objects = outcome.GetResult().GetContents();
-    Strings keys;
-    keys.reserve(objects.size());
-    for (const auto & object : objects)
+    bool done = false;
+    size_t num_keys = 0;
+    while (!done)
     {
-        keys.emplace_back(object.GetKey());
+        auto outcome = client.ListObjectsV2(req);
+        if (!outcome.IsSuccess())
+        {
+            throw Exception(ErrorCodes::S3_ERROR,
+                            "S3 ListObjects failed, prefix={}, exception={}, message={}",
+                            prefix,
+                            outcome.GetError().GetExceptionName(),
+                            outcome.GetError().GetMessage());
+        }
+
+        const auto & result = outcome.GetResult();
+        size_t page_nkeys = pager(result);
+        num_keys += page_nkeys;
+
+        // handle the result size over max size
+        done = !result.GetIsTruncated();
+        if (!done)
+        {
+            const auto & next_token = result.GetNextContinuationToken();
+            req.SetContinuationToken(next_token);
+            LOG_DEBUG(log, "prefix={}, keys={}, total_keys={}, next_token={}", prefix, page_nkeys, num_keys, next_token);
+        }
     }
-    static auto * log = &Poco::Logger::get("S3ListPrefix");
-    LOG_DEBUG(log, "prefix={}, keys={}, cost={}", prefix, keys.size(), sw.elapsedMilliseconds());
-    return keys;
+
+    LOG_DEBUG(log, "prefix={}, total_keys={}, cost={}", prefix, num_keys, sw.elapsedMilliseconds());
 }
 
 std::unordered_map<String, size_t> listPrefixWithSize(const Aws::S3::S3Client & client, const String & bucket, const String & prefix)
 {
-    Stopwatch sw;
-    Aws::S3::Model::ListObjectsV2Request req;
-    req.SetBucket(bucket);
-    req.SetPrefix(prefix);
-    auto outcome = client.ListObjectsV2(req);
-    if (!outcome.IsSuccess())
-    {
-        throw Exception(ErrorCodes::S3_ERROR,
-                        "S3 ListObjects failed, prefix={}, exception={}, message={}",
-                        prefix,
-                        outcome.GetError().GetExceptionName(),
-                        outcome.GetError().GetMessage());
-    }
-
-    // TODO: handle the result size over max size
-    const auto & result = outcome.GetResult();
-    RUNTIME_CHECK(!result.GetIsTruncated(), result.GetIsTruncated(), result.GetNextContinuationToken());
-
-    const auto & objects = result.GetContents();
     std::unordered_map<String, size_t> keys_with_size;
-    keys_with_size.reserve(objects.size());
-    for (const auto & object : objects)
-    {
-        keys_with_size.emplace(object.GetKey().substr(prefix.size()), object.GetSize()); // Cut prefix
-    }
-    static auto * log = &Poco::Logger::get("S3ListPrefix");
-    LOG_DEBUG(log, "prefix={}, keys={}, cost={}", prefix, keys_with_size, sw.elapsedMilliseconds());
+    listPrefix(client, bucket, prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const auto & objects = result.GetContents();
+        keys_with_size.reserve(keys_with_size.size() + objects.size());
+        for (const auto & object : objects)
+        {
+            keys_with_size.emplace(object.GetKey().substr(prefix.size()), object.GetSize()); // Cut prefix
+        }
+        return objects.size();
+    });
+
     return keys_with_size;
 }
 

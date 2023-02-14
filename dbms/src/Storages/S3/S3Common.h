@@ -54,7 +54,12 @@ void uploadFile(const Aws::S3::S3Client & client, const String & bucket, const S
 
 void downloadFile(const Aws::S3::S3Client & client, const String & bucket, const String & local_fname, const String & remote_fname);
 
-Strings listPrefix(const Aws::S3::S3Client & client, const String & bucket, const String & prefix);
+void listPrefix(
+    const Aws::S3::S3Client & client,
+    const String & bucket,
+    const String & prefix,
+    const String & delimiter,
+    std::function<size_t(const Aws::S3::Model::ListObjectsV2Result & result)> pager);
 
 std::unordered_map<String, size_t> listPrefixWithSize(const Aws::S3::S3Client & client, const String & bucket, const String & prefix);
 
