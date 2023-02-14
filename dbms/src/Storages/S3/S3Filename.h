@@ -30,6 +30,8 @@ enum class S3FilenameType
     CheckpointDataFile,
     LockFileToStableFile,
     LockFileToCheckpointData,
+    DelMarkToStableFile,
+    DelMarkToCheckpointData,
     StorePrefix,
 };
 
@@ -65,6 +67,8 @@ struct S3FilenameView
     };
     LockInfo getLockInfo() const;
     S3FilenameView asDataFile() const;
+
+    bool isDelMark() const { return type == S3FilenameType::DelMarkToStableFile || type == S3FilenameType::DelMarkToCheckpointData; }
 
 public:
     // The result return a view from the `fullpath`.

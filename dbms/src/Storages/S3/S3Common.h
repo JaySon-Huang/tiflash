@@ -52,6 +52,8 @@ bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const
 
 void uploadFile(const Aws::S3::S3Client & client, const String & bucket, const String & local_fname, const String & remote_fname);
 
+void uploadEmptyFile(const Aws::S3::S3Client & client, const String & bucket, const String & remote_fname);
+
 void downloadFile(const Aws::S3::S3Client & client, const String & bucket, const String & local_fname, const String & remote_fname);
 
 void listPrefix(

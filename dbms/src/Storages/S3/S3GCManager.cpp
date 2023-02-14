@@ -67,12 +67,13 @@ void S3GCManager::runOnAllStores()
 
 void S3GCManager::runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids)
 {
+    LOG_DEBUG(log, "run gc, gc_store_id={}", gc_store_id);
     // Get the latest manifest
     const ManifestListResult manifests = listManifest(gc_store_id);
     // clean the outdated manifest files
     removeOutdatedManifest(manifests);
 
-    LOG_INFO(log, "The latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
+    LOG_INFO(log, "latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
     // Parse from the latest manifest and collect valid lock files
     // TODO: const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(latest_manifest);
     const std::unordered_set<String> valid_lock_files;
@@ -80,22 +81,15 @@ void S3GCManager::runForStore(UInt64 gc_store_id, const std::vector<UInt64> & al
     for (const auto & store_id : all_store_ids)
     {
         auto scan_prefix = fmt::format("s{}/lock/", store_id);
-        cleanExpiredFilesOnPrefix(gc_store_id, scan_prefix, manifests.latest_upload_seq, valid_lock_files);
+        cleanUnusedLocksOnPrefix(gc_store_id, scan_prefix, manifests.latest_upload_seq, valid_lock_files);
     }
+
+    // After removing the expired lock, we need to scan the data files
+    // with expired delmark
+    tryCleanExpiredDataFiles(gc_store_id);
 }
 
-std::unordered_set<String> S3GCManager::getValidLocksFromManifest(const String & manifest_key)
-{
-    // TODO: download the latest manifest from S3 to local file
-    const String local_manifest_path = getTemporaryDownloadFile(manifest_key);
-    downloadFile(*client, BUCKET_NAME, local_manifest_path, manifest_key);
-    LOG_INFO(log, "Download manifest, from={} to={}", manifest_key, local_manifest_path);
-    using ManifestReader = PS::V3::CheckpointManifestFileReader<PS::V3::universal::PageDirectoryTrait>;
-    auto reader = ManifestReader::create(ManifestReader::Options{.file_path = local_manifest_path});
-    return reader->readLocks();
-}
-
-void S3GCManager::cleanExpiredFilesOnPrefix(
+void S3GCManager::cleanUnusedLocksOnPrefix(
     UInt64 gc_store_id,
     String scan_prefix,
     UInt64 safe_sequence,
@@ -123,16 +117,17 @@ void S3GCManager::cleanExpiredFilesOnPrefix(
                 continue;
 
             // The data file is not used by `gc_store_id` anymore, remove the lock file
-            tryCleanExpiredDataFile(lock_key, lock_filename_view);
+            tryCleanLock(lock_key, lock_filename_view);
         }
         return objects.size();
     });
 }
 
-void S3GCManager::tryCleanExpiredDataFile(const String & lock_key, const S3FilenameView & lock_filename_view)
+void S3GCManager::tryCleanLock(const String & lock_key, const S3FilenameView & lock_filename_view)
 {
     const auto unlocked_datafilename_view = lock_filename_view.asDataFile();
     RUNTIME_CHECK(unlocked_datafilename_view.isDataFile());
+    const auto unlocked_datafile_key = unlocked_datafilename_view.toFullKey();
     const auto unlocked_datafile_delmark_key = unlocked_datafilename_view.getDelMarkKey();
 
     // delete S3 lock file
@@ -144,21 +139,72 @@ void S3GCManager::tryCleanExpiredDataFile(const String & lock_key, const S3Filen
     if (!delmark_exists)
     {
         // TODO: try create delmark through S3LockService
+        uploadEmptyFile(*client, BUCKET_NAME, unlocked_datafile_delmark_key);
+        LOG_INFO(log, "creating delmark, key={}", unlocked_datafile_key);
         return;
     }
 
-    assert(delmark_exists);
+    assert(delmark_exists); // function should return in previous if-branch
+    removeDataFileIfDelmarkExpired(unlocked_datafile_key, unlocked_datafile_delmark_key, mtime);
+}
+
+void S3GCManager::removeDataFileIfDelmarkExpired(
+    const String & datafile_key,
+    const String & delmark_key,
+    const Aws::Utils::DateTime & delmark_mtime)
+{
     // delmark exist
     bool expired = false;
-    // TODO: get the time diff by `now`-`mtime`
+    {
+        // Get the time diff by `now`-`mtime`
+        Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
+        auto diff_ms = Aws::Utils::DateTime::Diff(now, delmark_mtime).count();
+        static constexpr Int64 DELMARK_EXPIRED_HOURS = 1;
+        if (diff_ms > DELMARK_EXPIRED_HOURS * 3600 * 1000)
+        {
+            expired = true;
+        }
+        LOG_INFO(
+            log,
+            "delmark exist, datafile={} mark_time={} now={} diff_ms={} expired={}",
+            datafile_key,
+            delmark_mtime.ToGmtString(Aws::Utils::DateFormat::ISO_8601),
+            now.ToGmtString(Aws::Utils::DateFormat::ISO_8601),
+            diff_ms,
+            expired);
+    }
     // The delmark is not expired, wait for next GC round
     if (!expired)
         return;
     // The data file is marked as delete and delmark expired, safe to be
     // physical delete.
-    const auto unlocked_datafile_key = unlocked_datafilename_view.toFullKey();
-    deleteObject(*client, BUCKET_NAME, unlocked_datafile_key);
-    deleteObject(*client, BUCKET_NAME, unlocked_datafile_delmark_key);
+    deleteObject(*client, BUCKET_NAME, datafile_key);
+    LOG_INFO(log, "datafile deleted, key={}", datafile_key);
+    deleteObject(*client, BUCKET_NAME, delmark_key);
+    LOG_INFO(log, "datafile delmark deleted, key={}", delmark_key);
+}
+
+void S3GCManager::tryCleanExpiredDataFiles(UInt64 gc_store_id)
+{
+    for (const auto & dir_prefix : {"data", "stable"})
+    {
+        const auto prefix = fmt::format("s{}/{}/", gc_store_id, dir_prefix);
+        listPrefix(*client, BUCKET_NAME, prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+            const auto & objects = result.GetContents();
+            for (const auto & object : objects)
+            {
+                const auto & delmark_key = object.GetKey();
+                LOG_TRACE(log, "key={}", object.GetKey());
+                const auto filename_view = S3FilenameView::fromKey(delmark_key);
+                // Only remove the data file with expired delmark
+                if (!filename_view.isDelMark())
+                    continue;
+                auto datafile_key = filename_view.asDataFile().toFullKey();
+                removeDataFileIfDelmarkExpired(datafile_key, delmark_key, object.GetLastModified());
+            }
+            return objects.size();
+        });
+    }
 }
 
 std::vector<UInt64> S3GCManager::getAllStoreIds() const
@@ -184,7 +230,7 @@ std::vector<UInt64> S3GCManager::getAllStoreIds() const
 S3GCManager::ManifestListResult S3GCManager::listManifest(UInt64 store_id)
 {
     Strings all_manifest;
-    std::string_view latest_manifest;
+    String latest_manifest;
     UInt64 latest_upload_seq = 0;
 
     const auto store_prefix = S3Filename::fromStoreId(store_id).toManifestPrefix();
@@ -215,6 +261,17 @@ S3GCManager::ManifestListResult S3GCManager::listManifest(UInt64 store_id)
         .latest_manifest = std::move(latest_manifest),
         .latest_upload_seq = latest_upload_seq,
     };
+}
+
+std::unordered_set<String> S3GCManager::getValidLocksFromManifest(const String & manifest_key)
+{
+    // TODO: download the latest manifest from S3 to local file
+    const String local_manifest_path = getTemporaryDownloadFile(manifest_key);
+    downloadFile(*client, BUCKET_NAME, local_manifest_path, manifest_key);
+    LOG_INFO(log, "Download manifest, from={} to={}", manifest_key, local_manifest_path);
+    using ManifestReader = PS::V3::CheckpointManifestFileReader<PS::V3::universal::PageDirectoryTrait>;
+    auto reader = ManifestReader::create(ManifestReader::Options{.file_path = local_manifest_path});
+    return reader->readLocks();
 }
 
 void S3GCManager::removeOutdatedManifest(const ManifestListResult & manifests)

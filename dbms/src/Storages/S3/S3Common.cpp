@@ -5,6 +5,7 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/core/utils/logging/LogMacros.h>
 #include <aws/core/utils/logging/LogSystemInterface.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -208,6 +209,29 @@ bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const
                     bucket,
                     error.GetMessage());
 }
+
+void uploadEmptyFile(const Aws::S3::S3Client & client, const String & bucket, const String & remote_fname)
+{
+    Stopwatch sw;
+    Aws::S3::Model::PutObjectRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(remote_fname);
+    auto istr = Aws::MakeShared<Aws::StringStream>("EmptyObjectInputStream", "", std::ios_base::in | std::ios_base::binary);
+    req.SetBody(istr);
+    req.SetContentType("binary/octet-stream");
+    auto result = client.PutObject(req);
+    if (!result.IsSuccess())
+    {
+        throw Exception(ErrorCodes::S3_ERROR,
+                        "S3 PutEmptyObject failed, remote_fname={}, exception={}, message={}",
+                        remote_fname,
+                        result.GetError().GetExceptionName(),
+                        result.GetError().GetMessage());
+    }
+    static auto * log = &Poco::Logger::get("S3UploadFile");
+    LOG_DEBUG(log, "remote_fname={}, cost={}ms", remote_fname, sw.elapsedMilliseconds());
+}
+
 void uploadFile(const Aws::S3::S3Client & client, const String & bucket, const String & local_fname, const String & remote_fname)
 {
     Stopwatch sw;

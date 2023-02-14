@@ -44,6 +44,8 @@ String toFullKey(const S3FilenameType type, const UInt64 store_id, const std::st
     }
     __builtin_unreachable();
 }
+
+static constexpr std::string_view DELMARK_SUFFIX = ".del";
 } // namespace details
 
 String S3FilenameView::toFullKey() const
@@ -73,10 +75,35 @@ S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)
 
     if (type_view == "manifest")
         res.type = S3FilenameType::CheckpointManifest;
-    else if (type_view == "stable")
-        res.type = S3FilenameType::StableFile;
-    else if (type_view == "data")
-        res.type = S3FilenameType::CheckpointDataFile;
+
+    else if (type_view == "stable" || type_view == "data")
+    {
+        bool is_delmark = data_filepath.ends_with(re2::StringPiece(details::DELMARK_SUFFIX.data(), details::DELMARK_SUFFIX.size()));
+        if (type_view == "stable")
+        {
+            if (is_delmark)
+            {
+                data_filepath.remove_suffix(details::DELMARK_SUFFIX.size());
+                res.type = S3FilenameType::DelMarkToStableFile;
+            }
+            else
+            {
+                res.type = S3FilenameType::StableFile;
+            }
+        }
+        else if (type_view == "data")
+        {
+            if (is_delmark)
+            {
+                data_filepath.remove_suffix(details::DELMARK_SUFFIX.size());
+                res.type = S3FilenameType::DelMarkToCheckpointData;
+            }
+            else
+            {
+                res.type = S3FilenameType::CheckpointDataFile;
+            }
+        }
+    }
     else if (type_view == "lock")
     {
         const auto lock_start_npos = data_filepath.find(".lock_");
@@ -126,9 +153,9 @@ String S3FilenameView::getDelMarkKey() const
     switch (type)
     {
     case S3FilenameType::StableFile:
-        return fmt::format("s{}/stable/{}.del", store_id, path);
+        return fmt::format("s{}/stable/{}{}", store_id, path, details::DELMARK_SUFFIX);
     case S3FilenameType::CheckpointDataFile:
-        return fmt::format("s{}/data/{}.del", store_id, path);
+        return fmt::format("s{}/data/{}{}", store_id, path, details::DELMARK_SUFFIX);
     default:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport type: {}", magic_enum::enum_name(type));
     }
@@ -170,6 +197,10 @@ S3FilenameView S3FilenameView::asDataFile() const
     case S3FilenameType::LockFileToStableFile:
         return S3FilenameView{.type = S3FilenameType::StableFile, .store_id = store_id, .path = path};
     case S3FilenameType::LockFileToCheckpointData:
+        return S3FilenameView{.type = S3FilenameType::CheckpointDataFile, .store_id = store_id, .path = path};
+    case S3FilenameType::DelMarkToStableFile:
+        return S3FilenameView{.type = S3FilenameType::StableFile, .store_id = store_id, .path = path};
+    case S3FilenameType::DelMarkToCheckpointData:
         return S3FilenameView{.type = S3FilenameType::CheckpointDataFile, .store_id = store_id, .path = path};
     default:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport type: {}", magic_enum::enum_name(type));

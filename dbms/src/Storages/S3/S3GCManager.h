@@ -20,15 +20,24 @@
 #include <memory>
 #include <unordered_set>
 
-namespace Aws::S3
+namespace Aws
+{
+namespace S3
 {
 class S3Client;
-}
+} // namespace S3
+namespace Utils
+{
+class DateTime;
+} // namespace Utils
+} // namespace Aws
+
 namespace DB
 {
 class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 } // namespace DB
+
 namespace DB::S3
 {
 struct S3FilenameView;
@@ -43,20 +52,27 @@ public:
 private:
     void runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids);
 
-    void cleanExpiredFilesOnPrefix(
+    void cleanUnusedLocksOnPrefix(
         UInt64 gc_store_id,
         String scan_prefix,
         UInt64 safe_sequence,
         const std::unordered_set<String> & valid_lock_files);
 
-    void tryCleanExpiredDataFile(const String & lock_key, const S3FilenameView & lock_filename_view);
+    void tryCleanLock(const String & lock_key, const S3FilenameView & lock_filename_view);
+
+    void tryCleanExpiredDataFiles(UInt64 gc_store_id);
+
+    void removeDataFileIfDelmarkExpired(
+        const String & datafile_key,
+        const String & delmark_key,
+        const Aws::Utils::DateTime & delmark_mtime);
 
     std::vector<UInt64> getAllStoreIds() const;
 
     struct ManifestListResult
     {
         Strings all_manifest;
-        const std::string_view latest_manifest;
+        const String latest_manifest;
         const UInt64 latest_upload_seq;
     };
 
