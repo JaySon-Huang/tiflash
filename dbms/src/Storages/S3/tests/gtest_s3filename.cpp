@@ -80,7 +80,7 @@ TEST(S3FilenameTest, CheckpointDataFile)
 TEST(S3FilenameTest, StableFile)
 {
     UInt64 test_store_id = 2077;
-    String fullkey = "s2077/stable/t_44/dmf_57";
+    String fullkey = "s2077/data/t_44/dmf_57";
     auto check = [&](const S3FilenameView & view) {
         ASSERT_EQ(view.type, S3FilenameType::StableFile) << magic_enum::enum_name(view.type);
         ASSERT_EQ(view.store_id, test_store_id);
@@ -90,7 +90,7 @@ TEST(S3FilenameTest, StableFile)
 
         ASSERT_TRUE(view.isDataFile());
         ASSERT_EQ(view.getLockKey(1234, 50), "s2077/lock/t_44/dmf_57.lock_s1234_50");
-        ASSERT_EQ(view.getDelMarkKey(), "s2077/stable/t_44/dmf_57.del");
+        ASSERT_EQ(view.getDelMarkKey(), "s2077/data/t_44/dmf_57.del");
 
         ASSERT_FALSE(view.isLockFile());
 

@@ -32,7 +32,7 @@ String toFullKey(const S3FilenameType type, const UInt64 store_id, const std::st
     switch (type)
     {
     case S3FilenameType::StableFile:
-        return fmt::format("s{}/stable/{}", store_id, path);
+        return fmt::format("s{}/data/{}", store_id, path);
     case S3FilenameType::CheckpointDataFile:
         return fmt::format("s{}/data/{}", store_id, path);
     case S3FilenameType::CheckpointManifest:
@@ -64,9 +64,15 @@ String S3Filename::toManifestPrefix() const
     return details::toFullKey(type, store_id, path) + "manifest/";
 }
 
+String S3Filename::toDataPrefix() const
+{
+    RUNTIME_CHECK(type == S3FilenameType::StorePrefix);
+    return details::toFullKey(type, store_id, path) + "data/";
+}
+
 S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)
 {
-    const static re2::RE2 rgx_data_file("^s([0-9]+)/(stable|data|lock|manifest)/(.+)$");
+    const static re2::RE2 rgx_data_file("^s([0-9]+)/(data|lock|manifest)/(.+)$");
     S3FilenameView res{.type = S3FilenameType::Invalid};
     re2::StringPiece fullpath_sp{fullpath.data(), fullpath.size()};
     re2::StringPiece type_view, data_filepath;
@@ -75,12 +81,25 @@ S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)
 
     if (type_view == "manifest")
         res.type = S3FilenameType::CheckpointManifest;
-
-    else if (type_view == "stable" || type_view == "data")
+    else if (type_view == "data")
     {
         bool is_delmark = data_filepath.ends_with(re2::StringPiece(details::DELMARK_SUFFIX.data(), details::DELMARK_SUFFIX.size()));
-        if (type_view == "stable")
+        if (data_filepath.starts_with("dat_"))
         {
+            // "dat_${upload_seq}_${idx}"
+            if (is_delmark)
+            {
+                data_filepath.remove_suffix(details::DELMARK_SUFFIX.size());
+                res.type = S3FilenameType::DelMarkToCheckpointData;
+            }
+            else
+            {
+                res.type = S3FilenameType::CheckpointDataFile;
+            }
+        }
+        else if (data_filepath.starts_with("t_"))
+        {
+            // "t_${table_id}/dmf_${id}"
             if (is_delmark)
             {
                 data_filepath.remove_suffix(details::DELMARK_SUFFIX.size());
@@ -91,17 +110,9 @@ S3FilenameView S3FilenameView::fromKey(const std::string_view fullpath)
                 res.type = S3FilenameType::StableFile;
             }
         }
-        else if (type_view == "data")
+        else
         {
-            if (is_delmark)
-            {
-                data_filepath.remove_suffix(details::DELMARK_SUFFIX.size());
-                res.type = S3FilenameType::DelMarkToCheckpointData;
-            }
-            else
-            {
-                res.type = S3FilenameType::CheckpointDataFile;
-            }
+            res.type = S3FilenameType::Invalid;
         }
     }
     else if (type_view == "lock")
@@ -153,7 +164,7 @@ String S3FilenameView::getDelMarkKey() const
     switch (type)
     {
     case S3FilenameType::StableFile:
-        return fmt::format("s{}/stable/{}{}", store_id, path, details::DELMARK_SUFFIX);
+        return fmt::format("s{}/data/{}{}", store_id, path, details::DELMARK_SUFFIX);
     case S3FilenameType::CheckpointDataFile:
         return fmt::format("s{}/data/{}{}", store_id, path, details::DELMARK_SUFFIX);
     default:

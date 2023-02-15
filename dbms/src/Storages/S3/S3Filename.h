@@ -93,6 +93,8 @@ struct S3Filename
 
     String toManifestPrefix() const;
 
+    String toDataPrefix() const;
+
     S3FilenameView toView() const
     {
         return S3FilenameView{

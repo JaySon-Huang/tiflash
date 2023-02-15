@@ -178,33 +178,34 @@ void S3GCManager::removeDataFileIfDelmarkExpired(
         return;
     // The data file is marked as delete and delmark expired, safe to be
     // physical delete.
-    deleteObject(*client, BUCKET_NAME, datafile_key);
+    deleteObject(*client, BUCKET_NAME, datafile_key); // TODO: it is safe to ignore if not exist
     LOG_INFO(log, "datafile deleted, key={}", datafile_key);
+    // TODO: mock crash before deleting delmark on S3
     deleteObject(*client, BUCKET_NAME, delmark_key);
     LOG_INFO(log, "datafile delmark deleted, key={}", delmark_key);
 }
 
 void S3GCManager::tryCleanExpiredDataFiles(UInt64 gc_store_id)
 {
-    for (const auto & dir_prefix : {"data", "stable"})
-    {
-        const auto prefix = fmt::format("s{}/{}/", gc_store_id, dir_prefix);
-        listPrefix(*client, BUCKET_NAME, prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
-            const auto & objects = result.GetContents();
-            for (const auto & object : objects)
-            {
-                const auto & delmark_key = object.GetKey();
-                LOG_TRACE(log, "key={}", object.GetKey());
-                const auto filename_view = S3FilenameView::fromKey(delmark_key);
-                // Only remove the data file with expired delmark
-                if (!filename_view.isDelMark())
-                    continue;
-                auto datafile_key = filename_view.asDataFile().toFullKey();
-                removeDataFileIfDelmarkExpired(datafile_key, delmark_key, object.GetLastModified());
-            }
-            return objects.size();
-        });
-    }
+    // StableFiles and CheckpointDataFile are stored with the same prefix, scan
+    // the keys by prefix, and if there is an expired delmark, then try to remove
+    // its correspond StableFile or CheckpointDataFile.
+    const auto prefix = S3Filename::fromStoreId(gc_store_id).toDataPrefix();
+    listPrefix(*client, BUCKET_NAME, prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const auto & objects = result.GetContents();
+        for (const auto & object : objects)
+        {
+            const auto & delmark_key = object.GetKey();
+            LOG_TRACE(log, "key={}", object.GetKey());
+            const auto filename_view = S3FilenameView::fromKey(delmark_key);
+            // Only remove the data file with expired delmark
+            if (!filename_view.isDelMark())
+                continue;
+            auto datafile_key = filename_view.asDataFile().toFullKey();
+            removeDataFileIfDelmarkExpired(datafile_key, delmark_key, object.GetLastModified());
+        }
+        return objects.size();
+    });
 }
 
 std::vector<UInt64> S3GCManager::getAllStoreIds() const
