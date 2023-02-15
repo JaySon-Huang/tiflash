@@ -53,7 +53,6 @@ inline UniversalPageId buildTableUniversalPrefix(const String & prefix, Namespac
 class UniversalWriteBatch : private boost::noncopyable
 {
 private:
-    using RemoteDataLocation = PS::V3::RemoteDataLocation;
     struct Write
     {
         WriteBatchWriteType type;
@@ -69,7 +68,7 @@ private:
 
         // RemoteLocation, file, offset etc
         // TODO: some fields are duplicated, we can optimize the memory usage
-        std::optional<RemoteDataLocation> remote;
+        std::optional<PS::RemoteDataLocation> remote;
     };
     using Writes = std::vector<Write>;
 
@@ -97,8 +96,12 @@ public:
                 .size = w.size,
                 .ori_page_id = buildTableUniversalPageId(prefix, ns_id, w.ori_page_id),
                 .offsets = std::move(w.offsets),
-                .remote = RemoteDataLocation{},
+                .remote = w.remote,
             });
+            if (w.remote)
+            {
+                us_batch.has_remote_write = true;
+            }
         }
         us_batch.total_data_size = batch.getTotalDataSize();
         return us_batch;
@@ -137,11 +140,15 @@ public:
         putPage(page_id, tag, buffer_ptr, data.size());
     }
 
-    void putExternal(UniversalPageId page_id, UInt64 tag, const std::optional<RemoteDataLocation> & remote_location)
+    void putExternal(UniversalPageId page_id, UInt64 tag, const std::optional<PS::RemoteDataLocation> & remote_location)
     {
         // External page's data is not managed by PageStorage, which means data is empty.
         Write w{WriteBatchWriteType::PUT_EXTERNAL, page_id, tag, nullptr, 0, "", {}, remote_location};
         writes.emplace_back(std::move(w));
+        if (remote_location)
+        {
+            has_remote_write = true;
+        }
     }
 
     // Add RefPage{ref_id} -> Page{page_id}
@@ -200,6 +207,12 @@ public:
         Writes tmp;
         writes.swap(tmp);
         total_data_size = 0;
+        has_remote_write = false;
+    }
+
+    bool hasRemoteWrite() const
+    {
+        return has_remote_write;
     }
 
     size_t getTotalDataSize() const
@@ -245,5 +258,6 @@ public:
 private:
     Writes writes;
     size_t total_data_size = 0;
+    bool has_remote_write = false;
 };
 } // namespace DB

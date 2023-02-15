@@ -238,7 +238,7 @@ BlobStore<Trait>::handleLargeWrite(typename Trait::WriteBatch & wb, const WriteL
             break;
         }
         case WriteBatchWriteType::PUT_EXTERNAL:
-            edit.putExternal(wb.getFullPageId(write.page_id));
+            edit.putExternal(wb.getFullPageId(write.page_id), write.remote);
             break;
         case WriteBatchWriteType::UPSERT:
             throw Exception(fmt::format("Unknown write type: {}", magic_enum::enum_name(write.type)));

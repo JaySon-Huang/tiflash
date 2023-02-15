@@ -87,7 +87,7 @@ public:
 
         std::unordered_set<String> locks;
         locks.reserve(file_content.locks_size());
-        for (const auto &lock: file_content.locks())
+        for (const auto & lock : file_content.locks())
             locks.emplace(lock.name());
         return locks;
     }

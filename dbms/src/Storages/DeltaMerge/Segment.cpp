@@ -54,6 +54,9 @@
 #include <memory>
 #include <numeric>
 
+#include "Storages/Page/V3/PageEntry.h"
+#include "Storages/S3/S3Filename.h"
+
 namespace ProfileEvents
 {
 extern const Event DMWriteBlock;
@@ -287,9 +290,8 @@ StableValueSpacePtr createNewStable( //
     auto stable = std::make_shared<StableValueSpace>(stable_id);
     stable->setFiles({dtfile}, RowKeyRange::newAll(context.is_common_handle, context.rowkey_column_size), context.db_context);
     stable->saveMeta(wbs.meta);
-    wbs.data.putExternal(dtfile_id, 0);
-    delegator.addDTFile(dtfile_id, dtfile->getBytesOnDisk(), store_path);
 
+    std::optional<PS::RemoteDataLocation> remote_loc;
     if (const auto & remote_manager = db_context.getDMRemoteManager(); remote_manager != nullptr)
     {
         UInt64 store_id;
@@ -306,6 +308,12 @@ StableValueSpacePtr createNewStable( //
         };
         remote_manager->getDataStore()->putDMFile(dtfile, oid);
 
+        remote_loc = PS::RemoteDataLocation{
+            .data_file_id = std::make_shared<String>(S3::S3Filename::fromDMFileOID(oid).toFullKey()),
+            .offset_in_file = 0,
+            .size_in_file = 0,
+        };
+
         // TODO: now we still rely on local dmfile for restoring segment
         // after restart. So we can not remove the local dmfile after uploaded.
         if (false)
@@ -314,6 +322,9 @@ StableValueSpacePtr createNewStable( //
             dtfile->remove(provider);
         }
     }
+
+    wbs.data.putExternal(dtfile_id, 0, remote_loc);
+    delegator.addDTFile(dtfile_id, dtfile->getBytesOnDisk(), store_path);
 
     return stable;
 }

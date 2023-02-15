@@ -18,7 +18,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/Page/PageDefines.h>
+#include <Storages/Page/RemoteDataLocation.h>
 
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -71,6 +73,10 @@ private:
         UInt64 page_offset;
         UInt64 page_checksum;
         PageFileIdAndLevel target_file_id;
+
+        // RemoteLocation, file, offset etc
+        // TODO: some fields are duplicated, we can optimize the memory usage
+        std::optional<PS::RemoteDataLocation> remote;
     };
     using Writes = std::vector<Write>;
 
@@ -111,7 +117,7 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
         }
 
-        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, 0, std::move(offsets), 0, 0, {}};
+        Write w{WriteBatchWriteType::PUT, page_id, tag, read_buffer, size, 0, std::move(offsets), 0, 0, {}, std::nullopt};
         total_data_size += size;
         writes.emplace_back(std::move(w));
     }
@@ -122,10 +128,10 @@ public:
         putPage(page_id, tag, buffer_ptr, data.size());
     }
 
-    void putExternal(PageId page_id, UInt64 tag)
+    void putExternal(PageId page_id, UInt64 tag, const std::optional<PS::RemoteDataLocation> & remote_location = std::nullopt)
     {
         // External page's data is not managed by PageStorage, which means data is empty.
-        Write w{WriteBatchWriteType::PUT_EXTERNAL, page_id, tag, nullptr, 0, 0, {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::PUT_EXTERNAL, page_id, tag, nullptr, 0, 0, {}, 0, 0, {}, remote_location};
         writes.emplace_back(std::move(w));
     }
 
@@ -138,7 +144,7 @@ public:
                     UInt32 size,
                     const PageFieldOffsetChecksums & offsets)
     {
-        Write w{WriteBatchWriteType::UPSERT, page_id, tag, read_buffer, size, 0, offsets, 0, 0, file_id};
+        Write w{WriteBatchWriteType::UPSERT, page_id, tag, read_buffer, size, 0, offsets, 0, 0, file_id, std::nullopt};
         writes.emplace_back(std::move(w));
         total_data_size += size;
     }
@@ -154,20 +160,20 @@ public:
                     UInt64 page_checksum,
                     const PageFieldOffsetChecksums & offsets)
     {
-        Write w{WriteBatchWriteType::UPSERT, page_id, tag, nullptr, size, 0, offsets, page_offset, page_checksum, file_id};
+        Write w{WriteBatchWriteType::UPSERT, page_id, tag, nullptr, size, 0, offsets, page_offset, page_checksum, file_id, std::nullopt};
         writes.emplace_back(std::move(w));
     }
 
     // Add RefPage{ref_id} -> Page{page_id}
     void putRefPage(PageId ref_id, PageId page_id)
     {
-        Write w{WriteBatchWriteType::REF, ref_id, 0, nullptr, 0, page_id, {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::REF, ref_id, 0, nullptr, 0, page_id, {}, 0, 0, {}, std::nullopt};
         writes.emplace_back(std::move(w));
     }
 
     void delPage(PageId page_id)
     {
-        Write w{WriteBatchWriteType::DEL, page_id, 0, nullptr, 0, 0, {}, 0, 0, {}};
+        Write w{WriteBatchWriteType::DEL, page_id, 0, nullptr, 0, 0, {}, 0, 0, {}, std::nullopt};
         writes.emplace_back(std::move(w));
     }
 

@@ -95,7 +95,6 @@ public:
      * Should be used by a read node.
      */
     virtual IPreparedDMFileTokenPtr prepareDMFile(const DMFileOID & oid) = 0;
-
 };
 
 using IDataStorePtr = std::shared_ptr<IDataStore>;

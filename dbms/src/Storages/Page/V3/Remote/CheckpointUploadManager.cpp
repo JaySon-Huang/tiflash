@@ -109,30 +109,31 @@ CheckpointUploadManager::createS3Lock(const S3::S3FilenameView & s3_file, UInt64
     bool s3_lock_created = false;
     std::shared_lock manifest_lock(mtx_checkpoint_manifest);
     const UInt64 upload_seq = last_upload_sequence + 1;
-    const String s3_lockfile_fullpath = s3_file.getLockKey(lock_store_id, upload_seq);
+    const String lockkey = s3_file.getLockKey(lock_store_id, upload_seq);
+    LOG_INFO(log, "S3 lock creating: {}", lockkey);
     String err_msg;
 
     if (s3_file.store_id == lock_store_id)
     {
         // Try to create a lock file for the data file uploaded by this store
         // TODO: handle s3 network error. retry?
-        S3::uploadEmptyFile(*s3_client, s3_bucket, s3_lockfile_fullpath);
-        LOG_DEBUG(log, "S3 lock created: {}", s3_lockfile_fullpath);
+        S3::uploadEmptyFile(*s3_client, s3_bucket, lockkey);
+        LOG_DEBUG(log, "S3 lock created: {}", lockkey);
         s3_lock_created = true;
     }
     else
     {
         // TODO: Send rpc to S3LockService
         RUNTIME_CHECK(s3_file.store_id == lock_store_id, s3_file.store_id, lock_store_id);
-        S3::uploadEmptyFile(*s3_client, s3_bucket, s3_lockfile_fullpath);
+        S3::uploadEmptyFile(*s3_client, s3_bucket, lockkey);
         s3_lock_created = true;
     }
 
     if (!s3_lock_created)
         return S3LockCreateResult{"", std::move(err_msg)};
 
-    pre_locks_files.emplace(s3_lockfile_fullpath);
-    return {s3_lockfile_fullpath, std::move(err_msg)};
+    pre_locks_files.emplace(lockkey);
+    return {lockkey, std::move(err_msg)};
 }
 
 void CheckpointUploadManager::cleanAppliedS3ExternalFiles(std::unordered_set<String> && applied_s3files)
@@ -158,16 +159,15 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
     //  copy logic from `tryDumpSnapshot`.
     //  Currently this is fine, because we will not reclaim data from the PageStorage.
 
-    LOG_INFO(log, "Start dumpRemoteCheckpoint");
-
     // Let's keep this snapshot until all finished, so that blob data will not be GCed.
     auto snap = page_directory->createSnapshot(/*tracing_id*/ "");
-
     if (snap->sequence == last_checkpoint_sequence)
     {
-        LOG_INFO(log, "Skipped dump checkpoint because sequence is unchanged, last_seq={} this_seq={}", last_checkpoint_sequence, snap->sequence);
+        LOG_TRACE(log, "Skipped dump checkpoint because sequence is unchanged, last_seq={} this_seq={}", last_checkpoint_sequence, snap->sequence);
         return {};
     }
+
+    LOG_INFO(log, "Start dumpRemoteCheckpoint");
 
     auto edit_from_mem = page_directory->dumpSnapshotToEdit(snap);
     LOG_DEBUG(log, "Dumped edit from PageDirectory, snap_seq={} n_edits={}", snap->sequence, edit_from_mem.size());
@@ -245,6 +245,9 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
             for (const auto & k : data_file_keys)
             {
                 S3::uploadFile(*s3_client, s3_bucket, local_data_file_path_temp, k);
+                auto view = S3::S3FilenameView::fromKey(k);
+                auto lock_created = createS3Lock(view, options.writer_info->store_id());
+                RUNTIME_CHECK(lock_created.ok(), lock_created.lock_key, lock_created.err_msg);
             }
         }
     }

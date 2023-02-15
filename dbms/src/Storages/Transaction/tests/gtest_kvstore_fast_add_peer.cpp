@@ -36,9 +36,9 @@ extern const char fast_add_peer_sleep[];
 namespace tests
 {
 
+using PS::RemoteDataLocation;
 using PS::V3::CheckpointManifestFileReader;
 using PS::V3::PageDirectory;
-using PS::V3::RemoteDataLocation;
 using PS::V3::Remote::WriterInfo;
 using PS::V3::universal::BlobStoreTrait;
 using PS::V3::universal::PageDirectoryTrait;

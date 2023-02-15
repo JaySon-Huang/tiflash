@@ -62,6 +62,14 @@ void UniversalPageStorage::restore()
     }
 }
 
+void UniversalPageStorage::initStoreInfo(UInt64 store_id) const
+{
+    if (checkpoint_manager)
+    {
+        checkpoint_manager->initStoreInfo(store_id);
+    }
+}
+
 void UniversalPageStorage::write(UniversalWriteBatch && write_batch, const WriteLimiterPtr & write_limiter) const
 {
     if (unlikely(write_batch.empty()))
@@ -69,11 +77,17 @@ void UniversalPageStorage::write(UniversalWriteBatch && write_batch, const Write
 
     Stopwatch watch;
     SCOPE_EXIT({ GET_METRIC(tiflash_storage_page_write_duration_seconds, type_total).Observe(watch.elapsedSeconds()); });
-    checkpoint_manager->createS3LockForWriteBatch(write_batch);
+    if (write_batch.hasRemoteWrite())
+    {
+        checkpoint_manager->createS3LockForWriteBatch(write_batch);
+    }
     auto edit = blob_store->write(write_batch, write_limiter);
     auto applied_s3files = page_directory->apply(std::move(edit), write_limiter);
     // Remove the applied locks from checkpoint_manager.pre_lock_files
-    checkpoint_manager->cleanAppliedS3ExternalFiles(std::move(applied_s3files));
+    if (write_batch.hasRemoteWrite())
+    {
+        checkpoint_manager->cleanAppliedS3ExternalFiles(std::move(applied_s3files));
+    }
 }
 
 Page UniversalPageStorage::read(const UniversalPageId & page_id, const ReadLimiterPtr & read_limiter, SnapshotPtr snapshot, bool throw_on_not_exist)
@@ -355,6 +369,8 @@ void UniversalPageStorage::checkpointImpl(std::shared_ptr<const PS::V3::Remote::
         LOG_INFO(log, "Skipped checkpoint because store_id == 0");
         return;
     }
+
+    initStoreInfo(writer_info->store_id());
 
     LOG_INFO(log, "Start checkpoint, writer_store_id={}, remote_directory={}", writer_info->store_id(), remote_directory);
 

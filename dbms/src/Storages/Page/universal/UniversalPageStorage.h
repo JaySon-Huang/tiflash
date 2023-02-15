@@ -29,6 +29,8 @@
 #include <Storages/Page/V3/Remote/CheckpointUploadManager.h>
 #include <common/defines.h>
 
+#include "common/types.h"
+
 namespace DB
 {
 class FileProvider;
@@ -129,6 +131,8 @@ public:
     ~UniversalPageStorage() = default;
 
     void restore();
+
+    void initStoreInfo(UInt64 store_id) const;
 
     SnapshotPtr getSnapshot(const String & tracing_id) const
     {

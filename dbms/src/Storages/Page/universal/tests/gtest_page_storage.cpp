@@ -260,7 +260,7 @@ public:
         page_storage->checkpoint_manager->initStoreInfo(store_id);
     }
 
-    std::string readData(const V3::RemoteDataLocation & location)
+    std::string readData(const RemoteDataLocation & location)
     {
         RUNTIME_CHECK(location.offset_in_file > 0);
         RUNTIME_CHECK(location.data_file_id != nullptr && !location.data_file_id->empty());
@@ -506,7 +506,7 @@ try
     {
         UniversalWriteBatch batch;
         auto s3fullpath = S3::S3Filename::fromDMFileOID(DM::Remote::DMFileOID{.write_node_id = store_id, .table_id = 100, .file_id = 1}).toFullKey();
-        V3::RemoteDataLocation location{.data_file_id = std::make_shared<String>(s3fullpath)};
+        RemoteDataLocation location{.data_file_id = std::make_shared<String>(s3fullpath)};
         batch.putExternal("1", tag, location);
         page_storage->write(std::move(batch));
     }
