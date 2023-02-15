@@ -95,6 +95,8 @@ struct S3Filename
 
     String toDataPrefix() const;
 
+    static String getLockPrefix();
+
     S3FilenameView toView() const
     {
         return S3FilenameView{

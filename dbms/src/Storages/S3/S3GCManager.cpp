@@ -61,11 +61,11 @@ void S3GCManager::runOnAllStores()
     LOG_TRACE(log, "all_store_ids: {}", all_store_ids);
     for (const auto gc_store_id : all_store_ids)
     {
-        runForStore(gc_store_id, all_store_ids);
+        runForStore(gc_store_id);
     }
 }
 
-void S3GCManager::runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids)
+void S3GCManager::runForStore(UInt64 gc_store_id)
 {
     LOG_DEBUG(log, "run gc, gc_store_id={}", gc_store_id);
     // Get the latest manifest
@@ -75,13 +75,14 @@ void S3GCManager::runForStore(UInt64 gc_store_id, const std::vector<UInt64> & al
 
     LOG_INFO(log, "latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
     // Parse from the latest manifest and collect valid lock files
-    // TODO: const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(latest_manifest);
     const std::unordered_set<String> valid_lock_files;
+    // TODO: const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(manifests.latest_manifest);
 
-    for (const auto & store_id : all_store_ids)
+    // Scan and remove the expired locks
     {
-        auto scan_prefix = fmt::format("s{}/lock/", store_id);
-        cleanUnusedLocksOnPrefix(gc_store_id, scan_prefix, manifests.latest_upload_seq, valid_lock_files);
+        // All locks share the same prefix
+        const auto lock_prefix = S3Filename::getLockPrefix();
+        cleanUnusedLocksOnPrefix(gc_store_id, lock_prefix, manifests.latest_upload_seq, valid_lock_files);
     }
 
     // After removing the expired lock, we need to scan the data files

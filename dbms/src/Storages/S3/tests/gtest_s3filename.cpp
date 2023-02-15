@@ -49,7 +49,7 @@ TEST(S3FilenameTest, CheckpointDataFile)
         ASSERT_EQ(view.toFullKey(), fullkey);
 
         ASSERT_TRUE(view.isDataFile());
-        ASSERT_EQ(view.getLockKey(1234, 50), "s2077/lock/dat_99_1.lock_s1234_50");
+        ASSERT_EQ(view.getLockKey(1234, 50), "lock/s2077/dat_99_1.lock_s1234_50");
         ASSERT_EQ(view.getDelMarkKey(), "s2077/data/dat_99_1.del");
         ASSERT_EQ(view.getUploadSequence(), test_seq);
 
@@ -89,7 +89,7 @@ TEST(S3FilenameTest, StableFile)
         ASSERT_EQ(view.toFullKey(), fullkey);
 
         ASSERT_TRUE(view.isDataFile());
-        ASSERT_EQ(view.getLockKey(1234, 50), "s2077/lock/t_44/dmf_57.lock_s1234_50");
+        ASSERT_EQ(view.getLockKey(1234, 50), "lock/s2077/t_44/dmf_57.lock_s1234_50");
         ASSERT_EQ(view.getDelMarkKey(), "s2077/data/t_44/dmf_57.del");
 
         ASSERT_FALSE(view.isLockFile());
@@ -125,10 +125,23 @@ TEST(S3FilenameTest, StorePrefix)
         ASSERT_EQ(r.toFullKey(), "s5/");
     }
     {
+        auto r = S3Filename::fromStoreId(5);
+        ASSERT_EQ(r.toFullKey(), "s5/");
+        ASSERT_EQ(r.toManifestPrefix(), "s5/manifest/");
+        ASSERT_EQ(r.toDataPrefix(), "s5/data/");
+    }
+
+    {
         auto r = S3FilenameView::fromStoreKeyPrefix("s1024/");
         ASSERT_EQ(r.type, S3FilenameType::StorePrefix);
         ASSERT_EQ(r.store_id, 1024);
         ASSERT_EQ(r.toFullKey(), "s1024/");
+    }
+    {
+        auto r = S3Filename::fromStoreId(1024);
+        ASSERT_EQ(r.toFullKey(), "s1024/");
+        ASSERT_EQ(r.toManifestPrefix(), "s1024/manifest/");
+        ASSERT_EQ(r.toDataPrefix(), "s1024/data/");
     }
 }
 

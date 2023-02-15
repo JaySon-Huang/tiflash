@@ -50,7 +50,7 @@ public:
     void runOnAllStores();
 
 private:
-    void runForStore(UInt64 gc_store_id, const std::vector<UInt64> & all_store_ids);
+    void runForStore(UInt64 gc_store_id);
 
     void cleanUnusedLocksOnPrefix(
         UInt64 gc_store_id,
