@@ -44,7 +44,7 @@ S3GCManager::S3GCManager()
     : client(nullptr)
     , log(Logger::get())
 {
-    // TODO: support https
+    // TODO: remove hardcode params
     const auto * access_key_id = "minioadmin";
     const auto * secret_access_key = "minioadmin";
     client = ClientFactory::instance().create(
@@ -75,8 +75,8 @@ void S3GCManager::runForStore(UInt64 gc_store_id)
 
     LOG_INFO(log, "latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
     // Parse from the latest manifest and collect valid lock files
-    const std::unordered_set<String> valid_lock_files;
-    // TODO: const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(manifests.latest_manifest);
+    const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(manifests.latest_manifest);
+    LOG_INFO(log, "latest manifest, key={} n_locks={}", manifests.latest_manifest, valid_lock_files.size());
 
     // Scan and remove the expired locks
     {

@@ -8,6 +8,11 @@
 
 #include <condition_variable>
 
+namespace Aws::S3
+{
+class S3Client;
+}
+
 namespace DB
 {
 class Context;
@@ -124,6 +129,9 @@ private:
 
 private:
     UInt64 store_id;
+
+    String s3_bucket;
+    std::shared_ptr<Aws::S3::S3Client> s3_client;
 
     PageDirectoryPtr & page_directory;
     BlobStorePtr & blob_store;

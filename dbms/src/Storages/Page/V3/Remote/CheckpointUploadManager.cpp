@@ -9,6 +9,7 @@
 #include <Storages/Page/V3/Remote/CheckpointManifestFileWriter.h>
 #include <Storages/Page/V3/Remote/CheckpointUploadManager.h>
 #include <Storages/Page/WriteBatch.h>
+#include <Storages/S3/S3Common.h>
 #include <Storages/S3/S3Filename.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
@@ -31,6 +32,20 @@ CheckpointUploadManagerPtr CheckpointUploadManager::createForDebug(UInt64 store_
 {
     auto mgr = std::unique_ptr<CheckpointUploadManager>(new CheckpointUploadManager(directory, blob_store));
     mgr->store_id = store_id;
+
+    // TODO: remove hardcode params
+    const auto * access_key_id = "minioadmin";
+    const auto * secret_access_key = "minioadmin";
+    const auto * bucket_name = "jayson";
+    const auto * endpoint = "172.16.5.85:9000";
+
+    mgr->s3_bucket = bucket_name;
+    mgr->s3_client = S3::ClientFactory::instance().create(
+        endpoint,
+        Aws::Http::Scheme::HTTP,
+        false,
+        access_key_id,
+        secret_access_key);
 
     return mgr;
 }
@@ -87,45 +102,8 @@ bool CheckpointUploadManager::createS3LockForWriteBatch(UniversalWriteBatch & wr
     return true;
 }
 
-namespace details
-{
-Aws::S3::Model::PutObjectOutcome sendUploadReq(Aws::S3::Model::PutObjectRequest & req)
-{
-    Aws::InitAPI({});
-    // Aws::Client::ClientConfiguration config;
-    // config.region = Aws::Region::AWS_GLOBAL;
-    // Aws::Auth::AWSCredentials credentials("minioadmin", "minioadmin");
-    // auto endpoint = Aws::MakeShared<Aws::S3::S3EndpointProvider>("http://172.16.5.85:9000");
-    String bucket_name = "jayson";
-
-    req.SetBucket(bucket_name);
-
-    // Aws::S3::S3Client s3_client(credentials, endpoint, config);
-    // return s3_client.PutObject(req);
-    MockS3Client mock_s3_client;
-    return mock_s3_client.PutObject(req);
-}
-
-Aws::S3::Model::PutObjectOutcome uploadEmptyFileToS3(const String & s3key)
-{
-    Aws::S3::Model::PutObjectRequest req;
-    req.SetKey(s3key);
-    req.SetBody(std::make_shared<Aws::StringStream>(""));
-    return sendUploadReq(req);
-}
-
-Aws::S3::Model::PutObjectOutcome uploadFileToS3(const String & local_filepath, const String & s3key)
-{
-    Aws::S3::Model::PutObjectRequest req;
-    req.SetKey(s3key);
-    std::shared_ptr<Aws::IOStream> input_data = std::make_shared<Aws::FStream>(local_filepath, std::ios::binary | std::ios::in);
-    req.SetBody(input_data);
-
-    return sendUploadReq(req);
-}
-} // namespace details
-
-CheckpointUploadManager::S3LockCreateResult CheckpointUploadManager::createS3Lock(const S3::S3FilenameView & s3_file, UInt64 lock_store_id)
+CheckpointUploadManager::S3LockCreateResult
+CheckpointUploadManager::createS3Lock(const S3::S3FilenameView & s3_file, UInt64 lock_store_id)
 {
     RUNTIME_CHECK(s3_file.isDataFile());
     bool s3_lock_created = false;
@@ -137,16 +115,16 @@ CheckpointUploadManager::S3LockCreateResult CheckpointUploadManager::createS3Loc
     if (s3_file.store_id == lock_store_id)
     {
         // Try to create a lock file for the data file uploaded by this store
-        auto outcome = details::uploadEmptyFileToS3(s3_lockfile_fullpath);
-        LOG_DEBUG(log, "S3 lock created: {}", s3_lockfile_fullpath);
         // TODO: handle s3 network error. retry?
-        RUNTIME_CHECK(outcome.IsSuccess(), outcome.GetError().GetMessage());
+        S3::uploadEmptyFile(*s3_client, s3_bucket, s3_lockfile_fullpath);
+        LOG_DEBUG(log, "S3 lock created: {}", s3_lockfile_fullpath);
         s3_lock_created = true;
     }
     else
     {
         // TODO: Send rpc to S3LockService
         RUNTIME_CHECK(s3_file.store_id == lock_store_id, s3_file.store_id, lock_store_id);
+        S3::uploadEmptyFile(*s3_client, s3_bucket, s3_lockfile_fullpath);
         s3_lock_created = true;
     }
 
@@ -266,7 +244,7 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
         {
             for (const auto & k : data_file_keys)
             {
-                details::uploadFileToS3(local_data_file_path_temp, k);
+                S3::uploadFile(*s3_client, s3_bucket, local_data_file_path_temp, k);
             }
         }
     }
@@ -274,7 +252,7 @@ CheckpointUploadManager::dumpRemoteCheckpoint(DumpRemoteCheckpointOptions option
     {
         // Acquire write lock to ensure all locks with the same upload_sequence are uploaded
         std::unique_lock manifest_lock(mtx_checkpoint_manifest);
-        details::uploadFileToS3(local_manifest_file_path_temp, manifest_file_key);
+        S3::uploadFile(*s3_client, s3_bucket, local_manifest_file_path_temp, manifest_file_key);
 
         // Move forward
         last_upload_sequence = upload_sequence;

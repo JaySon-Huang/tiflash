@@ -214,8 +214,7 @@ void uploadEmptyFile(const Aws::S3::S3Client & client, const String & bucket, co
 {
     Stopwatch sw;
     Aws::S3::Model::PutObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(remote_fname);
+    req.WithBucket(bucket).WithKey(remote_fname);
     auto istr = Aws::MakeShared<Aws::StringStream>("EmptyObjectInputStream", "", std::ios_base::in | std::ios_base::binary);
     req.SetBody(istr);
     req.SetContentType("binary/octet-stream");
@@ -236,8 +235,7 @@ void uploadFile(const Aws::S3::S3Client & client, const String & bucket, const S
 {
     Stopwatch sw;
     Aws::S3::Model::PutObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(remote_fname);
+    req.WithBucket(bucket).WithKey(remote_fname);
     auto istr = Aws::MakeShared<Aws::FStream>("PutObjectInputStream", local_fname, std::ios_base::in | std::ios_base::binary);
     req.SetBody(istr);
     req.SetContentType("binary/octet-stream");

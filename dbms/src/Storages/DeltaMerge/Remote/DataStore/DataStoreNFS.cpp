@@ -14,6 +14,8 @@
 
 #include <Poco/Path.h>
 #include <Storages/DeltaMerge/Remote/DataStore/DataStoreNFS.h>
+#include <Storages/S3/S3Common.h>
+#include <Storages/S3/S3Filename.h>
 #include <unistd.h>
 
 namespace DB::DM::Remote
@@ -36,6 +38,24 @@ void DataStoreNFS::putDMFile(DMFilePtr local_dmf, const DMFileOID & oid)
     }
 
     src_dmf_dir_poco.copyTo(dist_dmf_dir);
+
+    {
+        // Mock upload to S3
+        // TODO: support https
+        // TODO: remove hardcode params
+        const auto * access_key_id = "minioadmin";
+        const auto * secret_access_key = "minioadmin";
+        const auto * bucket_name = "jayson";
+        auto client = S3::ClientFactory::instance().create(
+            "172.16.5.85:9000",
+            Aws::Http::Scheme::HTTP,
+            false,
+            access_key_id,
+            secret_access_key);
+        const auto s3key = S3::S3Filename::fromDMFileOID(oid).toFullKey();
+        S3::uploadEmptyFile(*client, bucket_name, s3key);
+    }
+
     LOG_DEBUG(log, "Upload DMFile finished, oid={}", oid);
 }
 
