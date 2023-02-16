@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Core/Types.h>
+#include <Interpreters/Context.h>
 #include <Storages/Page/V3/PageDirectory.h>
 #include <Storages/Page/V3/Remote/CheckpointManifestFileReader.h>
 #include <Storages/S3/S3Common.h>
@@ -40,8 +41,9 @@ namespace DB::S3
 // FIXME: Remove this hardcode bucket
 static constexpr auto BUCKET_NAME = "jayson";
 
-S3GCManager::S3GCManager()
+S3GCManager::S3GCManager(const String & temp_path_)
     : client(nullptr)
+    , temp_path(temp_path_)
     , log(Logger::get())
 {
     // TODO: remove hardcode params
@@ -55,7 +57,7 @@ S3GCManager::S3GCManager()
         secret_access_key);
 }
 
-void S3GCManager::runOnAllStores()
+bool S3GCManager::runOnAllStores()
 {
     const std::vector<UInt64> all_store_ids = getAllStoreIds();
     LOG_TRACE(log, "all_store_ids: {}", all_store_ids);
@@ -63,6 +65,8 @@ void S3GCManager::runOnAllStores()
     {
         runForStore(gc_store_id);
     }
+    // always return false, run in fixed rate
+    return false;
 }
 
 void S3GCManager::runForStore(UInt64 gc_store_id)
@@ -75,6 +79,7 @@ void S3GCManager::runForStore(UInt64 gc_store_id)
 
     LOG_INFO(log, "latest manifest, gc_store_id={} upload_seq={} key={}", gc_store_id, manifests.latest_upload_seq, manifests.latest_manifest);
     // Parse from the latest manifest and collect valid lock files
+    // TODO: collect valid lock files in multiple manifest?
     const std::unordered_set<String> valid_lock_files = getValidLocksFromManifest(manifests.latest_manifest);
     LOG_INFO(log, "latest manifest, key={} n_locks={}", manifests.latest_manifest, valid_lock_files.size());
 
@@ -159,19 +164,19 @@ void S3GCManager::removeDataFileIfDelmarkExpired(
     {
         // Get the time diff by `now`-`mtime`
         Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
-        auto diff_ms = Aws::Utils::DateTime::Diff(now, delmark_mtime).count();
+        auto diff_seconds = Aws::Utils::DateTime::Diff(now, delmark_mtime).count() / 1000.0;
         static constexpr Int64 DELMARK_EXPIRED_HOURS = 1;
-        if (diff_ms > DELMARK_EXPIRED_HOURS * 3600 * 1000)
+        if (diff_seconds > DELMARK_EXPIRED_HOURS * 3600) // TODO: make it configurable
         {
             expired = true;
         }
         LOG_INFO(
             log,
-            "delmark exist, datafile={} mark_time={} now={} diff_ms={} expired={}",
+            "delmark exist, datafile={} mark_time={} now={} diff_sec={:.3f} expired={}",
             datafile_key,
             delmark_mtime.ToGmtString(Aws::Utils::DateFormat::ISO_8601),
             now.ToGmtString(Aws::Utils::DateFormat::ISO_8601),
-            diff_ms,
+            diff_seconds,
             expired);
     }
     // The delmark is not expired, wait for next GC round
@@ -284,10 +289,31 @@ void S3GCManager::removeOutdatedManifest(const ManifestListResult & manifests)
 
 String S3GCManager::getTemporaryDownloadFile(String s3_key)
 {
-    UNUSED(this);
+    // FIXME: Is there any other logic that download manifest?
     std::replace(s3_key.begin(), s3_key.end(), '/', '_');
-    return fmt::format("/tmp/{}_{}", s3_key, std::hash<std::thread::id>()(std::this_thread::get_id()));
+    return fmt::format("{}/{}_{}", temp_path, s3_key, std::hash<std::thread::id>()(std::this_thread::get_id()));
 }
 
+S3GCManagerService::S3GCManagerService(Context & context, Int64 interval_seconds)
+    : global_ctx(context.getGlobalContext())
+{
+    manager = std::make_unique<S3GCManager>(global_ctx.getTemporaryPath());
+
+    timer = global_ctx.getBackgroundPool().addTask(
+        [this]() {
+            return manager->runOnAllStores();
+        },
+        false,
+        /*interval_ms*/ interval_seconds * 1000);
+}
+
+S3GCManagerService::~S3GCManagerService()
+{
+    if (timer)
+    {
+        global_ctx.getBackgroundPool().removeTask(timer);
+        timer = nullptr;
+    }
+}
 
 } // namespace DB::S3

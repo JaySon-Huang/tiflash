@@ -92,6 +92,7 @@ private:
 
     std::mutex mtx_store_init;
     std::condition_variable cv_init;
+    std::atomic<bool> inited_from_s3 = false;
 
 
     std::mutex mtx_checkpoint;

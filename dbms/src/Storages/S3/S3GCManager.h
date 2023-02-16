@@ -15,10 +15,13 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Storages/BackgroundProcessingPool.h>
 #include <common/types.h>
 
 #include <memory>
 #include <unordered_set>
+
+#include "Storages/BackgroundProcessingPool.h"
 
 namespace Aws
 {
@@ -34,6 +37,7 @@ class DateTime;
 
 namespace DB
 {
+class Context;
 class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 } // namespace DB
@@ -45,9 +49,9 @@ struct S3FilenameView;
 class S3GCManager
 {
 public:
-    S3GCManager();
+    explicit S3GCManager(const String & temp_path_);
 
-    void runOnAllStores();
+    bool runOnAllStores();
 
 private:
     void runForStore(UInt64 gc_store_id);
@@ -87,6 +91,24 @@ private:
 private:
     std::shared_ptr<Aws::S3::S3Client> client;
 
+    // The temporary path for storing
+    // downloaded manifest
+    String temp_path;
+
     LoggerPtr log;
 };
+
+class S3GCManagerService
+{
+public:
+    explicit S3GCManagerService(Context & context, Int64 interval_seconds);
+    ~S3GCManagerService();
+
+private:
+    Context & global_ctx;
+    std::unique_ptr<S3GCManager> manager;
+    BackgroundProcessingPool::TaskHandle timer;
+};
+using S3GCManagerServicePtr = std::unique_ptr<S3GCManagerService>;
+
 } // namespace DB::S3

@@ -18,7 +18,7 @@ public:
 TEST_F(S3GCManagerTest, Simple)
 try
 {
-    S3GCManager gc_mgr;
+    S3GCManager gc_mgr("/tmp");
     gc_mgr.runOnAllStores();
 }
 CATCH

@@ -58,12 +58,67 @@ CheckpointUploadManager::CheckpointUploadManager(PageDirectoryPtr & directory_, 
 {
 }
 
+
+struct ManifestListResult
+{
+    Strings all_manifest;
+    const String latest_manifest;
+    const UInt64 latest_upload_seq;
+};
+
+ManifestListResult listManifest(
+    const Aws::S3::S3Client & client,
+    const String & bucket,
+    UInt64 store_id,
+    const LoggerPtr & log)
+{
+    Strings all_manifest;
+    String latest_manifest;
+    UInt64 latest_upload_seq = 0;
+
+    const auto store_prefix = S3::S3Filename::fromStoreId(store_id).toManifestPrefix();
+
+    S3::listPrefix(client, bucket, store_prefix, "", [&](const Aws::S3::Model::ListObjectsV2Result & result) {
+        const auto & objects = result.GetContents();
+        all_manifest.reserve(all_manifest.size() + objects.size());
+        for (const auto & object : objects)
+        {
+            const auto & mf_key = object.GetKey();
+            LOG_TRACE(log, "mf_key={}", mf_key);
+            const auto filename_view = S3::S3FilenameView::fromKey(mf_key);
+            RUNTIME_CHECK(filename_view.type == S3::S3FilenameType::CheckpointManifest, mf_key);
+            // TODO: also store the object.GetLastModified() for removing
+            // outdated manifest objects
+            all_manifest.emplace_back(mf_key);
+            auto upload_seq = filename_view.getUploadSequence();
+            if (upload_seq > latest_upload_seq)
+            {
+                latest_upload_seq = upload_seq;
+                latest_manifest = mf_key;
+            }
+        }
+        return objects.size();
+    });
+    return ManifestListResult{
+        .all_manifest = std::move(all_manifest),
+        .latest_manifest = std::move(latest_manifest),
+        .latest_upload_seq = latest_upload_seq,
+    };
+}
+
 void CheckpointUploadManager::initStoreInfo(UInt64 actual_store_id)
 {
+    if (inited_from_s3)
+        return;
+
     {
         std::unique_lock lock_init(mtx_store_init);
-        // TODO: we need to restore the last_upload_sequence from S3
+        // we need to restore the last_upload_sequence from S3
+        const auto manifests = listManifest(*s3_client, s3_bucket, actual_store_id, log);
+        last_upload_sequence = manifests.latest_upload_seq;
         store_id = actual_store_id;
+        LOG_INFO(log, "restore the last upload sequence from S3, sequence={}", last_upload_sequence);
+        inited_from_s3 = true;
     }
     cv_init.notify_all();
 }

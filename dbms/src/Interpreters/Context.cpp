@@ -61,6 +61,7 @@
 #include <Storages/Page/universal/UniversalPageStorage.h>
 #include <Storages/PathCapacityMetrics.h>
 #include <Storages/PathPool.h>
+#include <Storages/S3/S3GCManager.h>
 #include <Storages/Transaction/BackgroundService.h>
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
@@ -76,6 +77,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "Storages/S3/S3GCManager.h"
 #include "Storages/Transaction/FastAddPeerContext.h"
 
 
@@ -264,9 +266,11 @@ struct ContextShared
     /// Cached local cache of remote checkpoint manifest file.
     LocalPageStorageCache<UniversalPageStoragePtr> local_ps_cache{1};
 
-    FastAddPeerContext * fast_add_peer_ctx;
+    FastAddPeerContext * fast_add_peer_ctx{};
 
     DM::Remote::ManagerPtr dm_remote_manager;
+
+    S3::S3GCManagerServicePtr s3_gc_manager;
 
     TiFlashSecurityConfigPtr security_config;
 
@@ -1773,6 +1777,8 @@ void Context::initializeWriteNodePageStorage(const PathPool & path_pool, const F
         file_provider);
     shared->ps_write->restore();
     LOG_INFO(shared->log, "initialized GlobalUniversalPageStorage(WriteNode)");
+
+    shared->s3_gc_manager = std::make_unique<S3::S3GCManagerService>(*this, 60);
 }
 
 void Context::initializeReadNodePageStorage(const PathPool & path_pool, const FileProviderPtr & file_provider)
