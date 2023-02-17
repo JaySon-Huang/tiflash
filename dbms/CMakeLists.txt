@@ -107,6 +107,7 @@ add_headers_and_sources(dbms src/Storages/Page/)
 add_headers_and_sources(dbms src/Storages/Page/V3/Remote)
 add_headers_and_sources(dbms src/Storages/S3)
 add_headers_and_sources(dbms src/TiDB)
+add_headers_and_sources(dbms src/TiDB/Etcd)
 add_headers_and_sources(dbms src/Client)
 add_headers_only(dbms src/Flash/Coprocessor)
 add_headers_only(dbms src/Server)
@@ -219,6 +220,7 @@ target_link_libraries (dbms
     kv_client
     tipb
     dtpb
+    etcdpb
     PSCheckpointProto
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}

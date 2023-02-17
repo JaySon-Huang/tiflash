@@ -79,6 +79,8 @@
 
 #include "Storages/S3/S3GCManager.h"
 #include "Storages/Transaction/FastAddPeerContext.h"
+#include "TiDB/Etcd/Client.h"
+#include "TiDB/OwnerManager.h"
 
 
 namespace ProfileEvents
@@ -176,6 +178,8 @@ struct UniversalPageStorageWrapper
             return;
         }
 
+        global_context.initializeGcOwner(store_info.id());
+
         wi->set_store_id(store_info.id());
         wi->set_version(store_info.version());
         wi->set_version_git(store_info.git_hash());
@@ -270,6 +274,7 @@ struct ContextShared
 
     DM::Remote::ManagerPtr dm_remote_manager;
 
+    DB::OwnerManagerPtr s3_gc_owner;
     S3::S3GCManagerServicePtr s3_gc_manager;
 
     TiFlashSecurityConfigPtr security_config;
@@ -355,6 +360,12 @@ struct ContextShared
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        if (s3_gc_owner)
+        {
+            s3_gc_owner->campaignCancel();
+            s3_gc_owner = nullptr;
+        }
 
         /** At this point, some tables may have threads that block our mutex.
           * To complete them correctly, we will copy the current list of tables,
@@ -1778,7 +1789,7 @@ void Context::initializeWriteNodePageStorage(const PathPool & path_pool, const F
     shared->ps_write->restore();
     LOG_INFO(shared->log, "initialized GlobalUniversalPageStorage(WriteNode)");
 
-    shared->s3_gc_manager = std::make_unique<S3::S3GCManagerService>(*this, 60);
+    // shared->s3_gc_manager = std::make_unique<S3::S3GCManagerService>(*this, 60);
 }
 
 void Context::initializeReadNodePageStorage(const PathPool & path_pool, const FileProviderPtr & file_provider)
@@ -1825,6 +1836,15 @@ UniversalPageStoragePtr Context::getWriteNodePageStorage() const
     {
         return nullptr;
     }
+}
+
+void Context::initializeGcOwner(UInt64 store_id)
+{
+    auto lock = getLock();
+    String str_store_id = fmt::format("{}", store_id);
+    auto etcd_client = shared->tmt_context->getEtcdClient();
+    auto s3_gc_owner = OwnerManager::createS3GCOwner(getGlobalContext(), str_store_id, etcd_client);
+    s3_gc_owner->campaignOwner();
 }
 
 UniversalPageStoragePtr Context::getReadNodePageStorage() const

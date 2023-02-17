@@ -30,6 +30,8 @@
 
 #include <memory>
 
+#include "TiDB/Etcd/Client.h"
+
 namespace DB
 {
 // default batch-read-index timeout is 10_000ms.
@@ -88,12 +90,15 @@ TMTContext::TMTContext(Context & context_, const TiFlashRaftConfig & raft_config
     , wait_index_timeout_ms(DEFAULT_WAIT_INDEX_TIMEOUT_MS)
     , read_index_worker_tick_ms(DEFAULT_READ_INDEX_WORKER_TICK_MS)
     , wait_region_ready_timeout_sec(DEFAULT_WAIT_REGION_READY_TIMEOUT_SEC)
-{}
+{
+    // etcd_client = Etcd::Client::create(cluster->pd_client, cluster_config);
+}
 
 void TMTContext::updateSecurityConfig(const TiFlashRaftConfig & raft_config, const pingcap::ClusterConfig & cluster_config)
 {
     if (!raft_config.pd_addrs.empty())
         cluster->update(raft_config.pd_addrs, cluster_config);
+    // TODO: update etcd client config
 }
 
 void TMTContext::restore(PathPool & path_pool, const TiFlashRaftProxyHelper * proxy_helper)

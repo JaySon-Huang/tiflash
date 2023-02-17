@@ -452,6 +452,7 @@ public:
     void initializeDeltaMergeRemoteManager();
     DM::Remote::ManagerPtr getDMRemoteManager() const;
 
+    void initializeGcOwner(UInt64 store_id);
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();

@@ -44,6 +44,11 @@ class GCManager;
 using GCManagerPtr = std::shared_ptr<GCManager>;
 
 struct TiFlashRaftConfig;
+namespace Etcd
+{
+class Client;
+using ClientPtr = std::shared_ptr<Client>;
+} // namespace Etcd
 
 // We define a shared ptr here, because TMTContext / SchemaSyncer / IndexReader all need to
 // `share` the resource of cluster.
@@ -94,6 +99,8 @@ public:
 
     pingcap::kv::Cluster * getKVCluster() { return cluster.get(); }
 
+    Etcd::ClientPtr getEtcdClient() const { return etcd_client; }
+
     MPPTaskManagerPtr getMPPTaskManager();
 
     // Return a raw ptr to avoid being cycle reference
@@ -134,6 +141,7 @@ private:
     GCManager gc_manager;
 
     KVClusterPtr cluster;
+    Etcd::ClientPtr etcd_client;
 
     mutable std::mutex mutex;
 
