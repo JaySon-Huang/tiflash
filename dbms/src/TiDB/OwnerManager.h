@@ -2,6 +2,16 @@
 
 #include <common/types.h>
 #include <etcd/v3election.pb.h>
+#include <condition_variable>
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+#include <grpcpp/client_context.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include <thread>
 
@@ -82,7 +92,7 @@ public:
 private:
     void camaignLoop(Etcd::SessionPtr session);
 
-    std::optional<String> getOwnerInfo(const String & check_id);
+    std::optional<String> getOwnerKey(const String & check_id);
 
     void toBeOwner(Etcd::LeaderKey && leader_key);
 
@@ -97,7 +107,10 @@ private:
     Etcd::ClientPtr client;
     Int64 leader_ttl;
 
-    std::atomic<bool> enable_camaign{true};
+    std::mutex mtx_camaign;
+    bool enable_camaign{true};
+    grpc::ClientContext watch_ctx;
+
     std::thread th_camaign;
     std::mutex mtx_leader;
     Etcd::LeaderKey leader;

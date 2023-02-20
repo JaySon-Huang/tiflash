@@ -113,7 +113,7 @@ std::tuple<String, grpc::Status> Client::getFirstKey(const String & prefix)
     return {resp.kvs(0).value(), grpc::Status::OK};
 }
 
-LeaseID Client::leaseGrant(Int64 ttl)
+std::tuple<LeaseID, grpc::Status> Client::leaseGrant(Int64 ttl)
 {
     etcdserverpb::LeaseGrantRequest req;
     req.set_ttl(ttl);
@@ -122,27 +122,25 @@ LeaseID Client::leaseGrant(Int64 ttl)
     context.set_deadline(std::chrono::system_clock::now() + timeout);
 
     etcdserverpb::LeaseGrantResponse resp;
-
     auto status = leaderClient()->lease_stub->LeaseGrant(&context, req, &resp);
     if (!status.ok())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "lease grant failed, code={} msg={}", status.error_code(), status.error_message());
+        return {InvalidLeaseID, status};
     }
-    return resp.id();
+    return {resp.id(), status};
 }
 
-SessionPtr Client::createSession(Context & context, Int64 ttl, LeaseID lease_id)
+SessionPtr Client::createSession(Context & context, Int64 ttl)
 {
-    if (lease_id == InvalidLeaseID)
-        lease_id = leaseGrant(ttl);
+    const auto & [lease_id, status] = leaseGrant(ttl);
+    if (!status.ok())
+        return {};
 
     auto session = std::shared_ptr<Session>(new Session(context, lease_id));
-    session->grpc_context.set_deadline(std::chrono::system_clock::now() + timeout);
     session->writer = leaderClient()->lease_stub->LeaseKeepAlive(&session->grpc_context);
     auto & bkg_pool = session->global_ctx.getBackgroundPool();
     session->keep_alive_handle = bkg_pool.addTask(
         [s = session, log = log] {
-            std::lock_guard lk(s->mtx);
             if (s->isCanceled())
                 return false;
 
@@ -153,7 +151,7 @@ SessionPtr Client::createSession(Context & context, Int64 ttl, LeaseID lease_id)
             {
                 auto status = s->writer->Finish();
                 LOG_DEBUG(log, "keep alive write faile, finish. lease={:x} code={} msg={}", s->lease_id.load(), status.error_code(), status.error_message());
-                s->doCancel(lk);
+                s->setCanceled();
                 return false;
             }
             etcdserverpb::LeaseKeepAliveResponse resp;
@@ -162,7 +160,7 @@ SessionPtr Client::createSession(Context & context, Int64 ttl, LeaseID lease_id)
             {
                 auto status = s->writer->Finish();
                 LOG_DEBUG(log, "keep alive read faile, finish. lease={:x} code={} msg={}", s->lease_id.load(), status.error_code(), status.error_message());
-                s->doCancel(lk);
+                s->setCanceled();
                 return false;
             }
             return false;
@@ -237,6 +235,7 @@ grpc::Status Client::waitsUntilDeleted(grpc::ClientContext * grpc_context, const
     {
         etcdserverpb::WatchResponse resp;
         ok = rw->Read(&resp);
+        LOG_INFO(Logger::get(), "watch key:{} ok:{} resp: {}", key, ok, resp.ShortDebugString());
         if (!ok)
             break;
         for (const auto & event : resp.events())
@@ -289,22 +288,28 @@ Session::~Session()
     cancel();
 }
 
-void Session::doCancel(std::lock_guard<std::mutex> &)
+void Session::setCanceled()
 {
-    if (keep_alive_handle)
-    {
-        LOG_ERROR(Logger::get(), "canceling {} {}", fmt::ptr(writer), lease_id);
-        global_ctx.getBackgroundPool().removeTask(keep_alive_handle);
-        writer = nullptr;
-        keep_alive_handle = nullptr;
-        lease_id = InvalidLeaseID;
-    }
+    lease_id = InvalidLeaseID;
+}
+
+bool Session::isCanceled() const
+{
+    return lease_id == InvalidLeaseID;
 }
 
 void Session::cancel()
 {
     std::lock_guard lk(mtx);
-    doCancel(lk);
+    if (keep_alive_handle)
+    {
+        LOG_ERROR(Logger::get(), "canceling {} {}", fmt::ptr(writer), lease_id);
+        global_ctx.getBackgroundPool().removeTask(keep_alive_handle);
+        keep_alive_handle = nullptr;
+        grpc_context.TryCancel();
+        writer = nullptr;
+        lease_id = InvalidLeaseID;
+    }
 }
 
 } // namespace DB::Etcd

@@ -51,9 +51,9 @@ public:
 
     std::tuple<String, grpc::Status> getFirstKey(const String & prefix);
 
-    LeaseID leaseGrant(Int64 ttl);
+    std::tuple<LeaseID, grpc::Status> leaseGrant(Int64 ttl);
 
-    SessionPtr createSession(Context & context, Int64 ttl, LeaseID lease_id);
+    SessionPtr createSession(Context & context, Int64 ttl);
 
     grpc::Status leaseRevoke(LeaseID lease_id);
 
@@ -89,7 +89,7 @@ private:
 
     std::mutex mtx_channel_map;
     std::unordered_map<String, EtcdConnClientPtr> channel_map;
-    
+
     LoggerPtr log;
 };
 
@@ -103,17 +103,13 @@ public:
         return lease_id;
     }
 
-    bool isCanceled() const
-    {
-        return lease_id == InvalidLeaseID;
-    }
+    void setCanceled();
+    bool isCanceled() const;
 
     void cancel();
 
 private:
     explicit Session(Context & context, LeaseID l);
-
-    void doCancel(std::lock_guard<std::mutex> & lk);
 
     friend class Client;
 

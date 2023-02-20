@@ -46,7 +46,9 @@ OwnerManager::~OwnerManager()
 
 void OwnerManager::cancel()
 {
+    std::unique_lock lk(mtx_camaign);
     enable_camaign = false;
+    watch_ctx.TryCancel();
 }
 
 void OwnerManager::campaignCancel()
@@ -60,11 +62,11 @@ void OwnerManager::campaignCancel()
 
 void OwnerManager::campaignOwner()
 {
-    auto session = client->createSession(global_ctx, leader_ttl, Etcd::InvalidLeaseID);
+    auto session = client->createSession(global_ctx, leader_ttl);
     LOG_INFO(log, "start campaign owner");
     th_camaign = ThreadFactory::newThread(
         false,
-        campaign_name,
+        "OwnerMgr",
         [this, s = std::move(session)] {
             camaignLoop(s);
         });
@@ -76,20 +78,24 @@ void OwnerManager::camaignLoop(Etcd::SessionPtr session)
     {
         while (true)
         {
-            if (session->isCanceled())
-            {
-                LOG_INFO(log, "etcd session is canceled, create a new one");
-                auto old_lease_id = session->leaseID();
-                // Start a new session
-                session = client->createSession(global_ctx, leader_ttl, Etcd::InvalidLeaseID);
-                // TODO if create new session failed, revoke session and break
-                UNUSED(old_lease_id);
-            }
             if (!enable_camaign)
             {
                 LOG_INFO(log, "break campaign loop, disabled");
                 revokeEtcdSession(session->leaseID());
                 break;
+            }
+            if (session->isCanceled())
+            {
+                LOG_INFO(log, "etcd session is canceled, create a new one");
+                auto old_lease_id = session->leaseID();
+                // Start a new session
+                session = client->createSession(global_ctx, leader_ttl);
+                if (!session)
+                {
+                    LOG_INFO(log, "break campaign loop, create session failed");
+                    revokeEtcdSession(old_lease_id);
+                    break;
+                }
             }
 
             const auto lease_id = session->leaseID();
@@ -109,7 +115,7 @@ void OwnerManager::camaignLoop(Etcd::SessionPtr session)
                 continue;
             }
 
-            auto owner_key = getOwnerInfo(id);
+            auto owner_key = getOwnerKey(id);
             if (!owner_key)
             {
                 // if error, continue
@@ -148,31 +154,12 @@ void OwnerManager::toBeOwner(Etcd::LeaderKey && leader_key)
 
 void OwnerManager::watchOwner(const Etcd::SessionPtr & session, const String & owner_key)
 {
-    grpc::ClientContext grpc_ctx;
-    // client->waitsUntilDeleted(&grpc_ctx, owner_key);
-    auto reader = client->observe(&grpc_ctx, campaign_name);
-    v3electionpb::LeaderResponse resp;
-    while (true)
-    {
-        if (!enable_camaign)
-            break;
-        if (session->isCanceled())
-            break;
-
-        if (auto ok = reader->Read(&resp); ok)
-        {
-            const auto & kv = resp.kv();
-            LOG_INFO(log, "watch receive, key={}", kv.key());
-            continue;
-        }
-        LOG_INFO(log, "watcher is closed, no owner");
-        auto status = reader->Finish();
-        LOG_INFO(log, "watcher finished, code={} msg={}", status.error_code(), status.error_message());
-        break;
-    }
+    auto status = client->waitsUntilDeleted(&watch_ctx, owner_key);
+    if (!status.ok())
+        revokeEtcdSession(session->leaseID());
 }
 
-std::optional<String> OwnerManager::getOwnerInfo(const String & check_id)
+std::optional<String> OwnerManager::getOwnerKey(const String & check_id)
 {
     const auto & [kv, status] = client->leader(campaign_name);
     if (!status.ok())
@@ -186,7 +173,7 @@ std::optional<String> OwnerManager::getOwnerInfo(const String & check_id)
         LOG_WARNING(log, "is not the owner");
         return std::nullopt;
     }
-    return kv.value();
+    return kv.key();
 }
 
 bool OwnerManager::isOwner()
@@ -207,7 +194,6 @@ void OwnerManager::resignOwner()
     if (leader.name().empty())
         return;
     client->resign(std::move(leader));
-    cancel();
     leader.Clear();
     // resign success
     LOG_WARNING(log, "resign owner success");
