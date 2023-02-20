@@ -188,15 +188,18 @@ void OwnerManager::retireOwner()
     leader.Clear();
 }
 
-void OwnerManager::resignOwner()
+bool OwnerManager::resignOwner()
 {
     std::lock_guard lk(mtx_leader);
+    // this node is not
     if (leader.name().empty())
-        return;
+        return false;
+    
     client->resign(std::move(leader));
     leader.Clear();
-    // resign success
+    // resign owner success
     LOG_WARNING(log, "resign owner success");
+    return true;
 }
 
 void OwnerManager::revokeEtcdSession(Etcd::LeaseID lease_id)

@@ -62,7 +62,7 @@ public:
 
     bool isOwner();
 
-    void resignOwner();
+    bool resignOwner();
 
     enum OwnerResultType
     {

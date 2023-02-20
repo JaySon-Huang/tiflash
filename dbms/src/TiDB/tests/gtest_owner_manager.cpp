@@ -43,10 +43,17 @@ TEST(OwnerManagerTest, BeOwner)
         EXPECT_EQ(owner_id.s, id);
     }
 
-    sleep(60);
+    {
+        bool was_owner = owner->resignOwner();
+        EXPECT_TRUE(was_owner);
+    }
 
-    // owner->resignOwner();
-    // ASSERT_FALSE(owner->isOwner());
+    {
+        owner->campaignCancel();
+        ASSERT_FALSE(owner->isOwner());
+    }
+
+    sleep(10);
 }
 
 } // namespace DB::tests
