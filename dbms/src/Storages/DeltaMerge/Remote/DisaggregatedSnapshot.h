@@ -80,9 +80,9 @@ private:
 class DisaggregatedTableReadSnapshot
 {
 public:
-    DisaggregatedTableReadSnapshot(TableID table_id_, RSOperatorPtr filter_, SegmentReadTasks && tasks_)
+    DisaggregatedTableReadSnapshot(TableID table_id_, RSOperatorPtr /*filter_*/, SegmentReadTasks && tasks_)
         : table_id(table_id_)
-        , filter(std::move(filter_))
+        // , filter(std::move(filter_))
         , tasks(std::move(tasks_))
     {
     }
@@ -106,7 +106,7 @@ public:
 
 private:
     mutable std::mutex mtx;
-    RSOperatorPtr filter;
+    // RSOperatorPtr filter;
     // TODO: we could reduce the members in tasks
     SegmentReadTasks tasks;
 };
