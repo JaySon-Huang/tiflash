@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsStringSearch.h>
 #include <TestUtils/FunctionTestUtils.h>
@@ -117,6 +118,24 @@ public:
     CATCH                                                                                                 \
     BENCHMARK_REGISTER_F(CollationLikeBench, collator)->Iterations(10);
 
+// BENCHMARK_DEFINE_F(CollationLikeBench, UTF8MB4_BIN)
+// (benchmark::State & state)
+// try
+// {
+//     auto & context = TiFlashTestEnv::getGlobalContext();
+//     auto fl = FunctionFactory::instance().get("like3Args", context);
+//     // FunctionLike3Args fl;
+//     TiDB::TiDBCollatorPtr collator = TiDB::ITiDBCollator::getCollator(TiDB::ITiDBCollator::UTF8MB4_BIN);
+//     fl.setCollator(collator);
+//     Block block(like_data);
+//     ColumnNumbers arguments{0, 1, 2};
+//     for (auto _ : state)
+//     {
+//         fl.executeImpl(block, arguments, 3);
+//     }
+// }
+// CATCH
+// BENCHMARK_REGISTER_F(CollationLikeBench, UTF8MB4_BIN)->Iterations(10);
 
 BENCH_LESS_COLLATOR(UTF8MB4_BIN);
 BENCH_LESS_COLLATOR(UTF8MB4_GENERAL_CI);

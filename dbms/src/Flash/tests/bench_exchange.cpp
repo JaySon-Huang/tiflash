@@ -15,11 +15,13 @@
 #include <Flash/tests/bench_exchange.h>
 #include <fmt/core.h>
 
+#if ENABLE_BENCH_EXCHANGE
 #include <Flash/Mpp/ExchangeReceiver.cpp> // to include the implementation of ExchangeReceiver
 #include <Flash/Mpp/FineGrainedShuffleWriter.cpp> // to include the implementation of FineGrainedShuffleWriter
 #include <Flash/Mpp/HashParitionWriter.cpp> // to include the implementation of HashParitionWriter
 #include <Flash/Mpp/MPPTunnel.cpp> // to include the implementation of MPPTunnel
 #include <Flash/Mpp/MPPTunnelSet.cpp> // to include the implementation of MPPTunnelSet
+#endif
 #include <atomic>
 #include <chrono>
 
@@ -30,6 +32,7 @@ namespace tests
 {
 std::random_device rd;
 
+#if ENABLE_BENCH_EXCHANGE
 MockBlockInputStream::MockBlockInputStream(const std::vector<Block> & blocks_, StopFlag & stop_flag_)
     : blocks(blocks_)
     , header(blocks[0].cloneEmpty())
@@ -71,7 +74,7 @@ Block makeBlock(int row_num, bool skew)
         std::mt19937 mt(rd());
         std::uniform_int_distribution<Int64> int64_dist;
         std::uniform_int_distribution<int> len_dist(10, 20);
-        std::uniform_int_distribution<char> char_dist;
+        std::uniform_int_distribution<uint8_t> char_dist(0, 0xff);
 
         for (int i = 0; i < row_num; ++i)
         {
@@ -459,6 +462,7 @@ BENCHMARK_REGISTER_F(ExchangeBench, basic_send_receive)
     ->Args({8, 1, 1024 * 1000, 8, 10000})
     ->Args({8, 1, 1024 * 1000, 8, 100000});
 
+#endif
 
 } // namespace tests
 } // namespace DB

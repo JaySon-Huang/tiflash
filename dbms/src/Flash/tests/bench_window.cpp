@@ -19,6 +19,7 @@ namespace DB
 {
 namespace tests
 {
+#if ENABLE_BENCH_EXCHANGE
 class WindowFunctionBench : public ExchangeBench
 {
 public:
@@ -49,7 +50,7 @@ public:
         tipb::DAGRequest req;
         MPPInfo mpp_info(0, 0, 0, 0, -1, -1, {}, std::unordered_map<String, std::vector<Int64>>{});
         builder.getRoot()
-            ->toTiPBExecutor(req.mutable_root_executor(), /*collator_id=*/0, mpp_info, TiFlashTestEnv::getContext());
+            ->toTiPBExecutor(req.mutable_root_executor(), /*collator_id=*/0, mpp_info, *TiFlashTestEnv::getContext());
         assert(req.root_executor().tp() == tipb::TypeWindow);
         window = req.root_executor().window();
         assert(window.child().tp() == tipb::TypeSort);
@@ -120,7 +121,7 @@ try
     const int fine_grained_shuffle_stream_count = state.range(3);
     const int fine_grained_shuffle_batch_size = state.range(4);
     const bool skew = state.range(5);
-    Context context = TiFlashTestEnv::getContext();
+    auto context = TiFlashTestEnv::getContext();
 
     std::vector<Block> * blocks = &uniform_blocks;
     if (skew)
@@ -134,7 +135,7 @@ try
         BlockInputStreamPtr receiver_stream;
 
         prepareWindowStream(
-            context,
+            *context,
             concurrency,
             source_num,
             total_rows,
@@ -174,7 +175,7 @@ try
     const int total_rows = state.range(2);
     const int fine_grained_shuffle_stream_count = state.range(3);
     const int fine_grained_shuffle_batch_size = state.range(4);
-    Context context = TiFlashTestEnv::getContext();
+    auto context = TiFlashTestEnv::getContext();
 
     std::vector<Block> * blocks = &skew_blocks;
 
@@ -187,7 +188,7 @@ try
 
         // Only build partial sort.
         prepareWindowStream(
-            context,
+            *context,
             concurrency,
             source_num,
             total_rows,
@@ -209,5 +210,6 @@ BENCHMARK_REGISTER_F(WindowFunctionBench, partial_sort_skew_dataset)
     ->Args({2, 1, 1024 * 10000, 0, 4096})
     ->Args({4, 1, 1024 * 10000, 0, 4096})
     ->Args({8, 1, 1024 * 10000, 0, 4096});
+#endif
 } // namespace tests
 } // namespace DB

@@ -15,6 +15,8 @@
 #pragma once
 
 #include <Flash/Coprocessor/DAGQueryBlockInterpreter.h>
+#include <Flash/Coprocessor/FineGrainedShuffle.h>
+#include <Interpreters/SubqueryForSet.h>
 
 namespace DB
 {

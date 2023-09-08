@@ -39,6 +39,7 @@ namespace DB
 namespace tests
 {
 
+#define ENABLE_BENCH_EXCHANGE 0 // the bench exchange is totally broken, ignore it for now
 
 using Packet = mpp::MPPDataPacket;
 using PacketPtr = std::shared_ptr<Packet>;
@@ -46,6 +47,7 @@ using PacketQueue = MPMCQueue<PacketPtr>;
 using PacketQueuePtr = std::shared_ptr<PacketQueue>;
 using StopFlag = std::atomic<bool>;
 
+#if ENABLE_BENCH_EXCHANGE
 // NOLINTBEGIN(readability-convert-member-functions-to-static)
 struct MockReceiverContext
 {
@@ -70,7 +72,7 @@ struct MockReceiverContext
         bool read(PacketPtr & packet [[maybe_unused]]) const
         {
             PacketPtr res;
-            if (queue->pop(res))
+            if (queue->pop(res) == MPMCQueueResult::OK)
             {
                 *packet = *res; // avoid change shared packets
                 return true;
@@ -145,7 +147,7 @@ struct MockWriter : public PacketWriter
         return true;
     }
 
-    void finish() { queue->finish(); }
+    void finish() const { queue->finish(); }
 
     PacketQueuePtr queue;
 };
@@ -273,6 +275,7 @@ public:
     std::vector<Block> uniform_blocks;
     std::vector<Block> skew_blocks;
 };
+#endif
 
 
 } // namespace tests
