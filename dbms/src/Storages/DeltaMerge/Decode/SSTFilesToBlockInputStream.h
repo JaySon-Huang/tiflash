@@ -18,14 +18,10 @@
 #include <RaftStoreProxyFFI/ColumnFamily.h>
 #include <Storages/DeltaMerge/DMVersionFilterBlockInputStream.h>
 #include <Storages/KVStore/Decode/PartitionStreams.h>
+#include <Storages/KVStore/MultiRaft/RegionState.h>
 
 #include <memory>
 #include <string_view>
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -74,24 +70,45 @@ struct SSTScanSoftLimit
         {
             decoded_end = RecordKVFormat::decodeTiKVKey(raw_end);
         }
-        if (decoded_start.size())
+        if (!decoded_start.empty())
         {
             start_limit = RecordKVFormat::getRawTiDBPK(decoded_start);
         }
-        if (decoded_end.size())
+        if (!decoded_end.empty())
         {
             end_limit = RecordKVFormat::getRawTiDBPK(decoded_end);
         }
     }
 
-    const std::optional<RawTiDBPK> & getStartLimit() { return start_limit; }
+    const std::optional<RawTiDBPK> & getStartLimit() const { return start_limit; }
 
-    const std::optional<RawTiDBPK> & getEndLimit() { return end_limit; }
+    const std::optional<RawTiDBPK> & getEndLimit() const { return end_limit; }
 
     std::string toDebugString() const
     {
         return fmt::format("{}:{}", raw_start.toDebugString(), raw_end.toDebugString());
     }
+};
+
+struct ColumnFileReaderSet
+{
+    using RegionRangeFilter = ImutRegionRangePtr;
+    static ColumnFileReaderSet create(
+        const SSTViewVec & snaps,
+        RegionRangeFilter range,
+        std::optional<SSTScanSoftLimit> && soft_limit,
+        const TiFlashRaftProxyHelper * proxy_helper,
+        const LoggerPtr & log);
+
+    using SSTReaderPtr = std::unique_ptr<SSTReader>;
+    SSTReaderPtr write_cf_reader;
+    SSTReaderPtr default_cf_reader;
+    SSTReaderPtr lock_cf_reader;
+
+    // Currently it only takes effect if using tablet sst reader which is usually a raftstore v2 case.
+    // Otherwise will return zero.
+    size_t getApproxBytes() const;
+    std::vector<std::string> findSplitKeys(size_t splits_count) const;
 };
 
 struct SSTFilesToBlockInputStreamOpts
@@ -112,8 +129,7 @@ public:
     SSTFilesToBlockInputStream( //
         RegionPtr region_,
         UInt64 snapshot_index_,
-        const SSTViewVec & snaps_,
-        const TiFlashRaftProxyHelper * proxy_helper_,
+        ColumnFileReaderSet cf_readers_,
         TMTContext & tmt_,
         std::optional<SSTScanSoftLimit> && soft_limit_,
         SSTFilesToBlockInputStreamOpts && opts_);
@@ -126,10 +142,7 @@ public:
     void readPrefix() override;
     void readSuffix() override;
     Block read() override;
-    // Currently it only takes effect if using tablet sst reader which is usually a raftstore v2 case.
-    // Otherwise will return zero.
-    size_t getApproxBytes() const;
-    std::vector<std::string> findSplitKeys(size_t splits_count) const;
+
     void resetSoftLimit(std::optional<SSTScanSoftLimit> soft_limit_) { soft_limit = std::move(soft_limit_); }
     const std::optional<SSTScanSoftLimit> & getSoftLimit() const { return soft_limit; }
 
@@ -155,7 +168,7 @@ public:
 
     using SSTReaderPtr = std::unique_ptr<SSTReader>;
     bool maybeSkipBySoftLimit(ColumnFamilyType cf, SSTReaderPtr & reader);
-    bool maybeSkipBySoftLimit() { return maybeSkipBySoftLimit(ColumnFamilyType::Write, write_cf_reader); }
+    bool maybeSkipBySoftLimit() { return maybeSkipBySoftLimit(ColumnFamilyType::Write, cf_readers.write_cf_reader); }
 
 private:
     void loadCFDataFromSST(ColumnFamilyType cf, const DecodedTiKVKey * rowkey_to_be_included);
@@ -168,16 +181,15 @@ private:
 private:
     RegionPtr region;
     UInt64 snapshot_index;
-    const SSTViewVec & snaps;
-    const TiFlashRaftProxyHelper * proxy_helper{nullptr};
     TMTContext & tmt;
     std::optional<SSTScanSoftLimit> soft_limit;
     const SSTFilesToBlockInputStreamOpts opts;
     LoggerPtr log;
 
-    SSTReaderPtr write_cf_reader;
-    SSTReaderPtr default_cf_reader;
-    SSTReaderPtr lock_cf_reader;
+    // SSTReaderPtr write_cf_reader;
+    // SSTReaderPtr default_cf_reader;
+    // SSTReaderPtr lock_cf_reader;
+    ColumnFileReaderSet cf_readers;
 
     DecodedTiKVKey default_last_loaded_rowkey;
     DecodedTiKVKey lock_last_loaded_rowkey;

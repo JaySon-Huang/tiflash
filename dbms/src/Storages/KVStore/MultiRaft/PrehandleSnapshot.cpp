@@ -78,6 +78,14 @@ static inline std::tuple<TransfromResult, PrehandleResult> executeSerialTransfor
 {
     CurrentMetrics::add(CurrentMetrics::RaftNumPrehandlingSubTasks);
     SCOPE_EXIT({ CurrentMetrics::sub(CurrentMetrics::RaftNumPrehandlingSubTasks); });
+    auto sst_stream = std::make_shared<DM::SSTFilesToBlockInputStream>(
+        new_region,
+        index,
+        snaps,
+        proxy_helper,
+        tmt,
+        std::nullopt,
+        DM::SSTFilesToBlockInputStreamOpts(opt));
     LOG_INFO(
         log,
         "Add prehandle task split_id={} limit={}",
@@ -218,11 +226,11 @@ PrehandleResult KVStore::preHandleSnapshotToFiles(
 
 // If size is 0, do not parallel prehandle for this snapshot, which is legacy.
 // If size is non-zero, use extra this many threads to prehandle.
-static inline std::vector<std::string> getSplitKey(
+static inline Strings getSplitKey(
     LoggerPtr log,
     KVStore * kvstore,
     RegionPtr new_region,
-    std::shared_ptr<DM::SSTFilesToBlockInputStream> sst_stream)
+    DM::ColumnFileReaderSet & cf_readers)
 {
     // We don't use this is the single snapshot is small, due to overhead in decoding.
     constexpr size_t default_parallel_prehandle_threshold = 1 * 1024 * 1024 * 1024;
@@ -232,13 +240,13 @@ static inline std::vector<std::string> getSplitKey(
             parallel_prehandle_threshold = std::any_cast<size_t>(v.value());
     });
 
-    // Don't change the order of following checks, `getApproxBytes` involves some overhead,
-    // although it is optimized to bring about the minimum overhead.
+    // Don't change the order of following checks, `getApproxBytes` involves some
+    // disk IO overhead.
     if (new_region->getClusterRaftstoreVer() != RaftstoreVer::V2)
         return {};
     if (kvstore->getOngoingPrehandleTaskCount() >= 2)
         return {};
-    if (sst_stream->getApproxBytes() <= parallel_prehandle_threshold)
+    if (cf_readers.getApproxBytes() <= parallel_prehandle_threshold)
         return {};
 
     // Get this info again, since getApproxBytes maybe take some time.
@@ -270,9 +278,9 @@ static inline std::vector<std::string> getSplitKey(
             new_region->id());
         return {};
     }
-    // Will generate at most `want_split_parts - 1` keys.
-    std::vector<std::string> split_keys = sst_stream->findSplitKeys(want_split_parts);
 
+    // Will generate at most `want_split_parts - 1` keys.
+    Strings split_keys = cf_readers.findSplitKeys(want_split_parts);
     RUNTIME_CHECK_MSG(
         split_keys.size() + 1 <= want_split_parts,
         "findSplitKeys should generate {} - 1 keys, actual {}",
@@ -518,7 +526,11 @@ std::tuple<TransfromResult, PrehandleResult> executeTransfrom(
     const RegionPtr & new_region,
     DM::FileConvertJobType job_type,
     const std::shared_ptr<std::atomic_bool> & cancel_flag,
+#if 0
     std::shared_ptr<DM::SSTFilesToBlockInputStream> sst_stream,
+#else
+    DM::ColumnFileReaderSet & cf_readers,
+#endif
     DM::SSTFilesToBlockInputStreamOpts & opt,
     const SSTViewVec & snaps,
     UInt64 snapshot_index,
@@ -528,7 +540,7 @@ std::tuple<TransfromResult, PrehandleResult> executeTransfrom(
     const LoggerPtr & log)
 {
     // `split_keys` do not begin with 'z'.
-    auto split_keys = getSplitKey(log, kvstore, new_region, sst_stream);
+    auto split_keys = getSplitKey(log, kvstore, new_region, cf_readers);
     if (split_keys.empty())
     {
         LOG_INFO(
@@ -627,13 +639,26 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
             physical_table_id = storage->getTableInfo().id;
 
             auto opt = DM::SSTFilesToBlockInputStreamOpts{
-                .log_prefix = fmt::format("keyspace={} table_id={}", keyspace_id, physical_table_id),
+                .log_prefix = fmt::format(
+                    "keyspace={} table_id={} region_id={} snapshot_index={}",
+                    keyspace_id,
+                    physical_table_id,
+                    new_region->id(),
+                    index),
                 .schema_snap = schema_snap,
                 .gc_safepoint = gc_safepoint,
                 .force_decode = force_decode,
                 .expected_size = expected_block_size,
             };
 
+            auto trace_logger = Logger::get(opt.log_prefix);
+            DM::ColumnFileReaderSet cf_readers = DM::ColumnFileReaderSet::create(
+                snaps,
+                new_region->getRange(),
+                std::nullopt,
+                proxy_helper,
+                trace_logger);
+#if 0
             auto sst_stream = std::make_shared<DM::SSTFilesToBlockInputStream>(
                 new_region,
                 index,
@@ -642,6 +667,7 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
                 tmt,
                 std::nullopt,
                 DM::SSTFilesToBlockInputStreamOpts(opt));
+#endif
 
             TransfromResult result;
             std::tie(result, prehandle_result) = executeTransfrom(
@@ -649,14 +675,14 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
                 new_region,
                 job_type,
                 cancel_flag,
-                sst_stream,
+                cf_readers,
                 opt,
                 snaps,
                 index,
                 proxy_helper,
                 storage,
                 tmt,
-                log);
+                trace_logger);
             if (result.error == TransformState::ErrUpdateSchema)
             {
                 // It will be thrown in `SSTFilesToBlockInputStream`.
