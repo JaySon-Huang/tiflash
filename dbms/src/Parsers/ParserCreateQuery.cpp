@@ -64,10 +64,7 @@ bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expecte
         return true;
 
     ParserNestedTable nested;
-    if (nested.parse(pos, node, expected))
-        return true;
-
-    return false;
+    return nested.parse(pos, node, expected);
 }
 
 
@@ -224,9 +221,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     bool attach = false;
     bool if_not_exists = false;
-    bool is_view = false;
-    bool is_materialized_view = false;
-    bool is_populate = false;
     bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
@@ -326,12 +320,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         /// VIEW or MATERIALIZED VIEW
-        if (s_materialized.ignore(pos, expected))
-        {
-            is_materialized_view = true;
-        }
-        else
-            is_view = true;
+        if (s_materialized.ignore(pos, expected)) {}
 
         if (!s_view.ignore(pos, expected))
             return false;
@@ -373,16 +362,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (is_materialized_view && !to_table)
-        {
-            /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-            if (!storage_p.parse(pos, storage, expected))
-                return false;
-
-            if (s_populate.ignore(pos, expected))
-                is_populate = true;
-        }
-
         /// AS SELECT ...
         if (!s_as.ignore(pos, expected))
             return false;
@@ -396,20 +375,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
-    query->is_view = is_view;
-    query->is_materialized_view = is_materialized_view;
-    query->is_populate = is_populate;
-    query->is_temporary = is_temporary;
 
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
-
-    if (to_database)
-        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
-    if (to_table)
-        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);
@@ -417,7 +387,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
     if (as_table)
         query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
-    query->set(query->select, select);
 
     return true;
 }

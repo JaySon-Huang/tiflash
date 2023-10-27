@@ -92,19 +92,13 @@ class ASTCreateQuery : public ASTQueryWithOutput
 public:
     bool attach{false}; /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
-    bool is_view{false};
-    bool is_materialized_view{false};
-    bool is_populate{false};
-    bool is_temporary{false};
     String database;
     String table;
     ASTExpressionList * columns = nullptr;
-    String to_database; /// For CREATE MATERIALIZED VIEW mv TO table.
-    String to_table;
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
-    ASTSelectWithUnionQuery * select = nullptr;
+    // ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
@@ -118,8 +112,8 @@ public:
             res->set(res->columns, columns->clone());
         if (storage)
             res->set(res->storage, storage->clone());
-        if (select)
-            res->set(res->select, select->clone());
+        // if (select)
+        //     res->set(res->select, select->clone());
 
         cloneOutputOptions(*res);
 
@@ -146,22 +140,10 @@ protected:
 
         {
             std::string what = "TABLE";
-            if (is_view)
-                what = "VIEW";
-            if (is_materialized_view)
-                what = "MATERIALIZED VIEW";
 
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ")
-                          << (is_temporary ? "TEMPORARY " : "") << what << " "
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << what << " "
                           << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
                           << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-        }
-
-        if (!to_table.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
-                          << (!to_database.empty() ? backQuoteIfNeed(to_database) + "." : "")
-                          << backQuoteIfNeed(to_table);
         }
 
         if (!as_table.empty())
@@ -183,18 +165,12 @@ protected:
         if (storage)
             storage->formatImpl(settings, state, frame);
 
-        if (is_populate)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE"
-                          << (settings.hilite ? hilite_none : "");
-        }
-
-        if (select)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws
-                          << (settings.hilite ? hilite_none : "");
-            select->formatImpl(settings, state, frame);
-        }
+        // if (select)
+        // {
+        //     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws
+        //                   << (settings.hilite ? hilite_none : "");
+        //     select->formatImpl(settings, state, frame);
+        // }
     }
 };
 

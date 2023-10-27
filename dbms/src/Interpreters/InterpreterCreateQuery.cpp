@@ -396,7 +396,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 ColumnsDescription InterpreterCreateQuery::setColumns(
     ASTCreateQuery & create,
-    const Block & as_select_sample,
+    const Block & /*as_select_sample*/,
     const StoragePtr & as_storage) const
 {
     ColumnsDescription res;
@@ -408,13 +408,6 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     else if (!create.as_table.empty())
     {
         res = as_storage->getColumns();
-    }
-    else if (create.select)
-    {
-        for (size_t i = 0; i < as_select_sample.columns(); ++i)
-            res.ordinary.emplace_back(
-                as_select_sample.safeGetByPosition(i).name,
-                as_select_sample.safeGetByPosition(i).type);
     }
     else
         throw Exception(
@@ -452,23 +445,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.storage)
     {
-        if (create.is_temporary && create.storage->engine->name != "Memory")
-            throw Exception(
-                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
-                ErrorCodes::INCORRECT_QUERY);
-
         return;
     }
 
-    if (create.is_temporary)
-    {
-        auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = "Memory";
-        auto storage_ast = std::make_shared<ASTStorage>();
-        storage_ast->set(storage_ast->engine, engine_ast);
-        create.set(create.storage, storage_ast);
-    }
-    else if (!create.as_table.empty())
+    if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -477,11 +457,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
         const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
-
-        if (as_create.is_view)
-            throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
-                ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());
     }
@@ -507,15 +482,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
     }
 
-    if (create.to_database.empty())
-        create.to_database = current_database;
-
-    if (create.select && (create.is_view || create.is_materialized_view))
-        create.select->setDatabaseIfNeeded(current_database);
-
     Block as_select_sample;
-    if (create.select && (!create.attach || !create.columns))
-        as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
+    // if (create.select && (!create.attach || !create.columns))
+    //     as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
     String as_table_name = create.as_table;
@@ -542,7 +511,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         String data_path;
         DatabasePtr database;
 
-        if (!create.is_temporary)
         {
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
@@ -609,8 +577,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 }
             }
         }
-        else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
-            return {};
 
         res = StorageFactory::instance().get(
             create,
@@ -632,18 +598,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // If we do step 2 before step 1, we may run into "can't find .sql file" error when applying DDL jobs.
         // Besides, we make step 3 the final one, to ensure once we pass the check of context.isTableExist(database_name, table_name)`, the table must be created completely.
 
-        if (create.is_temporary)
-            context.getSessionContext().addExternalTable(table_name, res, query_ptr);
-        else
-            database->createTable(context, table_name, query_ptr);
+        database->createTable(context, table_name, query_ptr);
 
         // register the storage instance into `ManagedStorages`
         res->startup();
 
-        if (!create.is_temporary)
-            database->attachTable(table_name, res);
+        database->attachTable(table_name, res);
     }
 
+#if 0
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
@@ -658,6 +621,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return InterpreterInsertQuery(insert, create.is_temporary ? context.getSessionContext() : context, false)
             .execute();
     }
+#endif
 
     return {};
 }
@@ -697,11 +661,6 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
     if (!create.database.empty() && create.table.empty())
     {
         throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
-    }
-
-    if (create.is_temporary && readonly >= 2)
-    {
-        return;
     }
 
     throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
