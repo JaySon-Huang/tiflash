@@ -22,9 +22,6 @@ namespace DB
 {
 namespace tests
 {
-class TiFlashSecurityTest : public ext::Singleton<TiFlashSecurityTest>
-{
-};
 
 TEST(TiFlashSecurityTest, Config)
 {
