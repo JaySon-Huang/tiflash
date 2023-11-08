@@ -15,6 +15,12 @@
 #include <Storages/S3/S3Common.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/auth/AWSCredentialsProvider.h>
+#include <aws/core/client/AWSXmlClient.h>
+#include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/S3ErrorMarshaller.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <gtest/gtest.h>
 
@@ -90,5 +96,25 @@ try
     }
 }
 CATCH
+
+TEST_F(S3ClientTest, A)
+{
+    Aws::S3::S3ClientConfiguration conf;
+    // auto signer_provider = std::make_shared<Aws::Auth::DefaultAuthSignerProvider>(
+    //     std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(/*access_key*/ "", /*secret_access_key*/ ""),
+    //     "s3",
+    //     Aws::Region::ComputeSignerRegion(conf.region),
+    //     conf.payloadSigningPolicy,
+    //     /*doubleEncodeValue*/ false);
+    // Aws::Client::AWSXMLClient client(conf, signer_provider, std::make_shared<Aws::Client::S3ErrorMarshaller>());
+
+    Aws::S3::S3Client s3_client(Aws::Auth::AWSCredentials{"", ""});
+    rawListPrefix(
+        s3_client,
+        "bucket",
+        "prefix",
+        "/",
+        [](const Aws::S3::Model::ListObjectsV2Result & /*res*/) -> PageResult { return PageResult{}; });
+}
 
 } // namespace DB::S3::tests
