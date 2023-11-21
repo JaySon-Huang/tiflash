@@ -715,7 +715,10 @@ void SchemaBuilder<Getter, NameMapper>::applyRenameLogicalTable(
             auto part_storage = tmt_context.getStorages().get(keyspace_id, part_def.id);
             if (part_storage == nullptr)
             {
-                LOG_ERROR(log, "table is not exist in TiFlash, applyRenameTable is ignored, physical_table_id={}", part_def.id);
+                LOG_ERROR(
+                    log,
+                    "table is not exist in TiFlash, applyRenameTable is ignored, physical_table_id={}",
+                    part_def.id);
                 return;
             }
             auto part_table_info = new_table_info->producePartitionTableInfo(part_def.id, name_mapper);
@@ -1390,7 +1393,10 @@ bool SchemaBuilder<Getter, NameMapper>::applyTable(
             // If the physical_table does not belong to the logical table in the
             // latest table info. It could now become a normal table or belong to another
             // logical table now. The caller should update the table_id_map then retry.
-            LOG_WARNING(log, "producePartitionTableInfo meet exception, applyTable need retry, message={}", e.message());
+            LOG_WARNING(
+                log,
+                "producePartitionTableInfo meet exception, applyTable need retry, message={}",
+                e.message());
             return false;
         }
     }
