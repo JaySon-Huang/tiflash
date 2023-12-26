@@ -1581,16 +1581,17 @@ try
     auto blob_file = Poco::File(getTemporaryPath() + "/blobfile_1");
 
     page_storage = reopenWithConfig(config);
-    EXPECT_GT(blob_file.getSize(), 0);
+    const auto blob_file_size_befor_truncate = blob_file.getSize();
+    EXPECT_GT(blob_file_size_befor_truncate, 0) << "before truncate";
 
     {
         WriteBatch batch;
         batch.delPage(1);
         page_storage->write(std::move(batch));
     }
-    page_storage = reopenWithConfig(config);
+    page_storage = reopenWithConfig(config); // restore from disk
     page_storage->gc(/*not_skip*/ false, nullptr, nullptr);
-    EXPECT_EQ(blob_file.getSize(), 0);
+    EXPECT_EQ(blob_file.getSize(), 0) << "after truncate";
 }
 CATCH
 

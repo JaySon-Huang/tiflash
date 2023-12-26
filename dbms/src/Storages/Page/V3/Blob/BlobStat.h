@@ -60,11 +60,12 @@ public:
         double sm_valid_rate = 0.0;
 
     public:
-        BlobStat(BlobFileId id_, SpaceMap::SpaceMapType sm_type, UInt64 sm_max_caps_, BlobStatType type_)
+        BlobStat(BlobFileId id_, SpaceMap::SpaceMapType sm_type, UInt64 sm_max_caps_, BlobStatType type_, UInt64 sm_total_size_ = 0)
             : id(id_)
             , type(type_)
             , smap(SpaceMap::createSpaceMap(sm_type, 0, sm_max_caps_))
             , sm_max_caps(sm_max_caps_)
+            , sm_total_size(sm_total_size_)
         {}
 
         [[nodiscard]] std::unique_lock<std::mutex> lock()
@@ -109,7 +110,7 @@ public:
              * After we restore the space map.
              * We still need to recalculate a `sm_total_size`/`sm_valid_size`/`sm_valid_rate`.
              */
-        void recalculateSpaceMap();
+        void initBySpaceMap();
 
         /**
              * The `sm_max_cap` is not accurate after GC removes out-of-date data, or after restoring from disk.
@@ -135,6 +136,7 @@ public:
     //
     [[nodiscard]] std::lock_guard<std::mutex> lock() const;
 
+    BlobStatPtr createByRestore(const String & path, BlobFileId blob_file_id, UInt64 max_caps, UInt64 current_size, const std::lock_guard<std::mutex> &);
     BlobStatPtr createStatNotChecking(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> &);
 
     BlobStatPtr createStat(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> & guard);

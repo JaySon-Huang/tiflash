@@ -88,7 +88,7 @@ void BlobStats::restore()
         (void)path;
         for (const auto & stat : stats)
         {
-            stat->recalculateSpaceMap();
+            stat->initBySpaceMap();
             max_restored_file_id = std::max(stat->id, max_restored_file_id);
         }
     }
@@ -139,6 +139,25 @@ BlobStats::BlobStatPtr BlobStats::createStat(BlobFileId blob_file_id, UInt64 max
     return stat;
 }
 
+BlobStats::BlobStatPtr BlobStats::createByRestore(const String & path, BlobFileId blob_file_id, UInt64 max_caps, UInt64 current_size, const std::lock_guard<std::mutex> &)
+{
+    LOG_INFO(log, "Created a new BlobStat from restore [blob_id={}] [capacity={}] [current_size={}]", blob_file_id, max_caps, current_size);
+    // Only BlobFile which total capacity is smaller or equal to config.file_limit_size can be reused for another write
+    auto stat_type = max_caps <= config.file_limit_size ? BlobStats::BlobStatType::NORMAL : BlobStats::BlobStatType::READ_ONLY;
+    BlobStatPtr stat = std::make_shared<BlobStat>(
+        blob_file_id,
+        static_cast<SpaceMap::SpaceMapType>(config.spacemap_type.get()),
+        max_caps,
+        stat_type,
+        current_size);
+
+    // Add the `current_size` to `path` instead of choosing a path from `delegator`
+    PageFileIdAndLevel id_lvl{blob_file_id, 0};
+    delegator->addPageFileUsedSize(id_lvl, current_size, path, true);
+    stats_map[path].emplace_back(stat);
+    return stat;
+}
+
 BlobStats::BlobStatPtr BlobStats::createStatNotChecking(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> &)
 {
     LOG_INFO(log, "Created a new BlobStat [blob_id={}] [capacity={}]", blob_file_id, max_caps);
@@ -152,9 +171,6 @@ BlobStats::BlobStatPtr BlobStats::createStatNotChecking(BlobFileId blob_file_id,
 
     PageFileIdAndLevel id_lvl{blob_file_id, 0};
     auto path = delegator->choosePath(id_lvl);
-    /// This function may be called when restoring an old BlobFile at restart or creating a new BlobFile.
-    /// If restoring an old BlobFile, the BlobFile path maybe already added to delegator, but an another call to `addPageFileUsedSize` should do no harm.
-    /// If creating a new BlobFile, we need to register the BlobFile's path to delegator, so it's necessary to call `addPageFileUsedSize` here.
     delegator->addPageFileUsedSize({blob_file_id, 0}, 0, path, true);
     stats_map[path].emplace_back(stat);
     return stat;
@@ -336,10 +352,17 @@ void BlobStats::BlobStat::restoreSpaceMap(BlobFileOffset offset, size_t buf_size
     }
 }
 
-void BlobStats::BlobStat::recalculateSpaceMap()
+void BlobStats::BlobStat::initBySpaceMap()
 {
     const auto & [total_size, valid_size] = smap->getSizes();
-    sm_total_size = total_size;
+    // In `createByRestore`, the `sm_total_size` is assigned according to the file size.
+    // The `smap` only contains the info of "latest" version pages after restart, the
+    // `total_size` get from `smap` usually is smaller. Don't overwrite the size if
+    // it is bigger.
+    if (sm_total_size < total_size)
+    {
+        sm_total_size = total_size;
+    }
     sm_valid_size = valid_size;
     sm_valid_rate = total_size == 0 ? 0.0 : valid_size * 1.0 / total_size;
     recalculateCapacity();

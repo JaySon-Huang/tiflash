@@ -107,10 +107,12 @@ void BlobStore::registerPaths()
                 auto lock_stats = blob_stats.lock();
                 Poco::File blob(fmt::format("{}/{}", path, blob_name));
                 auto blob_size = blob.getSize();
-                delegator->addPageFileUsedSize({blob_id, 0}, blob_size, path, true);
-                blob_stats.createStatNotChecking(blob_id,
-                                                 std::max(blob_size, config.file_limit_size.get()),
-                                                 lock_stats);
+                blob_stats.createByRestore(
+                    path,
+                    blob_id,
+                    std::max(blob_size, config.file_limit_size.get()),
+                    blob_size,
+                    lock_stats);
             }
             else
             {
