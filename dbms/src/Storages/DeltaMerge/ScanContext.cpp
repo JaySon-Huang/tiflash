@@ -18,6 +18,8 @@
 #pragma GCC diagnostic pop
 #include <Storages/DeltaMerge/ScanContext.h>
 
+#include <magic_enum.hpp>
+
 namespace DB::DM
 {
 String ScanContext::toJson() const
@@ -49,6 +51,12 @@ String ScanContext::toJson() const
     json->set("mvcc_input_rows", mvcc_input_rows.load());
     json->set("mvcc_input_bytes", mvcc_input_bytes.load());
     json->set("mvcc_output_rows", mvcc_output_rows.load());
+
+    // Note we must wrap the result of `magic_enum::enum_name` with `String`,
+    // or Poco can not turn it into JSON correctly and crash
+    json->set("read_mode", String(magic_enum::enum_name(read_mode)));
+    json->set("build_bitmap_time", fmt::format("{:.3f}", build_bitmap_time_ns.load() / NS_TO_MS_SCALE));
+    json->set("late_materialize_skip_rows", late_materialize_skip_rows.load());
 
     std::stringstream buf;
     json->stringify(buf);
