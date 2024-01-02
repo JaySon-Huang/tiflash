@@ -22,6 +22,7 @@
 #include <Common/assert_cast.h>
 #include <Core/SortDescription.h>
 #include <DataStreams/AddExtraTableIDColumnInputStream.h>
+#include <DataStreams/EmptyBlockInputStream.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Pipeline/Exec/PipelineExecBuilder.h>
 #include <Functions/FunctionsConversion.h>
@@ -29,6 +30,7 @@
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Interpreters/sortBlock.h>
 #include <Operators/AddExtraTableIDColumnTransformOp.h>
+#include <Operators/BlockInputStreamSourceOp.h>
 #include <Operators/DMSegmentThreadSourceOp.h>
 #include <Operators/UnorderedSourceOp.h>
 #include <Poco/Exception.h>
@@ -36,6 +38,7 @@
 #include <Storages/DeltaMerge/DMSegmentThreadInputStream.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/DeltaMergeStore.h>
+#include <Storages/DeltaMerge/EmptyBlockInpuStreamWithSnap.h>
 #include <Storages/DeltaMerge/File/DMFile.h>
 #include <Storages/DeltaMerge/Filter/PushDownFilter.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
@@ -1316,6 +1319,26 @@ void DeltaMergeStore::read(
     dm_context->scan_context->read_mode = read_mode;
 
     const auto & columns_after_cast = filter && filter->extra_cast ? *filter->columns_after_cast : columns_to_read;
+#ifdef FIU_ENABLE
+    if (db_context.getSettingsRef().dt_enable_skip_reading_blocks)
+    {
+        auto header = toEmptyBlock(columns_after_cast);
+        for (size_t i = 0; i < final_num_stream; ++i)
+        {
+            auto stream = std::make_shared<EmptyBlockInputStreamWithSnap>(header, read_task_pool);
+            group_builder.addConcurrency(
+                std::make_unique<BlockInputStreamSourceOp>(exec_context, log_tracing_id, stream));
+        }
+        group_builder.transform([&](auto & builder) {
+            builder.appendTransformOp(std::make_unique<AddExtraTableIDColumnTransformOp>(
+                exec_context,
+                log_tracing_id,
+                columns_after_cast,
+                extra_table_id_index,
+                physical_table_id));
+        });
+    }
+#endif
     if (enable_read_thread)
     {
         for (size_t i = 0; i < final_num_stream; ++i)

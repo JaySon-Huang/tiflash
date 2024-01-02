@@ -109,6 +109,7 @@ namespace DB
     M(force_raise_prehandle_exception)                       \
     M(force_agg_on_partial_block)                            \
     M(force_not_clean_fap_on_destroy)                        \
+    M(skip_reading_blocks_from_dm)                           \
     M(delta_tree_create_node_fail)                           \
     M(disable_flush_cache)
 
@@ -163,6 +164,8 @@ namespace DB
     M(random_pipeline_model_execute_suffix_failpoint)        \
     M(random_spill_to_disk_failpoint)                        \
     M(random_region_persister_latency_failpoint)             \
+    M(random_region_persister_latency2_failpoint)            \
+    M(random_region_persister_latency3_failpoint)            \
     M(random_restore_from_disk_failpoint)                    \
     M(random_exception_when_connect_local_tunnel)            \
     M(random_exception_when_construct_async_request_handler) \

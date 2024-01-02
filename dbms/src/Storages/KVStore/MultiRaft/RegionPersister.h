@@ -78,6 +78,7 @@ private:
     PageReaderPtr page_reader;
 
     const NamespaceID ns_id = KVSTORE_NAMESPACE_ID;
+    // std::mutex mutex;
     LoggerPtr log;
 };
 } // namespace DB
