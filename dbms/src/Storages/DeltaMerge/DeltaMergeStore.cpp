@@ -28,6 +28,7 @@
 #include <Storages/DeltaMerge/DMSegmentThreadInputStream.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/DeltaMergeStore.h>
+#include <Storages/DeltaMerge/EmptyBlockInpuStreamWithSnap.h>
 #include <Storages/DeltaMerge/File/DMFile.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 #include <Storages/DeltaMerge/ReadThread/SegmentReadTaskScheduler.h>
@@ -1023,7 +1024,12 @@ BlockInputStreams DeltaMergeStore::read(const Context & db_context,
     for (size_t i = 0; i < final_num_stream; ++i)
     {
         BlockInputStreamPtr stream;
-        if (enable_read_thread)
+        if (db_context.getSettingsRef().dt_enable_skip_reading_blocks)
+        {
+            auto header = toEmptyBlock(columns_to_read);
+            stream = std::make_shared<EmptyBlockInputStreamWithSnap>(header, read_task_pool);
+        }
+        else if (enable_read_thread)
         {
             stream = std::make_shared<UnorderedInputStream>(
                 read_task_pool,

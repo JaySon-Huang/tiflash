@@ -49,6 +49,8 @@ extern const char force_enable_region_persister_compatible_mode[];
 extern const char force_disable_region_persister_compatible_mode[];
 extern const char pause_when_persist_region[];
 extern const char random_region_persister_latency_failpoint[];
+extern const char random_region_persister_latency2_failpoint[];
+extern const char random_region_persister_latency3_failpoint[];
 } // namespace FailPoints
 
 void RegionPersister::drop(RegionID region_id, const RegionTaskLock &)
@@ -110,6 +112,7 @@ void RegionPersister::doPersist(RegionCacheWriteElement & region_write_buffer, c
 {
     auto & [region_id, buffer, region_size, applied_index] = region_write_buffer;
 
+    // std::lock_guard lock(mutex);
     if (page_reader)
     {
         auto entry = page_reader->getPageEntry(region_id);
@@ -161,9 +164,20 @@ void RegionPersister::doPersist(RegionCacheWriteElement & region_write_buffer, c
             SYNC_FOR("before_RegionPersister::persist_write_done");
         }
     });
+    fiu_do_on(FailPoints::random_region_persister_latency3_failpoint, {
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(10ms);
+        LOG_WARNING(log, "random_region_persister_latency_failpoint sleep 10ms done");
+    });
     fiu_do_on(FailPoints::random_region_persister_latency_failpoint, {
         using namespace std::chrono_literals;
-        std::this_thread::sleep_for(1ms);
+        std::this_thread::sleep_for(100ms);
+        LOG_WARNING(log, "random_region_persister_latency2_failpoint sleep 100ms done");
+    });
+    fiu_do_on(FailPoints::random_region_persister_latency2_failpoint, {
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(1000ms);
+        LOG_WARNING(log, "random_region_persister_latency2_failpoint sleep 1000ms done");
     });
 #endif
 }

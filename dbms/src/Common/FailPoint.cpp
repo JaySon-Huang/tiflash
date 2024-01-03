@@ -133,6 +133,8 @@ namespace DB
     M(random_interpreter_failpoint)                     \
     M(random_task_manager_find_task_failure_failpoint)  \
     M(random_min_tso_scheduler_failpoint)               \
+    M(random_region_persister_latency2_failpoint)       \
+    M(random_region_persister_latency3_failpoint)       \
     M(random_region_persister_latency_failpoint)
 
 namespace FailPoints

@@ -1,0 +1,45 @@
+// Copyright 2023 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#pragma once
+
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <Storages/DeltaMerge/SegmentReadTaskPool.h>
+
+namespace DB
+{
+
+/**
+ * An input stream always return empty block.
+ */
+class EmptyBlockInputStreamWithSnap : public IProfilingBlockInputStream
+{
+public:
+    EmptyBlockInputStreamWithSnap(const Block & header_, DM::SegmentReadTaskPoolPtr pool_)
+        : header(header_)
+        , pool(std::move(pool_))
+    {}
+
+    String getName() const override { return "Empty"; }
+
+    Block getHeader() const override { return header; }
+
+protected:
+    Block readImpl() override { return {}; }
+
+private:
+    Block header;
+    DM::SegmentReadTaskPoolPtr pool;
+};
+} // namespace DB
