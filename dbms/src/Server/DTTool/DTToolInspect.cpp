@@ -14,6 +14,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FmtUtils.h>
+#include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Encryption/createReadBufferFromFileBaseByFileProvider.h>
 #include <Server/DTTool/DTTool.h>
@@ -25,17 +26,20 @@
 #include <boost/program_options.hpp>
 #include <boost/program_options/value_semantic.hpp>
 #include <iostream>
+#include <magic_enum.hpp>
 #include <random>
 
 namespace bpo = boost::program_options;
 
 namespace DTTool::Inspect
 {
-int inspectServiceMain(DB::Context & context, const InspectArgs & args)
+void checkIntegrity(
+    DB::Context & context,
+    const String & workdir,
+    const UInt64 file_id,
+    const DB::DM::DMFilePtr & dmfile,
+    const DB::LoggerPtr & logger)
 {
-    // from this part, the base daemon is running, so we use logger instead
-    auto logger = DB::Logger::get("DTToolInspect");
-
     // black_hole is used to consume data manually.
     // we use SCOPE_EXIT to ensure the release of memory area.
     auto * black_hole = reinterpret_cast<char *>(::operator new(DBMS_DEFAULT_BUFFER_SIZE, std::align_val_t{64}));
@@ -43,6 +47,123 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
     auto consume = [&](DB::ReadBuffer & t) {
         while (t.readBig(black_hole, DBMS_DEFAULT_BUFFER_SIZE) != 0) {}
     };
+    auto fp = context.getFileProvider();
+
+    // for directory mode file, we can consume each file to check its integrity.
+    auto prefix = fmt::format("{}/dmf_{}", workdir, file_id);
+    auto file = Poco::File{prefix};
+    std::vector<std::string> sub;
+    file.list(sub);
+    for (auto & i : sub)
+    {
+        if (endsWith(i, ".mrk") || endsWith(i, ".dat") || endsWith(i, ".idx") || endsWith(i, ".merged") || i == "pack"
+            || i == "meta")
+        {
+            auto full_path = fmt::format("{}/{}", prefix, i);
+            LOG_INFO(logger, "checking full_path is {}: ", full_path);
+            if (dmfile->getConfiguration())
+            {
+                consume(*DB::createReadBufferFromFileBaseByFileProvider(
+                    fp,
+                    full_path,
+                    DB::EncryptionPath(full_path, i),
+                    dmfile->getConfiguration()->getChecksumFrameLength(),
+                    nullptr,
+                    dmfile->getConfiguration()->getChecksumAlgorithm(),
+                    dmfile->getConfiguration()->getChecksumFrameLength()));
+            }
+            else
+            {
+                consume(*DB::createReadBufferFromFileBaseByFileProvider(
+                    fp,
+                    full_path,
+                    DB::EncryptionPath(full_path, i),
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    0,
+                    nullptr));
+            }
+            LOG_INFO(logger, "[success]");
+        }
+    }
+    // for both directory file and single mode file, we can read out all blocks from the file.
+    // this procedure will also trigger the checksum checking in the compression buffer.
+    LOG_INFO(logger, "examine all data blocks: ");
+    {
+        auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile);
+        size_t counter = 0;
+        stream->readPrefix();
+        while (stream->read())
+        {
+            counter++;
+        }
+        stream->readSuffix();
+        LOG_INFO(logger, "[success] ( {} blocks )", counter);
+    }
+}
+
+void dumpColumnValues(
+    DB::Context & context,
+    const DB::DM::DMFilePtr & dmfile,
+    const DB::DM::ColumnDefines & cols_to_dump,
+    const DB::LoggerPtr & logger)
+{
+    auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile, cols_to_dump);
+
+    size_t tot_num_rows = 0;
+    size_t block_no = 0;
+    DB::Field f;
+    std::map<DB::ColumnID, size_t> in_mem_bytes;
+
+    stream->readPrefix();
+    while (true)
+    {
+        DB::Block block = stream->read();
+        if (!block)
+            break;
+
+        tot_num_rows += block.rows();
+        DB::FmtBuffer buff;
+        for (size_t row_no = 0; row_no < block.rows(); ++row_no)
+        {
+            buff.clear();
+            for (size_t col_no = 0; col_no < block.columns(); ++col_no)
+            {
+                const auto & col = block.getByPosition(col_no);
+                col.column->get(row_no, f);
+                buff.fmtAppend(
+                    "{}{}",
+                    DB::applyVisitor(DB::FieldVisitorDump(), f),
+                    ((col_no < block.columns() - 1) ? "," : ""));
+            }
+            LOG_INFO(logger, "pack_no={}, row_no={}, fields=[{}]", block_no, row_no, buff.toString());
+        }
+
+        for (const auto & col : block)
+        {
+            if (auto iter = in_mem_bytes.find(col.column_id); iter != in_mem_bytes.end())
+                iter->second += col.column->byteSize();
+            else
+                in_mem_bytes[col.column_id] = col.column->byteSize();
+        }
+        block_no++;
+    }
+    stream->readSuffix();
+
+    LOG_INFO(logger, "total_num_rows={}", tot_num_rows);
+    for (const auto [column_id, col_in_mem_bytes] : in_mem_bytes)
+    {
+        LOG_INFO(
+            logger,
+            "column_id={} bytes_in_mem={}",
+            column_id,
+            formatReadableSizeWithBinarySuffix(col_in_mem_bytes));
+    }
+}
+
+int inspectServiceMain(DB::Context & context, const InspectArgs & args)
+{
+    // from this part, the base daemon is running, so we use logger instead
+    auto logger = DB::Logger::get("DTToolInspect");
 
     // Open the DMFile at `workdir/dmf_<file-id>`
     auto fp = context.getFileProvider();
@@ -55,24 +176,7 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
     if (auto conf = dmfile->getConfiguration())
     {
         LOG_INFO(logger, "with new checksum: true");
-        switch (conf->getChecksumAlgorithm())
-        {
-        case DB::ChecksumAlgo::None:
-            LOG_INFO(logger, "checksum algorithm: none");
-            break;
-        case DB::ChecksumAlgo::CRC32:
-            LOG_INFO(logger, "checksum algorithm: crc32");
-            break;
-        case DB::ChecksumAlgo::CRC64:
-            LOG_INFO(logger, "checksum algorithm: crc64");
-            break;
-        case DB::ChecksumAlgo::City128:
-            LOG_INFO(logger, "checksum algorithm: city128");
-            break;
-        case DB::ChecksumAlgo::XXH3:
-            LOG_INFO(logger, "checksum algorithm: xxh3");
-            break;
-        }
+        LOG_INFO(logger, "checksum algorithm: {}", magic_enum::enum_name(conf->getChecksumAlgorithm()));
         for (const auto & [name, msg] : conf->getDebugInfo())
         {
             LOG_INFO(logger, "{}: {}", name, msg);
@@ -81,56 +185,7 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
 
     if (args.check)
     {
-        // for directory mode file, we can consume each file to check its integrity.
-        auto prefix = fmt::format("{}/dmf_{}", args.workdir, args.file_id);
-        auto file = Poco::File{prefix};
-        std::vector<std::string> sub;
-        file.list(sub);
-        for (auto & i : sub)
-        {
-            if (endsWith(i, ".mrk") || endsWith(i, ".dat") || endsWith(i, ".idx") || endsWith(i, ".merged")
-                || i == "pack" || i == "meta")
-            {
-                auto full_path = fmt::format("{}/{}", prefix, i);
-                LOG_INFO(logger, "checking full_path is {}: ", full_path);
-                if (dmfile->getConfiguration())
-                {
-                    consume(*DB::createReadBufferFromFileBaseByFileProvider(
-                        fp,
-                        full_path,
-                        DB::EncryptionPath(full_path, i),
-                        dmfile->getConfiguration()->getChecksumFrameLength(),
-                        nullptr,
-                        dmfile->getConfiguration()->getChecksumAlgorithm(),
-                        dmfile->getConfiguration()->getChecksumFrameLength()));
-                }
-                else
-                {
-                    consume(*DB::createReadBufferFromFileBaseByFileProvider(
-                        fp,
-                        full_path,
-                        DB::EncryptionPath(full_path, i),
-                        DBMS_DEFAULT_BUFFER_SIZE,
-                        0,
-                        nullptr));
-                }
-                LOG_INFO(logger, "[success]");
-            }
-        }
-        // for both directory file and single mode file, we can read out all blocks from the file.
-        // this procedure will also trigger the checksum checking in the compression buffer.
-        LOG_INFO(logger, "examine all data blocks: ");
-        {
-            auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile);
-            size_t counter = 0;
-            stream->readPrefix();
-            while (stream->read())
-            {
-                counter++;
-            }
-            stream->readSuffix();
-            LOG_INFO(logger, "[success] ( {} blocks )", counter);
-        }
+        checkIntegrity(context, args.workdir, args.file_id, dmfile, logger);
     } // end of (arg.check)
 
     if (args.dump_columns || args.dump_all_columns)
@@ -152,58 +207,8 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
             }
         }
 
+        dumpColumnValues(context, dmfile, cols_to_dump, logger);
 
-        auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile, cols_to_dump);
-
-        size_t tot_num_rows = 0;
-        size_t block_no = 0;
-        DB::Field f;
-        std::map<DB::ColumnID, size_t> in_mem_bytes;
-
-        stream->readPrefix();
-        while (true)
-        {
-            DB::Block block = stream->read();
-            if (!block)
-                break;
-
-            tot_num_rows += block.rows();
-            DB::FmtBuffer buff;
-            for (size_t row_no = 0; row_no < block.rows(); ++row_no)
-            {
-                buff.clear();
-                for (size_t col_no = 0; col_no < block.columns(); ++col_no)
-                {
-                    const auto & col = block.getByPosition(col_no);
-                    col.column->get(row_no, f);
-                    buff.fmtAppend(
-                        "{}{}",
-                        DB::applyVisitor(DB::FieldVisitorDump(), f),
-                        ((col_no < block.columns() - 1) ? "," : ""));
-                }
-                LOG_INFO(logger, "pack_no={}, row_no={}, fields=[{}]", block_no, row_no, buff.toString());
-            }
-
-            for (const auto & col : block)
-            {
-                if (auto iter = in_mem_bytes.find(col.column_id); iter != in_mem_bytes.end())
-                    iter->second += col.column->byteSize();
-                else
-                    in_mem_bytes[col.column_id] = col.column->byteSize();
-            }
-            block_no++;
-        }
-        stream->readSuffix();
-
-        LOG_INFO(logger, "total_num_rows={}", tot_num_rows);
-        for (const auto [column_id, col_in_mem_bytes] : in_mem_bytes)
-        {
-            LOG_INFO(
-                logger,
-                "column_id={} bytes_in_mem={}",
-                column_id,
-                formatReadableSizeWithBinarySuffix(col_in_mem_bytes));
-        }
     } // end of (arg.dump_columns)
     return 0;
 }
