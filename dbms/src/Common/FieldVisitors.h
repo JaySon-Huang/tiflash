@@ -16,7 +16,6 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
-#include <common/DateLUT.h>
 #include <common/demangle.h>
 
 
@@ -213,7 +212,12 @@ public:
 };
 
 
-/** Print readable and unique text dump of field type and value. */
+/**
+ * Print readable and unique text dump of field type and value.
+ * e.g.
+ *  UInt64_446066480471081048
+ *  Decimal128_3
+ */
 class FieldVisitorDump : public StaticVisitor<String>
 {
 public:
