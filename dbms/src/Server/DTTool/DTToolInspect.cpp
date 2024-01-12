@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/Exception.h>
+#include <Common/FieldVisitors.h>
 #include <Common/FmtUtils.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
@@ -160,6 +161,66 @@ void dumpColumnValues(
     }
 }
 
+struct PackStat
+{
+    size_t pack_index;
+    size_t pack_rows;
+    std::map<DB::ColumnID, std::set<String>> columns_values;
+};
+
+void collectDistinctValues(
+    DB::Context & context,
+    const DB::DM::DMFilePtr & dmfile,
+    const DB::DM::ColumnDefines & cols_to_dump,
+    const DB::LoggerPtr & logger)
+{
+    size_t cur_pack_no = 0;
+    DB::Field f;
+    std::vector<PackStat> pack_stats;
+
+    auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile, cols_to_dump);
+    stream->readPrefix();
+    while (true)
+    {
+        DB::Block block = stream->read();
+        if (!block)
+            break;
+
+        std::map<DB::ColumnID, std::set<String>> columns_values;
+        for (const auto & col : block)
+        {
+            for (size_t row_no = 0; row_no < block.rows(); ++row_no)
+            {
+                col.column->get(row_no, f);
+                columns_values[col.column_id].insert(DB::applyVisitor(DB::FieldVisitorToString(), f));
+            }
+        }
+
+        pack_stats.emplace_back(PackStat{
+            .pack_index = cur_pack_no,
+            .pack_rows = block.rows(),
+            .columns_values = std::move(columns_values),
+        });
+        cur_pack_no++;
+    }
+    stream->readSuffix();
+
+    for (const auto & p : pack_stats)
+    {
+        for (const auto & cv : p.columns_values)
+        {
+            LOG_INFO(
+                logger,
+                "pack_id={} column_id={} rows={} n_vals={} vals={}",
+                p.pack_index,
+                cv.first,
+                p.pack_rows,
+                cv.second.size(),
+                cv.second);
+        }
+    }
+}
+
 int inspectServiceMain(DB::Context & context, const InspectArgs & args)
 {
     // from this part, the base daemon is running, so we use logger instead
@@ -210,24 +271,28 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
         dumpColumnValues(context, dmfile, cols_to_dump, logger);
 
     } // end of (arg.dump_columns)
+
+    if (args.dump_pack_stats)
+    {
+        collectDistinctValues(context, dmfile, dmfile->getColumnDefines(), logger);
+    }
     return 0;
 }
 
 
 int inspectEntry(const std::vector<std::string> & opts, RaftStoreFFIFunc ffi_function)
 {
-    bool check = false;
     bool imitative = false;
-    bool dump_columns = false;
-    bool dump_all_columns = false;
+    InspectArgs args;
 
     bpo::variables_map vm;
     bpo::options_description options{"Delta Merge Inspect"};
     options.add_options() //
         ("help", "Print help message and exit.") //
-        ("check", bpo::bool_switch(&check), "Check integrity for the delta-tree file.") //
-        ("dump", bpo::bool_switch(&dump_columns), "Dump the handle, pk, tag column values.") //
-        ("dump_all", bpo::bool_switch(&dump_all_columns), "Dump all column values.") //
+        ("check", bpo::bool_switch(&args.check), "Check integrity for the delta-tree file.") //
+        ("dump", bpo::bool_switch(&args.dump_columns), "Dump the handle, pk, tag column values.") //
+        ("dump_all", bpo::bool_switch(&args.dump_all_columns), "Dump all column values.") //
+        ("dump_pack", bpo::bool_switch(&args.dump_pack_stats), "Dump pack statistics") //
         ("workdir",
          bpo::value<std::string>()->required(),
          "Target directory. Will inpsect the delta-tree file ${workdir}/dmf_${file-id}/") //
@@ -266,9 +331,8 @@ int inspectEntry(const std::vector<std::string> & opts, RaftStoreFFIFunc ffi_fun
             return -EINVAL;
         }
 
-        auto workdir = vm["workdir"].as<std::string>();
-        auto file_id = vm["file-id"].as<size_t>();
-        auto args = InspectArgs{check, dump_columns, dump_all_columns, file_id, workdir};
+        args.workdir = vm["workdir"].as<std::string>();
+        args.file_id = vm["file-id"].as<size_t>();
         if (imitative)
         {
             auto env = detail::ImitativeEnv{args.workdir};
