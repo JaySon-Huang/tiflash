@@ -37,6 +37,7 @@ struct ColumnStat
     size_t nullmap_data_bytes = 0;
     size_t nullmap_mark_bytes = 0;
     size_t index_bytes = 0;
+    size_t bf_index_bytes = 0; // FIXME: this lack of backward compatibility?
     void serializeToBuffer(WriteBuffer & buf) const
     {
         writeIntBinary(col_id, buf);
@@ -48,6 +49,7 @@ struct ColumnStat
         writeIntBinary(nullmap_data_bytes, buf);
         writeIntBinary(nullmap_mark_bytes, buf);
         writeIntBinary(index_bytes, buf);
+        writeIntBinary(bf_index_bytes, buf);
     }
 
     void parseFromBuffer(ReadBuffer & buf)
@@ -63,6 +65,7 @@ struct ColumnStat
         readIntBinary(nullmap_data_bytes, buf);
         readIntBinary(nullmap_mark_bytes, buf);
         readIntBinary(index_bytes, buf);
+        readIntBinary(bf_index_bytes, buf);
     }
 };
 

@@ -408,6 +408,7 @@ public:
 
     static String colDataFileName(const FileNameBase & file_name_base);
     static String colIndexFileName(const FileNameBase & file_name_base);
+    static String colBloomFilterIndexFileName(const FileNameBase & file_name_base);
     static String colMarkFileName(const FileNameBase & file_name_base);
 
     using OffsetAndSize = std::tuple<size_t, size_t>;

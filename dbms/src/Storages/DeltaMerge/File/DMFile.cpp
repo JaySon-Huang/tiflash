@@ -318,6 +318,10 @@ String DMFile::colIndexFileName(const FileNameBase & file_name_base)
 {
     return file_name_base + details::INDEX_FILE_SUFFIX;
 }
+String DMFile::colBloomFilterIndexFileName(const FileNameBase & file_name_base)
+{
+    return file_name_base + ".bfidx";
+}
 String DMFile::colMarkFileName(const FileNameBase & file_name_base)
 {
     return file_name_base + details::MARK_FILE_SUFFIX;

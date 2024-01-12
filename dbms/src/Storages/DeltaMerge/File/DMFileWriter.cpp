@@ -16,7 +16,10 @@
 #include <Encryption/createWriteBufferFromFileBaseByFileProvider.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/File/DMFileWriter.h>
+#include <Storages/DeltaMerge/File/MergedFile.h>
 #include <Storages/S3/S3Common.h>
+
+#include "Storages/DeltaMerge/DeltaMergeDefines.h"
 
 #ifndef NDEBUG
 #include <sys/stat.h>
@@ -63,7 +66,12 @@ DMFileWriter::DMFileWriter(
         /// for handle column always generate index
         auto type = removeNullable(cd.type);
         bool do_index = cd.id == EXTRA_HANDLE_COLUMN_ID || type->isInteger() || type->isDateOrDateTime();
-        addStreams(cd.id, cd.type, do_index);
+        // adding bloom filter for handle/tag/version is meanless
+        // TODO: only add for string with normal collation string columns?
+        bool do_bloom_filter_index
+            = (cd.id != EXTRA_HANDLE_COLUMN_ID && cd.id != TAG_COLUMN_ID && cd.id != VERSION_COLUMN_ID)
+            && (type->isInteger() || type->isDateOrDateTime() || type->isStringOrFixedString());
+        addStreams(cd.id, cd.type, do_index, do_bloom_filter_index);
         dmfile->column_stats.emplace(cd.id, ColumnStat{cd.id, cd.type, /*avg_size=*/0});
     }
 }
@@ -112,7 +120,7 @@ DMFileWriter::WriteBufferFromFileBasePtr DMFileWriter::createPackStatsFile()
                                      options.max_compress_block_size);
 }
 
-void DMFileWriter::addStreams(ColId col_id, DataTypePtr type, bool do_index)
+void DMFileWriter::addStreams(ColId col_id, DataTypePtr type, bool do_index, bool do_bloom_filter_index)
 {
     auto callback = [&](const IDataType::SubstreamPath & substream_path) {
         const auto stream_name = DMFile::getFileNameBase(col_id, substream_path);
@@ -124,7 +132,8 @@ void DMFileWriter::addStreams(ColId col_id, DataTypePtr type, bool do_index)
             options.max_compress_block_size,
             file_provider,
             write_limiter,
-            IDataType::isNullMap(substream_path) ? false : do_index);
+            IDataType::isNullMap(substream_path) ? false : do_index,
+            IDataType::isNullMap(substream_path) ? false : do_bloom_filter_index);
         column_streams.emplace(stream_name, std::move(stream));
     };
 
@@ -224,6 +233,11 @@ void DMFileWriter::writeColumn(
                     (col_id == EXTRA_HANDLE_COLUMN_ID || col_id == TAG_COLUMN_ID) ? nullptr : del_mark);
             }
 
+            if (stream->bloom_filter_index)
+            {
+                stream->bloom_filter_index->addPack(column, type);
+            }
+
             /// There could already be enough data to compress into the new block.
             if (stream->compressed_buf->offset() >= options.min_compress_block_size)
                 stream->compressed_buf->next();
@@ -275,6 +289,7 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
     size_t nullmap_data_bytes = 0;
     size_t nullmap_mark_bytes = 0;
     size_t index_bytes = 0;
+    size_t bf_index_bytes = 0;
 #ifndef NDEBUG
     auto examine_buffer_size = [&](auto & buf, auto & fp) {
         if (!fp.isEncryptionEnabled())
@@ -323,7 +338,7 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
 #endif
 
             // write index info into merged_file_writer
-            if (stream->minmaxes and !is_empty_file)
+            if (stream->minmaxes && !is_empty_file)
             {
                 dmfile->checkMergedFile(merged_file, file_provider, write_limiter);
 
@@ -338,6 +353,25 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
 
                 index_bytes = buffer->getMaterializedBytes();
                 MergedSubFileInfo info{fname, merged_file.file_info.number, merged_file.file_info.size, index_bytes};
+                dmfile->merged_sub_file_infos[fname] = info;
+
+                merged_file.file_info.size += index_bytes;
+                buffer->next();
+            }
+
+            if (stream->bloom_filter_index && !is_empty_file)
+            {
+                dmfile->checkMergedFile(merged_file, file_provider, write_limiter);
+
+                auto fname = dmfile->colBloomFilterIndexFileName(stream_name);
+                auto buffer = createWriteBufferFromFileBaseByWriterBuffer(
+                    merged_file.buffer,
+                    dmfile->configuration->getChecksumAlgorithm(),
+                    dmfile->configuration->getChecksumFrameLength());
+                stream->bloom_filter_index->write(*buffer);
+
+                bf_index_bytes = buffer->getMaterializedBytes();
+                MergedSubFileInfo info{fname, merged_file.file_info.number, merged_file.file_info.size, bf_index_bytes};
                 dmfile->merged_sub_file_infos[fname] = info;
 
                 merged_file.file_info.size += index_bytes;
@@ -475,6 +509,8 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
     col_stat.nullmap_data_bytes = nullmap_data_bytes;
     col_stat.index_bytes = index_bytes;
     col_stat.nullmap_mark_bytes = nullmap_mark_bytes;
+    // FIXME: Add bf_index_bytes to ColumnStats ?
+    col_stat.bf_index_bytes = bf_index_bytes;
 }
 
 } // namespace DM
