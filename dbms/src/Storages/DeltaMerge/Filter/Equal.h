@@ -31,9 +31,28 @@ public:
 
     RSResults roughCheck(size_t start_pack, size_t pack_count, const RSCheckParam & param) override
     {
-        RSResults results(pack_count, RSResult::Some);
-        GET_RSINDEX_FROM_PARAM_NOT_FOUND_RETURN_DIRECTLY(param, attr, rsindex, results);
-        return rsindex.minmax->checkCmp<RoughCheck::CheckEqual>(start_pack, pack_count, value, rsindex.type);
+        RSResults failure_results(pack_count, RSResult::Some);
+        GET_RSINDEX_FROM_PARAM_NOT_FOUND_RETURN_DIRECTLY(param, attr, rsindex, failure_results);
+
+        RSResults results(pack_count, RSResult::None);
+        if (rsindex.minmax)
+        {
+            auto tmp_results = rsindex.minmax->checkCmp<RoughCheck::CheckEqual>(start_pack, pack_count, value, rsindex.type);
+            for (size_t i = 0; i < pack_count; ++i)
+            {
+                results[i] = results[i] || tmp_results[i];
+            }
+        }
+        if (rsindex.bloom_filter_index)
+        {
+            auto tmp_results = rsindex.bloom_filter_index
+                                   ->checkEqual(start_pack, pack_count, value, rsindex.type);
+            for (size_t i = 0; i < pack_count; ++i)
+            {
+                results[i] = results[i] || tmp_results[i];
+            }
+        }
+       return results; 
     }
 };
 

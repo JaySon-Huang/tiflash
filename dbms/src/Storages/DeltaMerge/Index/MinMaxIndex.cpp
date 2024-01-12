@@ -340,8 +340,6 @@ RSResults MinMaxIndex::checkIn(
     const std::vector<Field> & values,
     const DataTypePtr & type)
 {
-    RSResults results(pack_count, RSResult::None);
-
     const auto * raw_type = type.get();
     if (typeid_cast<const DataTypeNullable *>(raw_type))
     {
@@ -360,6 +358,7 @@ RSResults MinMaxIndex::checkIn(
     }
     if (typeid_cast<const DataTypeString *>(raw_type))
     {
+        RSResults results(pack_count, RSResult::None);
         const auto * string_column = checkAndGetColumn<ColumnString>(minmaxes.get());
         const auto & chars = string_column->getChars();
         const auto & offsets = string_column->getOffsets();

@@ -14,11 +14,10 @@
 
 #pragma once
 
+#include <Storages/DeltaMerge/Index/BloomFilterIndex.h>
 #include <Storages/DeltaMerge/Index/MinMaxIndex.h>
 
-namespace DB
-{
-namespace DM
+namespace DB::DM
 {
 class EqualIndex;
 using EqualIndexPtr = std::shared_ptr<EqualIndex>;
@@ -34,11 +33,18 @@ struct RSIndex
 {
     DataTypePtr type;
     MinMaxIndexPtr minmax;
+    BloomFilterIndexPtr bloom_filter_index;
     EqualIndexPtr equal;
 
     RSIndex(const DataTypePtr & type_, const MinMaxIndexPtr & minmax_)
         : type(type_)
         , minmax(minmax_)
+    {}
+
+    RSIndex(const DataTypePtr & type_, const MinMaxIndexPtr & minmax_, const BloomFilterIndexPtr & bloom_filter_index_)
+        : type(type_)
+        , minmax(minmax_)
+        , bloom_filter_index(bloom_filter_index_)
     {}
 
     RSIndex(const DataTypePtr & type_, const MinMaxIndexPtr & minmax_, const EqualIndexPtr & equal_)
@@ -50,6 +56,4 @@ struct RSIndex
 
 using ColumnIndexes = std::unordered_map<ColId, RSIndex>;
 
-} // namespace DM
-
-} // namespace DB
+} // namespace DB::DM
