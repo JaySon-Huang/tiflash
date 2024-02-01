@@ -102,8 +102,6 @@ String DMFile::getNGCPath(const String & parent_path, UInt64 file_id, DMFile::St
     return details::getNGCPath(getPathByStatus(parent_path, file_id, status));
 }
 
-//
-
 String DMFile::path() const
 {
     return getPathByStatus(parent_path, file_id, status);
@@ -218,53 +216,34 @@ String DMFile::colMarkCacheKey(const FileNameBase & file_name_base) const
 
 bool DMFile::isColIndexExist(const ColId & col_id) const
 {
-    if (useMetaV2())
-    {
-        auto itr = column_stats.find(col_id);
-        return itr != column_stats.end() && itr->second.index_bytes > 0;
-    }
-    else
-    {
-        return column_indices.count(col_id) != 0;
-    }
+    RUNTIME_CHECK(useMetaV2());
+    auto itr = column_stats.find(col_id);
+    return itr != column_stats.end() && itr->second.index_bytes > 0;
 }
 
 size_t DMFile::colIndexSize(ColId id)
 {
-    if (useMetaV2())
+    RUNTIME_CHECK(useMetaV2());
+    if (auto itr = column_stats.find(id); itr != column_stats.end() && itr->second.index_bytes > 0)
     {
-        if (auto itr = column_stats.find(id); itr != column_stats.end() && itr->second.index_bytes > 0)
-        {
-            return itr->second.index_bytes;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Index of {} not exist", id);
-        }
+        return itr->second.index_bytes;
     }
     else
     {
-        return colIndexSizeByName(getFileNameBase(id));
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Index of {} not exist", id);
     }
 }
 
 size_t DMFile::colDataSize(ColId id, bool is_null_map)
 {
-    if (useMetaV2())
+    RUNTIME_CHECK(useMetaV2());
+    if (auto itr = column_stats.find(id); itr != column_stats.end())
     {
-        if (auto itr = column_stats.find(id); itr != column_stats.end())
-        {
-            return is_null_map ? itr->second.nullmap_data_bytes : itr->second.data_bytes;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Data of {} not exist", id);
-        }
+        return is_null_map ? itr->second.nullmap_data_bytes : itr->second.data_bytes;
     }
     else
     {
-        auto namebase = is_null_map ? getFileNameBase(id, {IDataType::Substream::NullMap}) : getFileNameBase(id);
-        return colDataSizeByName(namebase);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Data of {} not exist", id);
     }
 }
 

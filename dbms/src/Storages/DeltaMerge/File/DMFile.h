@@ -212,6 +212,8 @@ public:
         const ReadMetaMode & read_meta_mode,
         KeyspaceID keyspace_id = NullspaceID);
 
+    virtual ~DMFile() = default;
+
     struct ListOptions
     {
         // Only return the DTFiles id list that can be GC
@@ -319,6 +321,8 @@ public:
 
     static String metav2FileName() { return "meta"; }
     bool useMetaV2() const { return version == DMFileFormat::V3; }
+
+    // Only meta v2
     std::vector<String> listFilesForUpload() const;
     void switchToRemote(const S3::DMFileOID & oid);
 
@@ -354,18 +358,11 @@ private:
     String metav2Path() const { return subFilePath(metav2FileName()); }
     String mergedPath(UInt32 number) const { return subFilePath(mergedFilename(number)); }
 
-    using FileNameBase = String;
-    size_t colIndexSizeByName(const FileNameBase & file_name_base) const
-    {
-        return Poco::File(colIndexPath(file_name_base)).getSize();
-    }
-    size_t colDataSizeByName(const FileNameBase & file_name_base) const
-    {
-        return Poco::File(colDataPath(file_name_base)).getSize();
-    }
-    size_t colIndexSize(ColId id);
-    size_t colDataSize(ColId id, bool is_null_map);
+    virtual size_t colIndexSize(ColId id);
+    virtual size_t colDataSize(ColId id, bool is_null_map);
 
+protected:
+    using FileNameBase = String;
     String colDataPath(const FileNameBase & file_name_base) const
     {
         return subFilePath(colDataFileName(file_name_base));
@@ -378,11 +375,16 @@ private:
     {
         return subFilePath(colMarkFileName(file_name_base));
     }
+    static FileNameBase getFileNameBase(ColId col_id, const IDataType::SubstreamPath & substream = {})
+    {
+        return IDataType::getFileNameForStream(DB::toString(col_id), substream);
+    }
 
+private:
     String colIndexCacheKey(const FileNameBase & file_name_base) const;
     String colMarkCacheKey(const FileNameBase & file_name_base) const;
 
-    bool isColIndexExist(const ColId & col_id) const;
+    virtual bool isColIndexExist(const ColId & col_id) const;
 
     String encryptionBasePath() const;
     EncryptionPath encryptionDataPath(const FileNameBase & file_name_base) const;
@@ -394,11 +396,6 @@ private:
     EncryptionPath encryptionConfigurationPath() const;
     EncryptionPath encryptionMetav2Path() const;
     EncryptionPath encryptionMergedPath(UInt32 number) const;
-
-    static FileNameBase getFileNameBase(ColId col_id, const IDataType::SubstreamPath & substream = {})
-    {
-        return IDataType::getFileNameForStream(DB::toString(col_id), substream);
-    }
 
     static String metaFileName() { return "meta.txt"; }
     static String packStatFileName() { return "pack"; }
@@ -434,6 +431,7 @@ private:
     Status getStatus() const { return status; }
     void setStatus(Status status_) { status = status_; }
 
+    // Only meta v1
     void finalizeForFolderMode(const FileProviderPtr & file_provider, const WriteLimiterPtr & write_limiter);
 
     String subFilePath(const String & file_name) const { return path() + "/" + file_name; }
@@ -467,6 +465,7 @@ private:
     UInt64 getReadFileSize(ColId col_id, const String & filename) const;
     UInt64 getMergedFileSizeOfColumn(const MergedSubFileInfo & file_info) const;
 
+protected:
     // The id to construct the file path on disk.
     UInt64 file_id;
     // It is the page_id that represent this file in the PageStorage. It could be the same as file id.
@@ -524,6 +523,29 @@ private:
         const ::DTTool::Migrate::MigrateArgs & args);
     friend bool ::DTTool::Migrate::isRecognizable(const DB::DM::DMFile & file, const std::string & target);
     friend bool ::DTTool::Migrate::needFrameMigration(const DB::DM::DMFile & file, const std::string & target);
+};
+
+class DMFileMetaV1 : public DMFile
+{
+public:
+    bool isColIndexExist(const ColId & col_id) const override { return column_indices.count(col_id) != 0; }
+    size_t colIndexSize(ColId id) override { return colIndexSizeByName(getFileNameBase(id)); }
+    size_t colDataSize(ColId id, bool is_null_map) override
+    {
+        auto namebase = is_null_map ? getFileNameBase(id, {IDataType::Substream::NullMap}) : getFileNameBase(id);
+        return colDataSizeByName(namebase);
+    }
+
+private:
+    using FileNameBase = String;
+    size_t colIndexSizeByName(const FileNameBase & file_name_base) const
+    {
+        return Poco::File(colIndexPath(file_name_base)).getSize();
+    }
+    size_t colDataSizeByName(const FileNameBase & file_name_base) const
+    {
+        return Poco::File(colDataPath(file_name_base)).getSize();
+    }
 };
 
 inline ReadBufferFromFileProvider openForRead(
