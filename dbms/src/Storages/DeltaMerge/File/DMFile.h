@@ -506,13 +506,17 @@ protected:
 
     void finalizeSmallFiles(
         MergedFileWriter & writer,
-        FileProviderPtr & file_provider,
-        WriteLimiterPtr & write_limiter);
+        const FileProviderPtr & file_provider,
+        const WriteLimiterPtr & write_limiter);
     // check if the size of merged file is larger then the threshold. If so, create a new merged file.
-    void checkMergedFile(MergedFileWriter & writer, FileProviderPtr & file_provider, WriteLimiterPtr & write_limiter);
+    void checkMergedFile(
+        MergedFileWriter & writer,
+        const FileProviderPtr & file_provider,
+        const WriteLimiterPtr & write_limiter);
 
     friend class DMFileWriter;
-    friend class DMFileWriterRemote;
+    friend class DMFileWriterMetaV1;
+    friend class DMFileWriterMetaV2;
     friend class DMFileReader;
     friend class DMFilePackFilter;
     friend class DMFileBlockInputStreamBuilder;

@@ -1107,8 +1107,8 @@ void DMFile::switchToRemote(const S3::DMFileOID & oid)
 
 void DMFile::checkMergedFile(
     MergedFileWriter & writer,
-    FileProviderPtr & file_provider,
-    WriteLimiterPtr & write_limiter)
+    const FileProviderPtr & file_provider,
+    const WriteLimiterPtr & write_limiter)
 {
     if (writer.file_info.size >= merged_file_max_size)
     {
@@ -1133,8 +1133,8 @@ void DMFile::checkMergedFile(
 
 void DMFile::finalizeSmallFiles(
     MergedFileWriter & writer,
-    FileProviderPtr & file_provider,
-    WriteLimiterPtr & write_limiter)
+    const FileProviderPtr & file_provider,
+    const WriteLimiterPtr & write_limiter)
 {
     auto copy_file_to_cur = [&](const String & fname, UInt64 fsize) {
         checkMergedFile(writer, file_provider, write_limiter);

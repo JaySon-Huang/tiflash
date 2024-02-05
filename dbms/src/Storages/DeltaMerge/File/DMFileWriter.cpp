@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/Exception.h>
 #include <Common/TiFlashException.h>
 #include <Encryption/createWriteBufferFromFileBaseByFileProvider.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/File/DMFileWriter.h>
+#include <Storages/DeltaMerge/File/DMFile_fwd.h>
 #include <Storages/S3/S3Common.h>
 
 #ifndef NDEBUG
@@ -24,92 +26,29 @@
 #include <unistd.h>
 #endif
 
+namespace DB::DM
+{
 
-namespace DB
-{
-namespace DM
-{
-DMFileWriter::DMFileWriter(
+DMFileWriterPtr DMFileWriter::create(
     const DMFilePtr & dmfile_,
     const ColumnDefines & write_columns_,
     const FileProviderPtr & file_provider_,
     const WriteLimiterPtr & write_limiter_,
-    const DMFileWriter::Options & options_)
-    : dmfile(dmfile_)
-    , write_columns(write_columns_)
-    , options(options_)
-    , file_provider(file_provider_)
-    , write_limiter(write_limiter_)
-    // Create a new file is necessarily here. Because it will create encryption info for the whole DMFile.
-    , meta_file(createMetaFile())
+    const Options & options_)
 {
-    dmfile->setStatus(DMFile::Status::WRITING);
-
-    if (dmfile->useMetaV2())
+    DMFileWriterPtr ptr;
+    if (likely(dmfile_->useMetaV2()))
     {
-        merged_file.buffer = std::make_unique<WriteBufferFromFileProvider>(
-            file_provider,
-            dmfile->mergedPath(0),
-            dmfile->encryptionMergedPath(0),
-            /*create_new_encryption_info*/ false,
-            write_limiter);
-
-        merged_file.file_info = DMFile::MergedFile({0, 0});
-    }
-
-    for (auto & cd : write_columns)
-    {
-        // TODO: currently we only generate index for Integers, Date, DateTime types, and this should be configurable by user.
-        /// for handle column always generate index
-        auto type = removeNullable(cd.type);
-        bool do_index = cd.id == EXTRA_HANDLE_COLUMN_ID || type->isInteger() || type->isDateOrDateTime();
-        addStreams(cd.id, cd.type, do_index);
-        dmfile->column_stats.emplace(cd.id, ColumnStat{cd.id, cd.type, /*avg_size=*/0});
-    }
-}
-
-DMFileWriter::WriteBufferFromFileBasePtr DMFileWriter::createMetaFile()
-{
-    if (dmfile->useMetaV2())
-    {
-        return createMetaV2File();
+        ptr = std::make_unique<DMFileWriterMetaV2>(dmfile_, write_columns_, file_provider_, write_limiter_, options_);
     }
     else
     {
-        return createPackStatsFile();
+        ptr = std::make_unique<DMFileWriterMetaV1>(dmfile_, write_columns_, file_provider_, write_limiter_, options_);
     }
-}
-
-DMFileWriter::WriteBufferFromFileBasePtr DMFileWriter::createMetaV2File()
-{
-    return std::make_unique<WriteBufferFromFileProvider>(
-        file_provider,
-        dmfile->metav2Path(),
-        dmfile->encryptionMetav2Path(),
-        /*create_new_encryption_info*/ true,
-        write_limiter,
-        DMFile::meta_buffer_size);
-}
-
-DMFileWriter::WriteBufferFromFileBasePtr DMFileWriter::createPackStatsFile()
-{
-    return dmfile->configuration ? createWriteBufferFromFileBaseByFileProvider(
-               file_provider,
-               dmfile->packStatPath(),
-               dmfile->encryptionPackStatPath(),
-               /*create_new_encryption_info*/ true,
-               write_limiter,
-               dmfile->configuration->getChecksumAlgorithm(),
-               dmfile->configuration->getChecksumFrameLength())
-                                 : createWriteBufferFromFileBaseByFileProvider(
-                                     file_provider,
-                                     dmfile->packStatPath(),
-                                     dmfile->encryptionPackStatPath(),
-                                     /*create_new_encryption_info*/ true,
-                                     write_limiter,
-                                     0,
-                                     0,
-                                     options.max_compress_block_size);
+    // Create a new file is necessarily here. Because it will create encryption info for the whole DMFile.
+    ptr->meta_file = ptr->createMetaFile();
+    assert(ptr->meta_file != nullptr);
+    return ptr;
 }
 
 void DMFileWriter::addStreams(ColId col_id, DataTypePtr type, bool do_index)
@@ -131,7 +70,6 @@ void DMFileWriter::addStreams(ColId col_id, DataTypePtr type, bool do_index)
     type->enumerateStreams(callback, {});
 }
 
-
 void DMFileWriter::write(const Block & block, const BlockProperty & block_property)
 {
     is_empty_file = false;
@@ -141,11 +79,10 @@ void DMFileWriter::write(const Block & block, const BlockProperty & block_proper
     stat.bytes = block.bytes(); // This is bytes of pack data in memory.
 
     auto del_mark_column = tryGetByColumnId(block, TAG_COLUMN_ID).column;
-
     const ColumnVector<UInt8> * del_mark
         = !del_mark_column ? nullptr : static_cast<const ColumnVector<UInt8> *>(del_mark_column.get());
 
-    for (auto & cd : write_columns)
+    for (const auto & cd : write_columns)
     {
         const auto & col = getByColumnId(block, cd.id).column;
         writeColumn(cd.id, *cd.type, *col, del_mark);
@@ -165,44 +102,6 @@ void DMFileWriter::write(const Block & block, const BlockProperty & block_proper
     property->set_deleted_rows(block_property.deleted_rows);
 }
 
-void DMFileWriter::finalize()
-{
-    for (auto & cd : write_columns)
-    {
-        finalizeColumn(cd.id, cd.type);
-    }
-    if (dmfile->useMetaV2())
-    {
-        dmfile->finalizeSmallFiles(merged_file, file_provider, write_limiter);
-        // Some fields of ColumnStat is set in `finalizeColumn`, must call finalizeMetaV2 after all column finalized
-        finalizeMetaV2();
-    }
-    else
-    {
-        finalizeMetaV1();
-    }
-}
-
-void DMFileWriter::finalizeMetaV1()
-{
-    const auto & pack_stats = dmfile->getPackStats();
-    for (const auto & pack_stat : pack_stats)
-    {
-        writePODBinary(pack_stat, *meta_file);
-    }
-    meta_file->sync();
-    meta_file.reset();
-    dmfile->finalizeForFolderMode(file_provider, write_limiter);
-}
-
-void DMFileWriter::finalizeMetaV2()
-{
-    dmfile->finalizeMetaV2(*meta_file);
-    meta_file->sync();
-    meta_file.reset();
-    dmfile->finalizeDirName();
-}
-
 void DMFileWriter::writeColumn(
     ColId col_id,
     const IDataType & type,
@@ -213,7 +112,7 @@ void DMFileWriter::writeColumn(
     type.enumerateStreams(
         [&](const IDataType::SubstreamPath & substream) {
             const auto name = DMFile::getFileNameBase(col_id, substream);
-            auto & stream = column_streams.at(name);
+            const auto & stream = column_streams.at(name);
             if (stream->minmaxes)
             {
                 // For EXTRA_HANDLE_COLUMN_ID, we ignore del_mark when add minmax index.
@@ -247,7 +146,7 @@ void DMFileWriter::writeColumn(
         column,
         [&](const IDataType::SubstreamPath & substream) {
             const auto stream_name = DMFile::getFileNameBase(col_id, substream);
-            auto & stream = column_streams.at(stream_name);
+            const auto & stream = column_streams.at(stream_name);
             return &(*stream->compressed_buf);
         },
         0,
@@ -257,8 +156,8 @@ void DMFileWriter::writeColumn(
 
     type.enumerateStreams(
         [&](const IDataType::SubstreamPath & substream) {
-            const auto name = DMFile::getFileNameBase(col_id, substream);
-            auto & stream = column_streams.at(name);
+            const auto stream_name = DMFile::getFileNameBase(col_id, substream);
+            const auto & stream = column_streams.at(stream_name);
             stream->compressed_buf->nextIfAtEnd();
         },
         {});
@@ -267,7 +166,147 @@ void DMFileWriter::writeColumn(
     IDataType::updateAvgValueSizeHint(column, avg_size);
 }
 
-void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
+DMFileWriterMetaV1::DMFileWriterMetaV1(
+    const DMFilePtr & dmfile_,
+    const ColumnDefines & write_columns_,
+    const FileProviderPtr & file_provider_,
+    const WriteLimiterPtr & write_limiter_,
+    const Options & options_)
+    : DMFileWriter(dmfile_, write_columns_, file_provider_, write_limiter_, options_)
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(!dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+
+    for (const auto & cd : write_columns)
+    {
+        // TODO: currently we only generate index for Integers, Date, DateTime types, and this should be configurable by user.
+        /// for handle column always generate index
+        auto type = removeNullable(cd.type);
+        bool do_index = cd.id == EXTRA_HANDLE_COLUMN_ID || type->isInteger() || type->isDateOrDateTime();
+        addStreams(cd.id, cd.type, do_index);
+        dmfile->column_stats.emplace(cd.id, ColumnStat{cd.id, cd.type, /*avg_size=*/0});
+    }
+}
+
+DMFileWriterMetaV2::DMFileWriterMetaV2(
+    const DMFilePtr & dmfile_,
+    const ColumnDefines & write_columns_,
+    const FileProviderPtr & file_provider_,
+    const WriteLimiterPtr & write_limiter_,
+    const DMFileWriter::Options & options_)
+    : DMFileWriter(dmfile_, write_columns_, file_provider_, write_limiter_, options_)
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+    merged_file.buffer = std::make_unique<WriteBufferFromFileProvider>(
+        file_provider,
+        dmfile->mergedPath(0),
+        dmfile->encryptionMergedPath(0),
+        /*create_new_encryption_info*/ false,
+        write_limiter);
+
+    merged_file.file_info = DMFile::MergedFile({0, 0});
+
+    for (const auto & cd : write_columns)
+    {
+        // TODO: currently we only generate index for Integers, Date, DateTime types, and this should be configurable by user.
+        /// for handle column always generate index
+        auto type = removeNullable(cd.type);
+        bool do_index = cd.id == EXTRA_HANDLE_COLUMN_ID || type->isInteger() || type->isDateOrDateTime();
+        addStreams(cd.id, cd.type, do_index);
+        dmfile->column_stats.emplace(cd.id, ColumnStat{cd.id, cd.type, /*avg_size=*/0});
+    }
+}
+
+DMFileWriter::WriteBufferFromFileBasePtr DMFileWriterMetaV1::createMetaFile()
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(!dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+    if (dmfile->configuration)
+        return createWriteBufferFromFileBaseByFileProvider(
+            file_provider,
+            dmfile->packStatPath(),
+            dmfile->encryptionPackStatPath(),
+            /*create_new_encryption_info*/ true,
+            write_limiter,
+            dmfile->configuration->getChecksumAlgorithm(),
+            dmfile->configuration->getChecksumFrameLength());
+    else
+        return createWriteBufferFromFileBaseByFileProvider(
+            file_provider,
+            dmfile->packStatPath(),
+            dmfile->encryptionPackStatPath(),
+            /*create_new_encryption_info*/ true,
+            write_limiter,
+            0,
+            0,
+            options.max_compress_block_size);
+}
+
+DMFileWriter::WriteBufferFromFileBasePtr DMFileWriterMetaV2::createMetaFile()
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+    return std::make_unique<WriteBufferFromFileProvider>(
+        file_provider,
+        dmfile->metav2Path(),
+        dmfile->encryptionMetav2Path(),
+        /*create_new_encryption_info*/ true,
+        write_limiter,
+        DMFile::meta_buffer_size);
+}
+
+// TODO: Split it
+void DMFileWriterMetaV2::finalize()
+{
+    for (const auto & cd : write_columns)
+    {
+        finalizeColumn(cd.id, cd.type);
+    }
+    if (dmfile->useMetaV2())
+    {
+        dmfile->finalizeSmallFiles(merged_file, file_provider, write_limiter);
+        // Some fields of ColumnStat is set in `finalizeColumn`, must call finalizeMetaV2 after all column finalized
+        finalizeMetaV2();
+    }
+    else
+    {
+        finalizeMetaV1();
+    }
+}
+
+void DMFileWriterMetaV2::finalizeMetaV1()
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(!dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+    const auto & pack_stats = dmfile->getPackStats();
+    for (const auto & pack_stat : pack_stats)
+    {
+        writePODBinary(pack_stat, *meta_file);
+    }
+    meta_file->sync();
+    meta_file.reset();
+    dmfile->finalizeForFolderMode(file_provider, write_limiter);
+}
+
+void DMFileWriterMetaV2::finalizeMetaV2()
+{
+#ifndef NDEBUG
+    RUNTIME_ASSERT(dmfile->useMetaV2(), "file version writer not match! path={}", dmfile->path());
+#endif
+    dmfile->finalizeMetaV2(*meta_file);
+    meta_file->sync();
+    meta_file.reset();
+    dmfile->finalizeDirName();
+}
+
+// TODO: Split it
+void DMFileWriterMetaV2::finalizeColumn(ColId col_id, DataTypePtr type)
 {
     size_t bytes_written = 0;
     size_t data_bytes = 0;
@@ -477,5 +516,4 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
     col_stat.nullmap_mark_bytes = nullmap_mark_bytes;
 }
 
-} // namespace DM
-} // namespace DB
+} // namespace DB::DM

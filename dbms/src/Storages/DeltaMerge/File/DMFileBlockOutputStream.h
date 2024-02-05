@@ -18,10 +18,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/DeltaMerge/File/DMFileWriter.h>
 
-namespace DB
+namespace DB::DM
 {
-namespace DM
-{
+
 /// The output stream for writing block to DTFile.
 ///
 /// Note that we will filter block by `RSOperatorPtr` while reading, so the
@@ -34,18 +33,16 @@ class DMFileBlockOutputStream
 public:
     DMFileBlockOutputStream(const Context & context, const DMFilePtr & dmfile, const ColumnDefines & write_columns);
 
-    DMFilePtr getFile() const { return writer.getFile(); }
+    DMFilePtr getFile() const { return writer->getFile(); }
 
     using BlockProperty = DMFileWriter::BlockProperty;
-    void write(const Block & block, const BlockProperty & block_property) { writer.write(block, block_property); }
+    void write(const Block & block, const BlockProperty & block_property) { writer->write(block, block_property); }
 
     void writePrefix() {}
-
-    void writeSuffix() { writer.finalize(); }
+    void writeSuffix() { writer->finalize(); }
 
 private:
-    DMFileWriter writer;
+    DMFileWriterPtr writer;
 };
 
-} // namespace DM
-} // namespace DB
+} // namespace DB::DM

@@ -24,9 +24,7 @@
 #include <Storages/DeltaMerge/File/DMFile.h>
 #include <Storages/DeltaMerge/Index/MinMaxIndex.h>
 
-namespace DB
-{
-namespace DM
+namespace DB::DM
 {
 namespace detail
 {
@@ -39,6 +37,10 @@ static inline size_t getFrameSizeOrDefault(DMFile & dmfile)
     return dmfile.getConfiguration() ? dmfile.getConfiguration()->getChecksumFrameLength() : DBMS_DEFAULT_BUFFER_SIZE;
 }
 } // namespace detail
+
+class DMFileWriter;
+using DMFileWriterPtr = std::unique_ptr<DMFileWriter>;
+
 class DMFileWriter
 {
 public:
@@ -51,7 +53,7 @@ public:
             const DataTypePtr & type,
             CompressionSettings compression_settings,
             size_t max_compress_block_size,
-            FileProviderPtr & file_provider,
+            const FileProviderPtr & file_provider,
             const WriteLimiterPtr & write_limiter_,
             bool do_index)
             : plain_file(WriteBufferByFileProviderBuilder(
@@ -105,14 +107,7 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
     using ColumnStreams = std::map<String, StreamPtr>;
 
-    struct BlockProperty
-    {
-        size_t not_clean_rows;
-        size_t deleted_rows;
-        size_t effective_num_rows;
-        size_t gc_hint_version;
-    };
-
+public:
     struct Options
     {
         CompressionSettings compression_settings;
@@ -132,48 +127,64 @@ public:
 
         Options(const Options & from) = default;
     };
-
-
-public:
-    DMFileWriter(
+    static DMFileWriterPtr create(
         const DMFilePtr & dmfile_,
         const ColumnDefines & write_columns_,
         const FileProviderPtr & file_provider_,
         const WriteLimiterPtr & write_limiter_,
         const Options & options_);
 
+    explicit DMFileWriter(
+        DMFilePtr f,
+        const ColumnDefines & write_columns_,
+        const FileProviderPtr & file_provider_,
+        const WriteLimiterPtr & write_limiter_,
+        const Options & options_)
+        : dmfile(std::move(f))
+        , write_columns(write_columns_)
+        , options(options_)
+        , file_provider(file_provider_)
+        , write_limiter(write_limiter_)
+    {
+        dmfile->setStatus(DMFile::Status::WRITING);
+    }
+
+    virtual ~DMFileWriter() = default;
+
+    struct BlockProperty
+    {
+        size_t not_clean_rows;
+        size_t deleted_rows;
+        size_t effective_num_rows;
+        size_t gc_hint_version;
+    };
     void write(const Block & block, const BlockProperty & block_property);
-    void finalize();
+    virtual void finalize() = 0;
 
-    const DMFilePtr getFile() const { return dmfile; }
+    DMFilePtr getFile() const { return dmfile; }
 
-private:
-    void finalizeColumn(ColId col_id, DataTypePtr type);
+protected:
+    /// Add streams with specified column id. Since a single column may have more than one Stream,
+    /// for example Nullable column has a NullMap column, we would track them with a mapping
+    /// FileNameBase -> Stream by `column_streams`
+    void addStreams(ColId col_id, DataTypePtr type, bool do_index);
     void writeColumn(
         ColId col_id,
         const IDataType & type,
         const IColumn & column,
         const ColumnVector<UInt8> * del_mark);
 
-    /// Add streams with specified column id. Since a single column may have more than one Stream,
-    /// for example Nullable column has a NullMap column, we would track them with a mapping
-    /// FileNameBase -> Stream.
-    void addStreams(ColId col_id, DataTypePtr type, bool do_index);
+    virtual WriteBufferFromFileBasePtr createMetaFile() = 0;
 
-    WriteBufferFromFileBasePtr createMetaFile();
-    WriteBufferFromFileBasePtr createMetaV2File();
-    WriteBufferFromFileBasePtr createPackStatsFile();
-    void finalizeMetaV1();
-    void finalizeMetaV2();
+protected:
+    const DMFilePtr dmfile;
 
-private:
-    DMFilePtr dmfile;
-    ColumnDefines write_columns;
-    Options options;
+    const ColumnDefines write_columns;
+    const Options options;
 
     ColumnStreams column_streams;
 
-    FileProviderPtr file_provider;
+    const FileProviderPtr file_provider;
     WriteLimiterPtr write_limiter;
 
     // If dmfile->useMetaV2() is true, `meta_file` is for metav2,
@@ -186,5 +197,44 @@ private:
     bool is_empty_file = true;
 };
 
-} // namespace DM
-} // namespace DB
+
+class DMFileWriterMetaV1 : public DMFileWriter
+{
+public:
+    DMFileWriterMetaV1(
+        const DMFilePtr & dmfile_,
+        const ColumnDefines & write_columns_,
+        const FileProviderPtr & file_provider_,
+        const WriteLimiterPtr & write_limiter_,
+        const Options & options_);
+
+    void finalize() override;
+
+private:
+    WriteBufferFromFileBasePtr createMetaFile() override;
+};
+
+class DMFileWriterMetaV2 : public DMFileWriter
+{
+public:
+    DMFileWriterMetaV2(
+        const DMFilePtr & dmfile_,
+        const ColumnDefines & write_columns_,
+        const FileProviderPtr & file_provider_,
+        const WriteLimiterPtr & write_limiter_,
+        const Options & options_);
+
+    void write(const Block & block, const BlockProperty & block_property);
+    void finalize() override;
+
+private:
+    void finalizeColumn(ColId col_id, DataTypePtr type);
+    
+
+    WriteBufferFromFileBasePtr createMetaFile() override;
+    
+    void finalizeMetaV1();
+    void finalizeMetaV2();
+};
+
+} // namespace DB::DM
