@@ -1187,6 +1187,7 @@ void SchemaBuilder<Getter, NameMapper>::applyCreateStorageInstance(
     ASTPtr ast = parseQuery(parser, stmt.data(), stmt.data() + stmt.size(), "from syncSchema " + table_info->name, 0);
 
     auto * ast_create_query = typeid_cast<ASTCreateQuery *>(ast.get());
+    // TODO: Is it ok to set `attach` to true?
     ast_create_query->attach = true;
     ast_create_query->if_not_exists = true;
     ast_create_query->database = database_mapped_name;
@@ -1332,10 +1333,10 @@ void SchemaBuilder<Getter, NameMapper>::syncAllSchema()
 {
     LOG_INFO(log, "Sync all schemas begin");
 
-    /// Create all databases.
-    std::vector<DBInfoPtr> all_db_info = getter.listDBs();
+    // Fetch all the databases info from TiKV
+    const std::vector<DBInfoPtr> all_db_info = getter.listDBs();
 
-    //We can't use too large default_num_threads, otherwise, the lock grabbing time will be too much.
+    // Limit the concurrency for creating databases. Otherwise, the lock grabbing time will be too much.
     size_t default_num_threads = std::max(4UL, std::thread::hardware_concurrency());
     auto sync_all_schema_thread_pool
         = ThreadPool(default_num_threads, default_num_threads / 2, default_num_threads * 2);
@@ -1363,8 +1364,9 @@ void SchemaBuilder<Getter, NameMapper>::syncAllSchema()
                     db_info->id);
             } while (false); // Ensure database existing
 
-            std::vector<TableInfoPtr> tables = getter.listTables(db_info->id);
-            for (auto & table_info : tables)
+            // Fetch all the tables info of this database
+            const std::vector<TableInfoPtr> tables = getter.listTables(db_info->id);
+            for (const auto & table_info : tables)
             {
                 LOG_INFO(
                     log,
