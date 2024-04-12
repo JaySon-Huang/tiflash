@@ -21,6 +21,7 @@
 #include <Storages/KVStore/FFI/ProxyFFICommon.h>
 #include <Storages/KVStore/KVStore.h>
 #include <Storages/KVStore/TMTContext.h>
+#include <Storages/KVStore/Types.h>
 #include <Storages/S3/S3GCManager.h>
 #include <TiDB/OwnerManager.h>
 #include <fmt/core.h>
@@ -30,6 +31,55 @@
 
 namespace DB
 {
+
+struct SyncStatusParam
+{
+    KeyspaceID keyspace_id;
+    TableID table_id;
+};
+
+static std::tuple<HttpRequestStatus, SyncStatusParam> parseSyncStatusParam(
+    const std::string_view path,
+    const std::string_view api_name)
+{
+    auto log = Logger::get("HandleHttpRequestSyncStatus");
+    LOG_TRACE(log, "handling sync status request, path: {}, api_name: {}", path, api_name);
+
+    SyncStatusParam param{NullspaceID, InvalidTableID};
+    // Try to handle sync status request with old schema.
+    // Old schema: /{table_id}
+    // New schema: /keyspace/{keyspace_id}/table/{table_id}
+    auto query = path.substr(api_name.size());
+    std::vector<std::string> query_parts;
+    boost::split(query_parts, query, boost::is_any_of("/"));
+    if (query_parts.size() != 1
+        && (query_parts.size() != 4 || query_parts[0] != "keyspace" || query_parts[2] != "table"))
+    {
+        LOG_ERROR(log, "invalid SyncStatus request, path={}", path);
+        return {HttpRequestStatus::ErrorParam, param};
+    }
+
+    try
+    {
+        if (query_parts.size() == 4)
+        {
+            param.keyspace_id = std::stoll(query_parts[1]);
+            param.table_id = std::stoll(query_parts[3]);
+        }
+        else
+        {
+            param.table_id = std::stoll(query_parts[0]);
+        }
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "invalid SyncStatus request, path={}", path);
+        return {HttpRequestStatus::ErrorParam, param};
+    }
+
+    return {HttpRequestStatus::Ok, param};
+}
+
 HttpRequestRes HandleHttpRequestSyncStatus(
     EngineStoreServerWrap * server,
     std::string_view path,
@@ -37,54 +87,14 @@ HttpRequestRes HandleHttpRequestSyncStatus(
     std::string_view,
     std::string_view)
 {
+    SyncStatusParam param{NullspaceID, InvalidTableID};
     HttpRequestStatus status = HttpRequestStatus::Ok;
-    TableID table_id = 0;
-    pingcap::pd::KeyspaceID keyspace_id = NullspaceID;
-    {
-        auto log = Logger::get("HandleHttpRequestSyncStatus");
-        LOG_TRACE(log, "handling sync status request, path: {}, api_name: {}", path, api_name);
-
-        // Try to handle sync status request with old schema.
-        // Old schema: /{table_id}
-        // New schema: /keyspace/{keyspace_id}/table/{table_id}
-        auto query = path.substr(api_name.size());
-        std::vector<std::string> query_parts;
-        boost::split(query_parts, query, boost::is_any_of("/"));
-        if (query_parts.size() != 1
-            && (query_parts.size() != 4 || query_parts[0] != "keyspace" || query_parts[2] != "table"))
-        {
-            LOG_ERROR(log, "invalid SyncStatus request: {}", query);
-            status = HttpRequestStatus::ErrorParam;
-            return HttpRequestRes{
-                .status = status,
-                .res = CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{nullptr, 0}},
-            };
-        }
-
-
-        try
-        {
-            if (query_parts.size() == 4)
-            {
-                keyspace_id = std::stoll(query_parts[1]);
-                table_id = std::stoll(query_parts[3]);
-            }
-            else
-            {
-                table_id = std::stoll(query_parts[0]);
-            }
-        }
-        catch (...)
-        {
-            status = HttpRequestStatus::ErrorParam;
-        }
-
-        if (status != HttpRequestStatus::Ok)
-            return HttpRequestRes{
-                .status = status,
-                .res = CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{nullptr, 0}},
-            };
-    }
+    std::tie(status, param) = parseSyncStatusParam(path, api_name);
+    if (status != HttpRequestStatus::Ok)
+        return HttpRequestRes{
+            .status = status,
+            .res = CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{nullptr, 0}},
+        };
 
     auto & tmt = *server->tmt;
 
@@ -98,52 +108,56 @@ HttpRequestRes HandleHttpRequestSyncStatus(
     // TODO(iosmanthus): TiDB should support tiflash replica.
     RegionTable & region_table = tmt.getRegionTable();
     // Note that the IStorage instance could be not exist if there is only empty region for the table in this TiFlash instance.
-    region_table.handleInternalRegionsByTable(keyspace_id, table_id, [&](const RegionTable::InternalRegions & regions) {
-        region_list.reserve(regions.size());
-        bool can_log = Clock::now() > last_print_log_time + PRINT_LOG_INTERVAL;
-        FmtBuffer lag_regions_log;
-        size_t print_count = 0;
-        for (const auto & region : regions)
-        {
-            UInt64 leader_safe_ts;
-            UInt64 self_safe_ts;
-            if (!region_table.isSafeTSLag(region.first, &leader_safe_ts, &self_safe_ts))
+    region_table.handleInternalRegionsByTable(
+        param.keyspace_id,
+        param.table_id,
+        [&](const RegionTable::InternalRegions & regions) {
+            region_list.reserve(regions.size());
+            bool can_log = Clock::now() > last_print_log_time + PRINT_LOG_INTERVAL;
+            FmtBuffer lag_regions_log;
+            size_t print_count = 0;
+            for (const auto & region : regions)
             {
-                region_list.push_back(region.first);
+                UInt64 leader_safe_ts;
+                UInt64 self_safe_ts;
+                if (!region_table.isSafeTSLag(region.first, &leader_safe_ts, &self_safe_ts))
+                {
+                    region_list.push_back(region.first);
+                }
+                else if (can_log && print_count < max_print_region)
+                {
+                    lag_regions_log.fmtAppend(
+                        "lag_region_id={}, leader_safe_ts={}, self_safe_ts={}; ",
+                        region.first,
+                        leader_safe_ts,
+                        self_safe_ts);
+                    print_count++;
+                    last_print_log_time = Clock::now();
+                }
             }
-            else if (can_log && print_count < max_print_region)
+            ready_region_count = region_list.size();
+            if (ready_region_count < regions.size())
             {
-                lag_regions_log.fmtAppend(
-                    "lag_region_id={}, leader_safe_ts={}, self_safe_ts={}; ",
-                    region.first,
-                    leader_safe_ts,
-                    self_safe_ts);
-                print_count++;
-                last_print_log_time = Clock::now();
+                LOG_DEBUG(
+                    Logger::get(__FUNCTION__),
+                    "table_id={} total_region_count={} ready_region_count={} lag_region_info={}",
+                    param.table_id,
+                    regions.size(),
+                    ready_region_count,
+                    lag_regions_log.toString());
             }
-        }
-        ready_region_count = region_list.size();
-        if (ready_region_count < regions.size())
-        {
-            LOG_DEBUG(
-                Logger::get(__FUNCTION__),
-                "table_id={} total_region_count={} ready_region_count={} lag_region_info={}",
-                table_id,
-                regions.size(),
-                ready_region_count,
-                lag_regions_log.toString());
-        }
-    });
-    FmtBuffer buf;
-    buf.fmtAppend("{}\n", ready_region_count);
-    buf.joinStr(
+        });
+
+    FmtBuffer res_buf;
+    res_buf.fmtAppend("{}\n", ready_region_count);
+    res_buf.joinStr(
         region_list.begin(),
         region_list.end(),
         [](const RegionID & region_id, FmtBuffer & fmt_buf) { fmt_buf.fmtAppend("{}", region_id); },
         " ");
-    buf.append("\n");
+    res_buf.append("\n");
+    auto * s = RawCppString::New(res_buf.toString());
 
-    auto * s = RawCppString::New(buf.toString());
     return HttpRequestRes{
         .status = status,
         .res = CppStrWithView{
@@ -211,8 +225,18 @@ HttpRequestRes HandleHttpRequestRemoteOwnerInfo(
     std::string_view,
     std::string_view)
 {
-    const auto & owner = server->tmt->getS3GCOwnerManager();
-    const auto owner_info = owner->getOwnerID();
+    OwnerInfo owner_info;
+    auto & global_ctx = server->tmt->getContext();
+    if (!global_ctx.getSharedContextDisagg()->isDisaggregatedStorageMode())
+    {
+        owner_info.status = OwnerType::NoLeader;
+    }
+    else
+    {
+        const auto & owner = server->tmt->getS3GCOwnerManager();
+        owner_info = owner->getOwnerID();
+    }
+
     auto * body = RawCppString::New(fmt::format(
         R"json({{"status":"{}","owner_id":"{}"}})json",
         magic_enum::enum_name(owner_info.status),
@@ -234,9 +258,19 @@ HttpRequestRes HandleHttpRequestRemoteOwnerResign(
     std::string_view,
     std::string_view)
 {
-    const auto & owner = server->tmt->getS3GCOwnerManager();
-    bool has_resign = owner->resignOwner();
-    String msg = has_resign ? "Done" : "This node is not the remote gc owner, can't be resigned.";
+    String msg;
+    auto & global_ctx = server->tmt->getContext();
+    if (!global_ctx.getSharedContextDisagg()->isDisaggregatedStorageMode())
+    {
+        msg = "Not disagg arch node";
+    }
+    else
+    {
+        const auto & owner = server->tmt->getS3GCOwnerManager();
+        bool has_resign = owner->resignOwner();
+        msg = has_resign ? "Done" : "This node is not the remote gc owner, can't be resigned.";
+    }
+
     auto * body = RawCppString::New(fmt::format(R"json({{"message":"{}"}})json", msg));
     return HttpRequestRes{
         .status = HttpRequestStatus::Ok,
@@ -255,14 +289,24 @@ HttpRequestRes HandleHttpRequestRemoteGC(
     std::string_view,
     std::string_view)
 {
-    const auto & owner = server->tmt->getS3GCOwnerManager();
-    const auto owner_info = owner->getOwnerID();
+    auto & global_ctx = server->tmt->getContext();
     bool gc_is_executed = false;
-    if (owner_info.status == OwnerType::IsOwner)
+    OwnerInfo owner_info;
+    if (!global_ctx.getSharedContextDisagg()->isDisaggregatedStorageMode())
     {
-        server->tmt->getS3GCManager()->wake();
-        gc_is_executed = true;
+        owner_info.status = OwnerType::NoLeader;
     }
+    else
+    {
+        const auto & owner = server->tmt->getS3GCOwnerManager();
+        owner_info = owner->getOwnerID();
+        if (owner_info.status == OwnerType::IsOwner)
+        {
+            server->tmt->getS3GCManager()->wake();
+            gc_is_executed = true;
+        }
+    }
+
     auto * body = RawCppString::New(fmt::format(
         R"json({{"status":"{}","owner_id":"{}","execute":"{}"}})json",
         magic_enum::enum_name(owner_info.status),
