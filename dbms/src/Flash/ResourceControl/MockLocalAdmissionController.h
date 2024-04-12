@@ -31,8 +31,27 @@ inline uint64_t nopGetPriority(const std::string &)
     return 1.0;
 }
 
+class AdmissionController
+{
+public:
+    virtual ~AdmissionController() = default;
+
+    virtual void consumeCPUResource(const std::string & name, double ru, uint64_t cpu_time_ns) const = 0;
+    virtual void consumeBytesResource(const std::string & name, double ru) const = 0;
+
+    virtual void registerRefillTokenCallback(const std::function<void()> & cb) = 0;
+    virtual void unregisterRefillTokenCallback() = 0;
+
+    virtual std::optional<uint64_t> getPriority(const std::string & name) const = 0;
+    virtual void warmupResourceGroupInfoCache(const std::string &) = 0;
+    virtual uint64_t estWaitDuraMS(const std::string &) = 0;
+    virtual void safeStop() = 0;
+};
+
 // This is only for ResourceControlQueue gtest.
-class MockLocalAdmissionController final : private boost::noncopyable
+class MockLocalAdmissionController final
+    : public AdmissionController
+    , private boost::noncopyable
 {
 public:
     static constexpr uint64_t HIGHEST_RESOURCE_GROUP_PRIORITY = 0;
@@ -44,17 +63,44 @@ public:
         refill_token_thread = std::thread([&]() { refillTokenBucket(); });
     }
 
-    ~MockLocalAdmissionController() { stop(); }
+    ~MockLocalAdmissionController() override { stop(); }
 
     using ConsumeResourceFuncType = void (*)(const std::string &, double, uint64_t);
     using GetPriorityFuncType = uint64_t (*)(const std::string &);
     using IsResourceGroupThrottledFuncType = bool (*)(const std::string &);
 
-    void consumeCPUResource(const std::string & name, double ru, uint64_t cpu_time_ns) const
+    void consumeCPUResource(const std::string & name, double ru, uint64_t cpu_time_ns) const override
     {
         consumeResource(name, ru, cpu_time_ns);
     }
-    void consumeBytesResource(const std::string & name, double ru) const { consumeResource(name, ru, 0); }
+    void consumeBytesResource(const std::string & name, double ru) const override { consumeResource(name, ru, 0); }
+
+    void registerRefillTokenCallback(const std::function<void()> & cb) override
+    {
+        std::lock_guard lock(call_back_mutex);
+        RUNTIME_CHECK_MSG(refill_token_callback == nullptr, "callback cannot be registered multiple times");
+        refill_token_callback = cb;
+    }
+    void unregisterRefillTokenCallback() override
+    {
+        std::lock_guard lock(call_back_mutex);
+        RUNTIME_CHECK_MSG(refill_token_callback != nullptr, "callback cannot be nullptr before unregistering");
+        refill_token_callback = nullptr;
+    }
+
+    std::optional<uint64_t> getPriority(const std::string & name) const override
+    {
+        if (name.empty())
+            return {HIGHEST_RESOURCE_GROUP_PRIORITY};
+
+        return {get_priority_func(name)};
+    }
+
+    void warmupResourceGroupInfoCache(const std::string &) override {}
+    uint64_t estWaitDuraMS(const std::string &) override { return 100; }
+    void safeStop() override { stop(); }
+
+private:
     void consumeResource(const std::string & name, double ru, uint64_t cpu_time_ns) const
     {
         if (name.empty())
@@ -62,30 +108,6 @@ public:
 
         consume_resource_func(name, ru, cpu_time_ns);
     }
-    std::optional<uint64_t> getPriority(const std::string & name) const
-    {
-        if (name.empty())
-            return {HIGHEST_RESOURCE_GROUP_PRIORITY};
-
-        return {get_priority_func(name)};
-    }
-    void warmupResourceGroupInfoCache(const std::string &) {}
-    static uint64_t estWaitDuraMS(const std::string &) { return 100; }
-
-    void registerRefillTokenCallback(const std::function<void()> & cb)
-    {
-        std::lock_guard lock(call_back_mutex);
-        RUNTIME_CHECK_MSG(refill_token_callback == nullptr, "callback cannot be registered multiple times");
-        refill_token_callback = cb;
-    }
-    void unregisterRefillTokenCallback()
-    {
-        std::lock_guard lock(call_back_mutex);
-        RUNTIME_CHECK_MSG(refill_token_callback != nullptr, "callback cannot be nullptr before unregistering");
-        refill_token_callback = nullptr;
-    }
-
-    void safeStop() { stop(); }
 
     void stop()
     {
@@ -104,6 +126,7 @@ public:
 
     std::string dump() const;
 
+private:
     mutable std::mutex mu;
     std::condition_variable cv;
     std::unordered_map<std::string, std::shared_ptr<ResourceGroup>> resource_groups;

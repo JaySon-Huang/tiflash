@@ -719,6 +719,7 @@ private:
         std::string & parsed_rg_name,
         std::string & err_msg);
 
+private:
     mutable std::mutex mu;
     std::condition_variable cv;
 
