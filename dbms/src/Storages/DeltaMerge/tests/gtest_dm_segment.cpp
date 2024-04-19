@@ -38,6 +38,9 @@
 #include <future>
 #include <memory>
 
+#include "Storages/DeltaMerge/Range.h"
+#include "Storages/DeltaMerge/RowKeyRange.h"
+
 
 namespace CurrentMetrics
 {
@@ -210,6 +213,55 @@ try
 }
 CATCH
 
+TEST_F(SegmentTest, WriteReadTTTT)
+try
+{
+    const size_t num_rows_write = 100;
+    {
+        Block block = DMTestEnv::prepareSimpleWriteBlock(0, num_rows_write, false);
+        // write to segment
+        segment->write(dmContext(), block);
+        // estimate segment
+        auto estimated_rows = segment->getEstimatedRows();
+        ASSERT_EQ(estimated_rows, block.rows());
+
+        auto estimated_bytes = segment->getEstimatedBytes();
+        ASSERT_EQ(estimated_bytes, block.bytes());
+    }
+
+    {
+        // check segment
+        segment->check(dmContext(), "test");
+        segment = segment->mergeDelta(dmContext(), tableColumns());
+    }
+
+    const size_t num_rows_write_2 = 55;
+
+    {
+        LOG_INFO(Logger::get(), "TTTTT round 1");
+        // write more rows to segment
+        Block block = DMTestEnv::prepareSimpleWriteBlock(num_rows_write, num_rows_write + num_rows_write_2, false);
+        segment->write(dmContext(), std::move(block), false);
+        // read written data (both in delta and stable)
+        RowKeyRanges read_ranges{RowKeyRange::fromHandleRange(HandleRange(20, 9999))};
+        auto in = segment->getInputStreamModeNormal(dmContext(), *tableColumns(), read_ranges);
+        ASSERT_INPUTSTREAM_NROWS(in, num_rows_write + num_rows_write_2 - 20);
+    }
+    {
+        LOG_INFO(Logger::get(), "TTTTT round 2");
+        // write more rows to segment
+        Block block = DMTestEnv::prepareSimpleWriteBlock(
+            num_rows_write + num_rows_write_2,
+            num_rows_write + num_rows_write_2 * 2,
+            false);
+        segment->write(dmContext(), std::move(block), false);
+        // read written data (both in delta and stable)
+        RowKeyRanges read_ranges{RowKeyRange::fromHandleRange(HandleRange(20, 9999))};
+        auto in = segment->getInputStreamModeNormal(dmContext(), *tableColumns(), read_ranges);
+        ASSERT_INPUTSTREAM_NROWS(in, num_rows_write + num_rows_write_2 * 2 - 20);
+    }
+}
+CATCH
 
 TEST_F(SegmentTest, ClipBlockRows)
 try

@@ -90,7 +90,21 @@ RegionTable::InternalRegion & RegionTable::insertRegion(
 
 RegionTable::InternalRegion & RegionTable::doGetInternalRegion(KeyspaceTableID ks_table_id, DB::RegionID region_id)
 {
+#ifndef NDEBUG
+    // Do some check under debug mode
+    auto table_iter = tables.find(ks_table_id);
+    RUNTIME_ASSERT(table_iter != tables.end(), "ks_table_id={}", ks_table_id);
+    auto internal_region_it = table_iter->second.regions.find(region_id);
+    RUNTIME_ASSERT(
+        internal_region_it != table_iter->second.regions.end(),
+        "ks_table_id={} region_id={}",
+        ks_table_id,
+        region_id);
+    return internal_region_it->second;
+#else
+    // Directly get the internal region, caller must ensure the safety
     return tables.find(ks_table_id)->second.regions.find(region_id)->second;
+#endif
 }
 
 RegionTable::InternalRegion & RegionTable::getOrInsertRegion(const Region & region)
@@ -155,8 +169,7 @@ void RegionTable::removeTable(KeyspaceID keyspace_id, TableID table_id)
 void RegionTable::updateRegion(const Region & region)
 {
     std::lock_guard lock(mutex);
-    auto & internal_region = getOrInsertRegion(region);
-    internal_region.cache_bytes = region.dataSize();
+    getOrInsertRegion(region);
 }
 
 namespace
@@ -250,35 +263,42 @@ void RegionTable::removeRegion(const RegionID region_id, bool remove_data, const
     }
 }
 
+bool RegionTable::tryMarkRegionFlushBegin(RegionID region_id)
+{
+    std::lock_guard lock(mutex);
+    auto it = regions.find(region_id);
+    if (it == regions.end())
+    {
+        LOG_WARNING(log, "Internal region might be removed, region_id={}", region_id);
+        return false;
+    }
+    auto & internal_region = doGetInternalRegion(it->second, region_id);
+    if (internal_region.pause_flush)
+    {
+        LOG_INFO(log, "Internal region pause flush, may be being flushed, region_id={}", region_id);
+        return false;
+    }
+    internal_region.pause_flush = true;
+    return true;
+}
+
+void RegionTable::tryMarkRegionFlushEnd(RegionID region_id)
+{
+    std::lock_guard lock(mutex);
+    auto it = regions.find(region_id);
+    if (it == regions.end())
+    {
+        LOG_WARNING(log, "Internal region might be removed, region_id={}", region_id);
+        return;
+    }
+    auto & internal_region = doGetInternalRegion(it->second, region_id);
+    internal_region.pause_flush = false;
+}
+
 RegionDataReadInfoList RegionTable::tryWriteBlockByRegion(const RegionPtrWithBlock & region)
 {
     const RegionID region_id = region->id();
-
-    const auto func_update_region = [&](std::function<bool(InternalRegion &)> && callback) -> bool {
-        std::lock_guard lock(mutex);
-        if (auto it = regions.find(region_id); it != regions.end())
-        {
-            auto & internal_region = doGetInternalRegion(it->second, region_id);
-            return callback(internal_region);
-        }
-        else
-        {
-            LOG_WARNING(log, "Internal region might be removed, region_id={}", region_id);
-            return false;
-        }
-    };
-
-    bool status = func_update_region([&](InternalRegion & internal_region) -> bool {
-        if (internal_region.pause_flush)
-        {
-            LOG_INFO(log, "Internal region pause flush, may be being flushed, region_id={}", region_id);
-            return false;
-        }
-        internal_region.pause_flush = true;
-        return true;
-    });
-
-    if (!status)
+    if (!tryMarkRegionFlushBegin(region_id))
         return {};
 
     std::exception_ptr first_exception;
@@ -306,13 +326,8 @@ RegionDataReadInfoList RegionTable::tryWriteBlockByRegion(const RegionPtrWithBlo
         first_exception = std::current_exception();
     }
 
-    func_update_region([&](InternalRegion & internal_region) -> bool {
-        internal_region.pause_flush = false;
-        internal_region.cache_bytes = region->dataSize();
-
-        internal_region.last_flush_time = Clock::now();
-        return true;
-    });
+    // Mark the region exit flush state before throwing the exception
+    tryMarkRegionFlushEnd(region_id);
 
     if (first_exception)
         std::rethrow_exception(first_exception);
@@ -380,7 +395,6 @@ void RegionTable::shrinkRegionRange(const Region & region)
     std::lock_guard lock(mutex);
     auto & internal_region = getOrInsertRegion(region);
     internal_region.range_in_table = region.getRange()->rawKeys();
-    internal_region.cache_bytes = region.dataSize();
 }
 
 void RegionTable::extendRegionRange(const RegionID region_id, const RegionRangeKeys & region_range_keys)

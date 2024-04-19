@@ -89,8 +89,6 @@ public:
         RegionID region_id;
         std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> range_in_table;
         bool pause_flush = false;
-        Int64 cache_bytes = 0;
-        Timepoint last_flush_time = Clock::now();
     };
 
     using InternalRegions = std::unordered_map<RegionID, InternalRegion>;
@@ -190,6 +188,8 @@ private:
     InternalRegion & insertRegion(Table & table, const RegionRangeKeys & region_range_keys, RegionID region_id);
     InternalRegion & insertRegion(Table & table, const Region & region);
     InternalRegion & doGetInternalRegion(KeyspaceTableID ks_table_id, RegionID region_id);
+    bool tryMarkRegionFlushBegin(RegionID region_id);
+    void tryMarkRegionFlushEnd(RegionID region_id);
 
 private:
     using TableMap = std::unordered_map<KeyspaceTableID, Table, boost::hash<KeyspaceTableID>>;

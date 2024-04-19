@@ -212,13 +212,12 @@ BlockOrDeletes DeltaValueReader::getPlaceItems(
 
 bool DeltaValueReader::shouldPlace(
     const DMContext & context,
-    DeltaIndexPtr my_delta_index,
+    const size_t placed_rows,
+    const size_t placed_delete_ranges,
     const RowKeyRange & segment_range_,
     const RowKeyRange & relevant_range,
     UInt64 start_ts)
 {
-    auto [placed_rows, placed_delete_ranges] = my_delta_index->getPlacedStatus();
-
     // The placed_rows, placed_delete_range already contains the data in delta_snap
     if (placed_rows >= delta_snap->getRows() && placed_delete_ranges == delta_snap->getDeletes())
         return false;
