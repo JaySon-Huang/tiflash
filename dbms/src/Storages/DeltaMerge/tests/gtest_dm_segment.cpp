@@ -19,6 +19,8 @@
 #include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/DeltaMergeStore.h>
 #include <Storages/DeltaMerge/File/DMFileBlockOutputStream.h>
+#include <Storages/DeltaMerge/Range.h>
+#include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/Segment_fwd.h>
 #include <Storages/DeltaMerge/StoragePool/GlobalPageIdAllocator.h>
@@ -37,9 +39,6 @@
 #include <ctime>
 #include <future>
 #include <memory>
-
-#include "Storages/DeltaMerge/Range.h"
-#include "Storages/DeltaMerge/RowKeyRange.h"
 
 
 namespace CurrentMetrics
@@ -483,6 +482,74 @@ try
             std::numeric_limits<UInt64>::max(),
             DEFAULT_BLOCK_SIZE);
         ASSERT_INPUTSTREAM_NROWS(in, 100);
+    }
+}
+CATCH
+
+TEST_F(SegmentTest, ReadWithMoreAdvacedDeltaIndexComplicated)
+try
+{
+    // Test the case that reading rows with an advance DeltaIndex
+    size_t offset = 0;
+    auto write_rows = [&](size_t rows, bool flush) {
+        Block block = DMTestEnv::prepareSimpleWriteBlock(offset, offset + rows, false);
+        offset += rows;
+        // write to segment
+        segment->write(dmContext(), block, flush);
+    };
+
+    {
+        // check segment
+        segment->check(dmContext(), "test");
+    }
+    // Thread C
+    write_rows(100, false);
+    write_rows(100, false);
+    ASSERT_INPUTSTREAM_NROWS(
+        segment->getInputStreamModeNormal(dmContext(), *tableColumns(), {RowKeyRange::newAll(false, 1)}),
+        200);
+    auto snap_c = segment->createSnapshot(dmContext(), false, CurrentMetrics::DT_SnapshotOfRead);
+
+    // Thread A
+    write_rows(100, true);
+    write_rows(100, false);
+    ASSERT_INPUTSTREAM_NROWS(
+        segment->getInputStreamModeNormal(dmContext(), *tableColumns(), {RowKeyRange::newAll(false, 1)}),
+        400);
+    auto snap_a = segment->createSnapshot(dmContext(), false, CurrentMetrics::DT_SnapshotOfRead);
+
+    // Thread B
+    write_rows(100, false);
+    LOG_INFO(Logger::get(), "Thread B read");
+    ASSERT_INPUTSTREAM_NROWS(
+        segment->getInputStreamModeNormal(dmContext(), *tableColumns(), {RowKeyRange::newAll(false, 1)}),
+        500);
+
+    // Thread A
+    {
+        LOG_INFO(Logger::get(), "Thread A read with snap_a");
+        auto in = segment->getInputStreamModeNormal(
+            dmContext(),
+            *tableColumns(),
+            snap_a,
+            {RowKeyRange::newAll(false, 1)},
+            {},
+            std::numeric_limits<UInt64>::max(),
+            DEFAULT_BLOCK_SIZE);
+        ASSERT_INPUTSTREAM_NROWS(in, 400);
+    }
+    // Thread C
+    {
+        LOG_INFO(Logger::get(), "Thread C read with snap_c");
+        auto in = segment->getInputStreamModeNormal(
+            dmContext(),
+            *tableColumns(),
+            snap_c,
+            {RowKeyRange::newAll(false, 1)},
+            {},
+            std::numeric_limits<UInt64>::max(),
+            DEFAULT_BLOCK_SIZE);
+        ASSERT_INPUTSTREAM_NROWS(in, 200);
     }
 }
 CATCH

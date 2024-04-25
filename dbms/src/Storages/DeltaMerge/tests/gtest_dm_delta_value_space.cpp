@@ -220,7 +220,7 @@ static void checkDeltaValueSpaceData(
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal);
+            ReadTag::Internal, Logger::get());
         auto columns = expected_all_blocks[0].cloneEmptyColumns();
         ASSERT_EQ(reader->readRows(columns, 0, expected_all_rows, nullptr), expected_all_rows);
         Blocks result_blocks;
@@ -236,7 +236,8 @@ static void checkDeltaValueSpaceData(
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal);
+            ReadTag::Internal,
+            Logger::get());
         auto columns = expected_all_blocks[0].cloneEmptyColumns();
         RowKeyRange read_range = RowKeyRange::fromHandleRange(handle_range);
         ASSERT_EQ(reader->readRows(columns, 0, expected_all_rows, &read_range), expected_range_rows);
@@ -691,7 +692,8 @@ TEST_F(DeltaValueSpaceTest, GetPlaceItems)
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal);
+            ReadTag::Internal,
+            Logger::get());
         auto place_items = reader->getPlaceItems(0, 0, snapshot->getRows(), snapshot->getDeletes());
         ASSERT_EQ(place_items.size(), 2);
         size_t total_place_rows = 0;
@@ -716,7 +718,8 @@ TEST_F(DeltaValueSpaceTest, ShouldPlace)
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal);
+            ReadTag::Internal,
+            Logger::get());
         auto [placed_rows, placed_deletes] = snapshot->getSharedDeltaIndex()->getPlacedStatus();
         ASSERT_TRUE(reader->shouldPlace(
             dmContext(),
@@ -741,7 +744,8 @@ TEST_F(DeltaValueSpaceTest, ShouldPlace)
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal);
+            ReadTag::Internal,
+            Logger::get());
         auto [placed_rows, placed_deletes] = snapshot->getSharedDeltaIndex()->getPlacedStatus();
         ASSERT_TRUE(reader->shouldPlace(
             dmContext(),
