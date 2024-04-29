@@ -2431,8 +2431,7 @@ Segment::ReadInfo Segment::getReadInfo(
         segment_snap->delta,
         pk_ver_col_defs,
         this->rowkey_range,
-        ReadTag::MVCC,
-        segment_snap->log);
+        ReadTag::MVCC);
 
     auto [my_delta_index, fully_indexed] = ensurePlace(dm_context, segment_snap, delta_reader, read_ranges, start_ts);
     auto compacted_index = my_delta_index->getDeltaTree()->getCompactedEntries();

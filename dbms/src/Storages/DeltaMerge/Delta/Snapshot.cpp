@@ -71,8 +71,7 @@ DeltaValueReader::DeltaValueReader(
     const DeltaSnapshotPtr & delta_snap_,
     const ColumnDefinesPtr & col_defs_,
     const RowKeyRange & segment_range_,
-    ReadTag read_tag_,
-    const LoggerPtr & log_)
+    ReadTag read_tag_)
     : delta_snap(delta_snap_)
     , mem_table_reader(std::make_shared<ColumnFileSetReader>(
           context,
@@ -88,7 +87,6 @@ DeltaValueReader::DeltaValueReader(
           read_tag_))
     , col_defs(col_defs_)
     , segment_range(segment_range_)
-    , log(log_)
 {}
 
 DeltaValueReaderPtr DeltaValueReader::createNewReader(const ColumnDefinesPtr & new_col_defs, ReadTag read_tag)
@@ -100,7 +98,6 @@ DeltaValueReaderPtr DeltaValueReader::createNewReader(const ColumnDefinesPtr & n
     new_reader->mem_table_reader = mem_table_reader->createNewReader(new_col_defs, read_tag);
     new_reader->col_defs = new_col_defs;
     new_reader->segment_range = segment_range;
-    new_reader->log = log;
 
     return std::shared_ptr<DeltaValueReader>(new_reader);
 }
@@ -165,36 +162,6 @@ size_t DeltaValueReader::readRows(
             row_ids->begin() + persisted_read_rows, // write to the same location
             [mem_table_rows_offset](UInt32 id) { return id + mem_table_rows_offset; });
     }
-
-#if 0
-    const auto & ver_col = block.getByName(VERSION_COLUMN_NAME).column;
-    const auto * ver = toColumnVectorDataPtr<UInt64>(ver_col);
-    std::unordered_set<UInt64> dedup_ver;
-    for (auto v : *ver)
-    {
-        dedup_ver.insert(v);
-    }
-    LOG_DEBUG(
-        log,
-        "region_id={} applied_index={} record_count={} versions={}",
-        applied_status.region_id,
-        applied_status.applied_index,
-        block.rows(),
-        dedup_ver);
-
-    LOG_DEBUG(
-        log,
-        "delta read offset, offset={} limit={} "
-        "persisted_start={} persisted_end={} mem_start={} mem_end={} "
-        "actual_read={}",
-        offset,
-        limit,
-        persisted_files_start,
-        persisted_files_end,
-        mem_table_start,
-        mem_table_end,
-        actual_read);
-#endif
 
     return actual_read;
 }

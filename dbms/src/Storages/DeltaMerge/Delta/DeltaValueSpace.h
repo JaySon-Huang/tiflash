@@ -437,7 +437,6 @@ private:
     // The columns expected to read. Note that we will do reading exactly in this column order.
     ColumnDefinesPtr col_defs;
     RowKeyRange segment_range;
-    LoggerPtr log; // TODO: just add for debug, remove it!
 
 private:
     DeltaValueReader() = default;
@@ -448,8 +447,7 @@ public:
         const DeltaSnapshotPtr & delta_snap_,
         const ColumnDefinesPtr & col_defs_,
         const RowKeyRange & segment_range_,
-        ReadTag read_tag_,
-        const LoggerPtr & log_);
+        ReadTag read_tag_);
 
     // If we need to read columns besides pk and version, a DeltaValueReader can NOT be used more than once.
     // This method create a new reader based on then current one. It will reuse some caches in the current reader.
