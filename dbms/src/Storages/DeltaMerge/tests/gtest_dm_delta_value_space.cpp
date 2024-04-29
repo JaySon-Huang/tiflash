@@ -220,7 +220,8 @@ static void checkDeltaValueSpaceData(
             snapshot,
             table_columns,
             RowKeyRange::newAll(false, 1),
-            ReadTag::Internal, Logger::get());
+            ReadTag::Internal,
+            Logger::get());
         auto columns = expected_all_blocks[0].cloneEmptyColumns();
         ASSERT_EQ(reader->readRows(columns, 0, expected_all_rows, nullptr), expected_all_rows);
         Blocks result_blocks;
