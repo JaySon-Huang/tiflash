@@ -14,6 +14,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/FmtUtils.h>
 #include <Common/typeid_cast.h>
 #include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
@@ -62,36 +63,38 @@ bool RegionBlockReader::read(Block & block, const ReadList & data_list, bool for
         // https://github.com/pingcap/tiflash/issues/7024
         auto print_column_defines = [&](const DM::ColumnDefinesPtr & column_defines) {
             FmtBuffer fmt_buf;
-            fmt_buf.append(" [column define : ");
-            for (auto const & column_define : *column_defines)
-            {
-                fmt_buf.fmtAppend(
-                    "(id={}, name={}, type={}) ",
-                    column_define.id,
-                    column_define.name,
-                    column_define.type->getName());
-            }
-            fmt_buf.append(" ];");
+            fmt_buf.append("[");
+            fmt_buf.joinStr(
+                column_defines->begin(),
+                column_defines->end(),
+                [](const DM::ColumnDefine & cd, FmtBuffer & fb) {
+                    fb.fmtAppend("{{column_id={} name={} type={}}}", cd.id, cd.name, cd.type->getName());
+                },
+                ",");
+            fmt_buf.append("]");
             return fmt_buf.toString();
         };
 
         auto print_map = [](auto const & map) {
             FmtBuffer fmt_buf;
-            fmt_buf.append(" [map info : ");
-            for (auto const & pair : map)
-            {
-                fmt_buf.fmtAppend("(column_id={}, pos={}) ", pair.first, pair.second);
-            }
-            fmt_buf.append(" ];");
+            fmt_buf.append("[");
+            fmt_buf.joinStr(
+                map.begin(),
+                map.end(),
+                [](const auto & iter, FmtBuffer & fb) {
+                    fb.fmtAppend("{{column_id={} pos={}}}", iter.first, iter.second);
+                },
+                ",");
+            fmt_buf.append("]");
             return fmt_buf.toString();
         };
 
         exc.addMessage(fmt::format(
-            "pk_type is {}, schema_snapshot->col_id_to_block_pos is {}, "
-            "schema_snapshot->col_id_to_def_pos is {},"
-            "schema_snapshot->column_defines is {}, "
-            "decoding_snapshot_epoch is {}, "
-            "block schema is {} ",
+            "pk_type={} schema_snapshot->col_id_to_block_pos={} "
+            "schema_snapshot->col_id_to_def_pos={} "
+            "schema_snapshot->column_defines={} "
+            "decoding_snapshot_epoch={} "
+            "block_schema={}",
             magic_enum::enum_name(schema_snapshot->pk_type),
             print_map(schema_snapshot->getColId2BlockPosMap()),
             print_map(schema_snapshot->getColId2DefPosMap()),

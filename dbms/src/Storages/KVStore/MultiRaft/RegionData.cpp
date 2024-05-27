@@ -164,7 +164,7 @@ std::optional<RegionDataReadInfo> RegionData::readDataByWriteIt(
     std::ignore = value;
     if (pk->empty())
     {
-        throw Exception("Observe empty PK: raw key " + key->toDebugString(), ErrorCodes::ILLFORMAT_RAFT_ROW);
+        throw Exception(ErrorCodes::ILLFORMAT_RAFT_ROW, "Observe empty PK, raw key={}", key->toDebugString());
     }
 
     if (!need_value)
@@ -197,16 +197,15 @@ std::optional<RegionDataReadInfo> RegionData::readDataByWriteIt(
                     orphan_keys_info.remainedKeyCount());
             }
             throw Exception(
-                fmt::format(
-                    "Raw TiDB PK: {}, Prewrite ts: {} can not found in default cf for key: {}, region_id: {}, "
-                    "applied_index: {}{}",
-                    pk.toDebugString(),
-                    decoded_val.prewrite_ts,
-                    key->toDebugString(),
-                    region_id,
-                    applied,
-                    orphan_key_debug_msg),
-                ErrorCodes::ILLFORMAT_RAFT_ROW);
+                ErrorCodes::ILLFORMAT_RAFT_ROW,
+                "Raw TiDB PK: {}, prewrite_ts={} can not found in default cf for key: {}, region_id={} "
+                "applied_index={}{}",
+                pk.toDebugString(),
+                decoded_val.prewrite_ts,
+                key->toDebugString(),
+                region_id,
+                applied,
+                orphan_key_debug_msg);
         }
     }
 

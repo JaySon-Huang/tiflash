@@ -691,5 +691,45 @@ try
 }
 CATCH
 
+TEST_F(RegionBlockReaderTest, ReadFromRegion2)
+try
+{
+    TableInfo table_info(
+        R"json({"cols":[{"comment":"","default":null,"default_bit":null,"id":1,"name":{"L":"s_i_id","O":"s_i_id"},"offset":0,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":4099,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":2,"name":{"L":"s_w_id","O":"s_w_id"},"offset":1,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":4099,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":3,"name":{"L":"s_quantity","O":"s_quantity"},"offset":2,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":0,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":4,"name":{"L":"s_dist_01","O":"s_dist_01"},"offset":3,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":5,"name":{"L":"s_dist_02","O":"s_dist_02"},"offset":4,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":6,"name":{"L":"s_dist_03","O":"s_dist_03"},"offset":5,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":7,"name":{"L":"s_dist_04","O":"s_dist_04"},"offset":6,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":8,"name":{"L":"s_dist_05","O":"s_dist_05"},"offset":7,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":9,"name":{"L":"s_dist_06","O":"s_dist_06"},"offset":8,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":10,"name":{"L":"s_dist_07","O":"s_dist_07"},"offset":9,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":11,"name":{"L":"s_dist_08","O":"s_dist_08"},"offset":10,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":12,"name":{"L":"s_dist_09","O":"s_dist_09"},"offset":11,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":13,"name":{"L":"s_dist_10","O":"s_dist_10"},"offset":12,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":24,"Tp":254}},{"comment":"","default":null,"default_bit":null,"id":14,"name":{"L":"s_ytd","O":"s_ytd"},"offset":13,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":0,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":15,"name":{"L":"s_order_cnt","O":"s_order_cnt"},"offset":14,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":0,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":16,"name":{"L":"s_remote_cnt","O":"s_remote_cnt"},"offset":15,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":0,"Elems":null,"Flag":0,"Flen":11,"Tp":3}},{"comment":"","default":null,"default_bit":null,"id":17,"name":{"L":"s_data","O":"s_data"},"offset":16,"origin_default":null,"state":5,"type":{"Charset":"utf8mb4","Collate":"utf8mb4_bin","Decimal":0,"Elems":null,"Flag":0,"Flen":50,"Tp":15}},{"comment":"","default":null,"default_bit":null,"id":32,"name":{"L":"adc_9","O":"adc_9"},"offset":17,"origin_default":null,"state":5,"type":{"Charset":"binary","Collate":"binary","Decimal":-1,"Elems":null,"Flag":0,"Flen":12,"Tp":4}}],"comment":"","id":120,"index_info":[{"id":1,"idx_cols":[{"length":-1,"name":{"L":"s_w_id","O":"s_w_id"},"offset":1},{"length":-1,"name":{"L":"s_i_id","O":"s_i_id"},"offset":0}],"idx_name":{"L":"primary","O":"primary"},"index_type":1,"is_global":false,"is_invisible":false,"is_primary":true,"is_unique":true,"state":5,"tbl_name":{"L":"","O":""}}],"is_common_handle":true,"keyspace_id":4294967295,"name":{"L":"stock","O":"stock"},"partition":null,"pk_is_handle":false,"schema_version":-1,"state":5,"tiflash_replica":{"Available":true,"Count":2},"update_timestamp":449798131702562821})json",
+        NullspaceID);
+
+    // the hex kv dump from logging
+    std::tuple<std::string_view, std::string_view> kv = {
+        "748000000000000AFF7E5F728000000001FF9A23B30000000000FAF9C7A51DD92FFF9E",
+        "800010000000030405060708090A0B0C0D0E0F1011200100190031004900610079009100A900C100D900F100F200F300F4001D01260"
+        "13C52594B514C584F49545353494E42545A484A454A4B53585A444A534C455247575149555543514A4E4941564E484E57454D4E5954"
+        "535A4948514454584A444C58434F4A4C4B59504C46544B4744434750524A4841485A524E4C44534C424C55584D42455341485556545"
+        "2454F4246494E5A554A524B5449534C525846454358564C5A525649454B50505851414653554B45505053474D454B525851524F5953"
+        "5543535946554F4550554D4545544A454C58585444504B4D5043544B544D51494C504F4651484A524A454D45494F4D4C4F494D48504"
+        "95148484F54524F444A414441455A53554B5A59514B59534959534508020052356C3057786F72317742775053326676345550666662"
+        "31474B4A4B4B49695A714544613354515050090A00000000000000",
+    };
+
+    TiKVKey key(bytesFromHexString(std::get<0>(kv)));
+    auto raw_key = std::get<0>(RecordKVFormat::decodeTiKVKeyFull(key));
+    auto tidb_pk = RecordKVFormat::getRawTiDBPK(raw_key);
+    Timestamp ts = 2;
+    auto value = std::make_shared<const TiKVValue>(bytesFromHexString(std::get<1>(kv)));
+
+    std::optional<RegionDataReadInfoList> data_list_read = std::make_optional(std::vector<RegionDataReadInfo>{
+        {tidb_pk, static_cast<UInt8>(0), ts, value},
+    });
+
+    auto decoding_schema = getDecodingStorageSchemaSnapshot(table_info);
+    {
+        // force_decode=false can not decode because there are
+        // missing value for column with primary key flag.
+        auto reader = RegionBlockReader(decoding_schema);
+        Block res_block = createBlockSortByColumnID(decoding_schema);
+        EXPECT_FALSE(reader.read(res_block, *data_list_read, false));
+    }
+}
+CATCH
+
 
 } // namespace DB::tests

@@ -19,6 +19,8 @@
 #include <TiDB/Decode/DatumCodec.h>
 #include <TiDB/Decode/RowCodec.h>
 
+#include "Common/Exception.h"
+
 
 namespace DB
 {
@@ -558,8 +560,17 @@ bool appendRowV2ToBlockImpl(
             {
                 size_t start = idx_not_null ? value_offsets[idx_not_null - 1] : 0;
                 size_t length = value_offsets[idx_not_null] - start;
-                if (!raw_column->decodeTiDBRowV2Datum(values_start_pos + start, raw_value, length, force_decode))
-                    return false;
+                try
+                {
+                    if (!raw_column->decodeTiDBRowV2Datum(values_start_pos + start, raw_value, length, force_decode))
+                        return false;
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage(
+                        fmt::format("while decoding column_id={} start={} length={}", next_column_id, start, length));
+                    e.rethrow();
+                }
                 idx_not_null++;
             }
             column_ids_iter++;

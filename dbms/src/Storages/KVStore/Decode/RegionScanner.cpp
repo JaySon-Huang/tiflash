@@ -40,39 +40,33 @@ Region::CommittedScanner::CommittedScanner(const RegionPtr & region_, bool use_l
 bool Region::CommittedScanner::hasNext()
 {
     if (peeked)
-    {
         return true;
-    }
-    else
-    {
-        if (write_map_size == 0)
-            return false;
-        while (write_map_it != write_map_it_end)
-        {
-            if (tryNext())
-            {
-                return true;
-            }
-        }
+
+    if (write_map_size == 0)
         return false;
+
+    while (write_map_it != write_map_it_end)
+    {
+        if (tryNext())
+        {
+            return true;
+        }
     }
+    return false;
 }
 
 bool Region::CommittedScanner::tryNext()
 {
     RUNTIME_CHECK_MSG(!peeked.has_value(), "Can't call CommittedScanner::tryNext() twice");
     assert(write_map_it != write_map_it_end);
-    auto ans = region->readDataByWriteIt(write_map_it++, need_val, hard_error);
-    if (ans)
+
+    if (auto ans = region->readDataByWriteIt(write_map_it++, need_val, hard_error); ans)
     {
         peeked = std::move(ans.value());
         return true;
     }
-    else
-    {
-        // Returning nullopt only means we encoutered a orphan write key.
-        return false;
-    }
+    // Returning nullopt only means we encoutered a orphan write key.
+    return false;
 }
 
 RegionDataReadInfo Region::CommittedScanner::next()
