@@ -33,26 +33,140 @@ extern const int ILLFORMAT_RAFT_ROW;
 
 namespace DB::DM
 {
+
+SnapshotSSTReader::SnapshotSSTReader(
+    const SSTViewVec & snaps,
+    const TiFlashRaftProxyHelper * proxy_helper,
+    const ImutRegionRangePtr & region_range,
+    std::optional<SSTScanSoftLimit> && soft_limit,
+    const String & log_prefix,
+    RegionID region_id,
+    size_t snapshot_index)
+{
+    assert(region_range != nullptr);
+
+    auto log = Logger::get(log_prefix);
+    // We have to initialize sst readers at an earlier stage,
+    // due to prehandle snapshot of single region feature in raftstore v2.
+    std::vector<SSTView> ssts_default;
+    std::vector<SSTView> ssts_write;
+    std::vector<SSTView> ssts_lock;
+
+    auto make_inner_func = [&](const TiFlashRaftProxyHelper * proxy_helper,
+                               SSTView snap,
+                               SSTReader::RegionRangeFilter range,
+                               size_t split_id) {
+        return std::make_unique<MonoSSTReader>(proxy_helper, snap, range, split_id);
+    };
+    for (UInt64 i = 0; i < snaps.len; ++i)
+    {
+        const auto & snapshot = snaps.views[i];
+        switch (snapshot.type)
+        {
+        case ColumnFamilyType::Default:
+            ssts_default.push_back(snapshot);
+            break;
+        case ColumnFamilyType::Write:
+            ssts_write.push_back(snapshot);
+            break;
+        case ColumnFamilyType::Lock:
+            ssts_lock.push_back(snapshot);
+            break;
+        }
+    }
+
+    // Pass the log to SSTReader inorder to filter logs by table_id suffix
+    if (!ssts_default.empty())
+    {
+        default_cf_reader = std::make_unique<MultiSSTReader<MonoSSTReader, SSTView>>(
+            proxy_helper,
+            ColumnFamilyType::Default,
+            make_inner_func,
+            ssts_default,
+            log,
+            region_range,
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+    }
+    if (!ssts_write.empty())
+    {
+        write_cf_reader = std::make_unique<MultiSSTReader<MonoSSTReader, SSTView>>(
+            proxy_helper,
+            ColumnFamilyType::Write,
+            make_inner_func,
+            ssts_write,
+            log,
+            region_range,
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+    }
+    if (!ssts_lock.empty())
+    {
+        lock_cf_reader = std::make_unique<MultiSSTReader<MonoSSTReader, SSTView>>(
+            proxy_helper,
+            ColumnFamilyType::Lock,
+            make_inner_func,
+            ssts_lock,
+            log,
+            region_range,
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+    }
+
+    LOG_INFO(
+        log,
+        "Finish Construct MultiSSTReader, write={} lock={} default={} region_id={} snapshot_index={}",
+        ssts_write.size(),
+        ssts_lock.size(),
+        ssts_default.size(),
+        region_id,
+        snapshot_index);
+}
+
+// Get the approximate bytes of all CFs
+size_t SnapshotSSTReader::getApproxBytes() const
+{
+    size_t total = 0;
+    if (write_cf_reader)
+        total += write_cf_reader->approxSize();
+    if (lock_cf_reader)
+        total += lock_cf_reader->approxSize();
+    if (default_cf_reader)
+        total += default_cf_reader->approxSize();
+    return total;
+}
+
+// Try to find the split point by write_cf
+std::vector<String> SnapshotSSTReader::findSplitKeys(size_t splits_count) const
+{
+    return write_cf_reader->findSplitKeys(splits_count);
+}
+
 SSTFilesToBlockInputStream::SSTFilesToBlockInputStream( //
     RegionPtr region_,
     UInt64 snapshot_index_,
+#if 0
     const SSTViewVec & snaps_,
     const TiFlashRaftProxyHelper * proxy_helper_,
+#else
+    const SnapshotSSTReaderPtr & snap_reader_,
+#endif
     TMTContext & tmt_,
     std::optional<SSTScanSoftLimit> && soft_limit_,
     std::shared_ptr<PreHandlingTrace::Item> prehandle_task_,
     SSTFilesToBlockInputStreamOpts && opts_)
     : region(std::move(region_))
     , snapshot_index(snapshot_index_)
+#if 0
     , snaps(snaps_)
     , proxy_helper(proxy_helper_)
+#endif
     , tmt(tmt_)
     , soft_limit(std::move(soft_limit_))
     , prehandle_task(prehandle_task_)
     , opts(std::move(opts_))
+    , snap_reader(snap_reader_)
 {
     log = Logger::get(opts.log_prefix);
 
+#if 0
     // We have to initialize sst readers at an earlier stage,
     // due to prehandle snapshot of single region feature in raftstore v2.
     std::vector<SSTView> ssts_default;
@@ -128,6 +242,7 @@ SSTFilesToBlockInputStream::SSTFilesToBlockInputStream( //
         ssts_default.size(),
         this->region->id(),
         snapshot_index);
+#endif
 
     // Init stat info.
     process_keys.default_cf = 0;
@@ -163,23 +278,23 @@ void SSTFilesToBlockInputStream::checkFinishedState(SSTReaderPtr & reader, Colum
 
 void SSTFilesToBlockInputStream::readSuffix()
 {
-    checkFinishedState(write_cf_reader, ColumnFamilyType::Write);
-    checkFinishedState(default_cf_reader, ColumnFamilyType::Default);
-    checkFinishedState(lock_cf_reader, ColumnFamilyType::Lock);
+    checkFinishedState(snap_reader->write_cf_reader, ColumnFamilyType::Write);
+    checkFinishedState(snap_reader->default_cf_reader, ColumnFamilyType::Default);
+    checkFinishedState(snap_reader->lock_cf_reader, ColumnFamilyType::Lock);
 
     // reset all SSTReaders and return without writting blocks any more.
-    write_cf_reader.reset();
-    default_cf_reader.reset();
-    lock_cf_reader.reset();
+    snap_reader->write_cf_reader.reset();
+    snap_reader->default_cf_reader.reset();
+    snap_reader->lock_cf_reader.reset();
 }
 
 Block SSTFilesToBlockInputStream::read()
 {
     std::string loaded_write_cf_key;
 
-    while (write_cf_reader && write_cf_reader->remained())
+    while (snap_reader->write_cf_reader && snap_reader->write_cf_reader->remained())
     {
-        bool should_stop_advancing = maybeStopBySoftLimit(ColumnFamilyType::Write, write_cf_reader);
+        bool should_stop_advancing = maybeStopBySoftLimit(ColumnFamilyType::Write, snap_reader->write_cf_reader);
         if (should_stop_advancing)
         {
             // Load the last batch
@@ -194,8 +309,8 @@ Block SSTFilesToBlockInputStream::read()
         // the lock column family, we will load all key-values which rowkeys are equal
         // or less that the last rowkey from the write column family.
         {
-            BaseBuffView key = write_cf_reader->keyView();
-            BaseBuffView value = write_cf_reader->valueView();
+            BaseBuffView key = snap_reader->write_cf_reader->keyView();
+            BaseBuffView value = snap_reader->write_cf_reader->valueView();
             auto tikv_key = TiKVKey(key.data, key.len);
             region->insert(ColumnFamilyType::Write, std::move(tikv_key), TiKVValue(value.data, value.len));
             ++process_keys.write_cf;
@@ -205,7 +320,7 @@ Block SSTFilesToBlockInputStream::read()
                 loaded_write_cf_key.assign(key.data, key.len);
             }
         } // Notice: `key`, `value` are string-view-like object, should never use after `next` called
-        write_cf_reader->next();
+        snap_reader->write_cf_reader->next();
 
         // If there is enough data to form a Block, we will load all keys before `loaded_write_cf_key` in other cf.
         if (process_keys.write_cf % opts.expected_size == 0)
@@ -247,16 +362,16 @@ void SSTFilesToBlockInputStream::loadCFDataFromSST(
     DecodedTiKVKey * last_loaded_rowkey;
     if (cf == ColumnFamilyType::Default)
     {
-        reader = default_cf_reader.get();
-        reader_ptr = &default_cf_reader;
+        reader = snap_reader->default_cf_reader.get();
+        reader_ptr = &snap_reader->default_cf_reader;
         p_process_keys = &process_keys.default_cf;
         p_process_keys_bytes = &process_keys.default_cf_bytes;
         last_loaded_rowkey = &default_last_loaded_rowkey;
     }
     else if (cf == ColumnFamilyType::Lock)
     {
-        reader = lock_cf_reader.get();
-        reader_ptr = &lock_cf_reader;
+        reader = snap_reader->lock_cf_reader.get();
+        reader_ptr = &snap_reader->lock_cf_reader;
         p_process_keys = &process_keys.lock_cf;
         p_process_keys_bytes = &process_keys.lock_cf_bytes;
         last_loaded_rowkey = &lock_last_loaded_rowkey;
@@ -401,6 +516,7 @@ Block SSTFilesToBlockInputStream::readCommitedBlock()
     }
 }
 
+#if 0
 size_t SSTFilesToBlockInputStream::getApproxBytes() const
 {
     size_t total = 0;
@@ -417,6 +533,7 @@ std::vector<std::string> SSTFilesToBlockInputStream::findSplitKeys(size_t splits
 {
     return write_cf_reader->findSplitKeys(splits_count);
 }
+#endif
 
 // Returning false means no skip is performed, the reader is intact.
 // Returning true means skip is performed, must read from current value.
