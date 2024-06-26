@@ -96,11 +96,11 @@ struct SnapshotSSTReader
     SnapshotSSTReader(
         const SSTViewVec & snaps,
         const TiFlashRaftProxyHelper * proxy_helper,
+        RegionID region_id,
+        UInt64 snapshot_index,
         const ImutRegionRangePtr & region_range,
         std::optional<SSTScanSoftLimit> && soft_limit,
-        const String & log_prefix,
-        RegionID region_id,
-        size_t snapshot_index);
+        const String & log_prefix);
 
     // Currently it only takes effect if using tablet sst reader which is usually a raftstore v2 case.
     // Otherwise will return zero.

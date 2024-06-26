@@ -37,11 +37,11 @@ namespace DB::DM
 SnapshotSSTReader::SnapshotSSTReader(
     const SSTViewVec & snaps,
     const TiFlashRaftProxyHelper * proxy_helper,
-    const ImutRegionRangePtr & region_range,
-    std::optional<SSTScanSoftLimit> && soft_limit,
-    const String & log_prefix,
     RegionID region_id,
-    size_t snapshot_index)
+    UInt64 snapshot_index,
+    const SSTReader::RegionRangeFilter & region_range,
+    std::optional<SSTScanSoftLimit> && soft_limit,
+    const String & log_prefix)
 {
     assert(region_range != nullptr);
 
@@ -55,8 +55,9 @@ SnapshotSSTReader::SnapshotSSTReader(
     auto make_inner_func = [&](const TiFlashRaftProxyHelper * proxy_helper,
                                SSTView snap,
                                SSTReader::RegionRangeFilter range,
-                               size_t split_id) {
-        return std::make_unique<MonoSSTReader>(proxy_helper, snap, range, split_id);
+                               size_t split_id,
+                               size_t region_id) {
+        return std::make_unique<MonoSSTReader>(proxy_helper, snap, range, split_id, region_id);
     };
     for (UInt64 i = 0; i < snaps.len; ++i)
     {
@@ -85,7 +86,8 @@ SnapshotSSTReader::SnapshotSSTReader(
             ssts_default,
             log,
             region_range,
-            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT,
+            region_id);
     }
     if (!ssts_write.empty())
     {
@@ -96,7 +98,8 @@ SnapshotSSTReader::SnapshotSSTReader(
             ssts_write,
             log,
             region_range,
-            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT,
+            region_id);
     }
     if (!ssts_lock.empty())
     {
@@ -107,7 +110,8 @@ SnapshotSSTReader::SnapshotSSTReader(
             ssts_lock,
             log,
             region_range,
-            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT);
+            soft_limit.has_value() ? soft_limit.value().split_id : DM::SSTScanSoftLimit::HEAD_OR_ONLY_SPLIT,
+            region_id);
     }
 
     LOG_INFO(

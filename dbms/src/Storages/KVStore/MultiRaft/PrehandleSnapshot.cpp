@@ -493,22 +493,16 @@ std::tuple<ReadFromStreamResult, PrehandleResult> executeParallelTransform(
     const SSTViewVec snaps,
     const TiFlashRaftProxyHelper * proxy_helper)
 {
-    CurrentMetrics::add(CurrentMetrics::RaftNumParallelPrehandlingTasks);
-    SCOPE_EXIT({ CurrentMetrics::sub(CurrentMetrics::RaftNumParallelPrehandlingTasks); });
-    using SingleSnapshotAsyncTasks = AsyncTasks<uint64_t, std::function<bool()>, bool>;
     const auto split_key_count = split_keys.size();
     RUNTIME_CHECK_MSG(
         split_key_count >= 1,
         "split_key_count should be more or equal than 1, actual {}",
         split_key_count);
 
-    LOG_INFO(
-        log,
-        "Parallel prehandling for single big region, range={} split_keys={} region_id={} snapshot_index={}",
-        new_region->getRange()->toDebugString(),
-        split_key_count,
-        new_region->id(),
-        prehandle_ctx.snapshot_index);
+    CurrentMetrics::add(CurrentMetrics::RaftNumParallelPrehandlingTasks);
+    SCOPE_EXIT({ CurrentMetrics::sub(CurrentMetrics::RaftNumParallelPrehandlingTasks); });
+    using SingleSnapshotAsyncTasks = AsyncTasks<uint64_t, std::function<bool()>, bool>;
+
     Stopwatch watch;
     // Make sure the queue is bigger than `split_key_count`, otherwise `addTask` may fail.
     auto async_tasks = SingleSnapshotAsyncTasks(split_key_count, split_key_count, split_key_count + 5);
@@ -530,11 +524,11 @@ std::tuple<ReadFromStreamResult, PrehandleResult> executeParallelTransform(
             auto part_snapshot_sst_reader = std::make_shared<DM::SnapshotSSTReader>(
                 snaps,
                 proxy_helper,
+                part_new_region->id(),
+                prehandle_ctx.snapshot_index,
                 part_new_region->getRange(),
                 part_limit.clone(),
-                prehandle_ctx.opts.log_prefix,
-                part_new_region->id(),
-                prehandle_ctx.snapshot_index);
+                prehandle_ctx.opts.log_prefix);
             runInParallel(
                 log,
                 prehandle_ctx,
@@ -706,11 +700,11 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
             auto snapshot_sst_reader = std::make_shared<DM::SnapshotSSTReader>(
                 snaps,
                 proxy_helper,
+                new_region->id(),
+                index,
                 new_region->getRange(),
                 /*soft_limit*/ std::nullopt,
-                opt.log_prefix,
-                new_region->id(),
-                index);
+                opt.log_prefix);
             PrehandleTransformCtx prehandle_ctx{
                 .trace = prehandling_trace,
                 .prehandle_task = prehandle_task,
@@ -730,9 +724,11 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
             {
                 LOG_INFO(
                     log,
-                    "Single threaded prehandling for single region, range={} region_id={} snaps={}",
+                    "Single threaded prehandling for single region"
+                    ", range={} region_id={} snapshot_index={} snaps={}",
                     new_region->getRange()->toDebugString(),
                     new_region->id(),
+                    index,
                     snaps.len);
                 std::tie(result, prehandle_result) = executeTransform( //
                     log,
@@ -743,6 +739,15 @@ PrehandleResult KVStore::preHandleSSTsToDTFiles(
             }
             else
             {
+                LOG_INFO(
+                    log,
+                    "Parallel prehandling for single region"
+                    ", range={} split_keys={} region_id={} snapshot_index={} snaps={}",
+                    new_region->getRange()->toDebugString(),
+                    split_keys.size(),
+                    new_region->id(),
+                    index,
+                    snaps.len);
                 std::tie(result, prehandle_result) = executeParallelTransform(
                     log,
                     prehandle_ctx,
