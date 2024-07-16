@@ -104,15 +104,9 @@ private:
 
     void applyRenameTable(DatabaseID database_id, TiDB::TableID table_id);
 
-    void applyRenameLogicalTable(
-        DatabaseID new_database_id,
-        const String & new_database_display_name,
-        const TiDB::TableInfoPtr & new_table_info,
-        const ManageableStoragePtr & storage);
-
     void applyRenamePhysicalTable(
         DatabaseID new_database_id,
-        const String & new_database_display_name,
+        const String & new_display_database_name,
         const TiDB::TableInfo & new_table_info,
         const ManageableStoragePtr & storage);
 
@@ -123,7 +117,7 @@ private:
     };
     void applyRenamePhysicalTableOfPartitioned(
         DatabaseID new_database_id,
-        const String & new_database_display_name,
+        const String & new_display_database_name,
         const TiDB::TableInfo & new_table_info,
         const ManageableStoragePtr & storage);
 

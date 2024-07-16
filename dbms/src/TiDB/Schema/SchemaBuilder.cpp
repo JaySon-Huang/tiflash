@@ -643,13 +643,12 @@ void SchemaBuilder<Getter, NameMapper>::applyPartitionDiffOnLogicalTable(
 template <typename Getter, typename NameMapper>
 void SchemaBuilder<Getter, NameMapper>::applyRenameTable(DatabaseID database_id, TableID table_id)
 {
-    // update the table_id_map no matter storage instance is created or not
-    table_id_map.emplaceTableID(table_id, database_id);
-
     auto & tmt_context = context.getTMTContext();
     auto storage = tmt_context.getStorages().get(keyspace_id, table_id);
     if (storage == nullptr)
     {
+        // update the table_id_map no matter storage instance is created or not
+        table_id_map.emplaceTableID(table_id, database_id);
         LOG_WARNING(
             log,
             "Storage instance is not exist in TiFlash, applyRenameTable is ignored, table_id={}",
@@ -660,37 +659,32 @@ void SchemaBuilder<Getter, NameMapper>::applyRenameTable(DatabaseID database_id,
     auto new_table_info = getter.getTableInfo(database_id, table_id);
     if (unlikely(new_table_info == nullptr))
     {
+        // update the table_id_map no matter storage instance is created or not
+        table_id_map.emplaceTableID(table_id, database_id);
         LOG_ERROR(log, "table is not exist in TiKV, applyRenameTable is ignored, table_id={}", table_id);
         return;
     }
 
-    String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(database_id);
-    applyRenameLogicalTable(database_id, new_db_display_name, new_table_info, storage);
-}
-
-template <typename Getter, typename NameMapper>
-void SchemaBuilder<Getter, NameMapper>::applyRenameLogicalTable(
-    const DatabaseID new_database_id,
-    const String & new_database_display_name,
-    const TableInfoPtr & new_table_info,
-    const ManageableStoragePtr & storage)
-{
-    assert(new_table_info != nullptr);
+    const String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(database_id);
     if (!new_table_info->isLogicalPartitionTable())
     {
         // non-partitioned table
-        applyRenamePhysicalTable(new_database_id, new_database_display_name, *new_table_info, storage);
+        // FIXME: table_id_map should be changed under the alter lock of storage instances
+        table_id_map.emplaceTableID(table_id, database_id);
+        applyRenamePhysicalTable(database_id, new_db_display_name, *new_table_info, storage);
         return;
     }
 
     // For partitioned table, try to execute rename on each partition (physical table)
-    applyRenamePhysicalTableOfPartitioned(new_database_id, new_database_display_name, *new_table_info, storage);
+    // FIXME: table_id_map should be changed under the alter lock of storage instances
+    table_id_map.emplaceTableID(table_id, database_id);
+    applyRenamePhysicalTableOfPartitioned(database_id, new_db_display_name, *new_table_info, storage);
 }
 
 template <typename Getter, typename NameMapper>
 void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     const DatabaseID new_database_id,
-    const String & new_database_display_name,
+    const String & new_display_database_name,
     const TableInfo & new_table_info,
     const ManageableStoragePtr & storage)
 {
@@ -728,7 +722,7 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     rename->elements.emplace_back(ASTRenameQuery::Element{
         .from = ASTRenameQuery::Table{old_mapped_db_name, old_mapped_tbl_name},
         .to = ASTRenameQuery::Table{new_mapped_db_name, name_mapper.mapTableName(new_table_info)},
-        .tidb_display = ASTRenameQuery::Table{new_database_display_name, new_display_table_name},
+        .tidb_display = ASTRenameQuery::Table{new_display_database_name, new_display_table_name},
     });
 
     InterpreterRenameQuery(rename, context, getThreadNameAndID()).execute();
@@ -747,7 +741,7 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
 template <typename Getter, typename NameMapper>
 void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
     DatabaseID new_database_id,
-    const String & new_database_display_name,
+    const String & new_display_database_name,
     const TiDB::TableInfo & new_table_info,
     const ManageableStoragePtr & storage)
 {
@@ -766,7 +760,7 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
         return;
     }
 
-    const RenameTableElem new_display_name{new_database_display_name, new_display_table_name};
+    const RenameTableElem new_display_name{new_display_database_name, new_display_table_name};
     LOG_INFO(
         log,
         "Rename partitioned table to {} begin, database_id={} table_id={}",
