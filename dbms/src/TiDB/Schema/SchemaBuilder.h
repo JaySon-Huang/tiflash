@@ -116,6 +116,17 @@ private:
         const TiDB::TableInfo & new_table_info,
         const ManageableStoragePtr & storage);
 
+    struct RenameTableElem
+    {
+        String database;
+        String table;
+    };
+    void applyRenamePhysicalTableOfPartitioned(
+        DatabaseID new_database_id,
+        const String & new_database_display_name,
+        const TiDB::TableInfo & new_table_info,
+        const ManageableStoragePtr & storage);
+
     void applySetTiFlashReplica(DatabaseID database_id, TableID table_id);
     void updateTiFlashReplicaNumOnStorage(
         DatabaseID database_id,
