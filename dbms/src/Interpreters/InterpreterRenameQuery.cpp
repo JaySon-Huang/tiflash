@@ -25,10 +25,7 @@
 
 namespace DB
 {
-InterpreterRenameQuery::InterpreterRenameQuery(
-    const ASTPtr & query_ptr_,
-    Context & context_,
-    const String executor_name_)
+InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_, String executor_name_)
     : query_ptr(query_ptr_)
     , context(context_)
     , executor_name(std::move(executor_name_))
@@ -42,17 +39,9 @@ struct RenameDescription
         , from_table_name(elem.from.table)
         , to_database_name(elem.to.database.empty() ? current_database : elem.to.database)
         , to_table_name(elem.to.table)
-        , tidb_display_database_name(
-              elem.tidb_display.has_value() ? std::make_optional(elem.tidb_display->database) : std::nullopt)
-        , tidb_display_table_name(
-              elem.tidb_display.has_value() ? std::make_optional(elem.tidb_display->table) : std::nullopt)
-    {
-        if (tidb_display_database_name.has_value() && tidb_display_database_name->empty())
-            throw Exception("Display database name is empty, should not happed. " + toString());
-
-        if (tidb_display_table_name.has_value() && tidb_display_table_name->empty())
-            throw Exception("Display table name is empty, should not happed. " + toString());
-    }
+        , tidb_display_database_name(elem.tidb_display.has_value() ? elem.tidb_display->database : to_database_name)
+        , tidb_display_table_name(elem.tidb_display.has_value() ? elem.tidb_display->table : to_table_name)
+    {}
 
     String from_database_name;
     String from_table_name;
@@ -65,13 +54,25 @@ struct RenameDescription
         return from_database_name + "." + from_table_name + " -> " + to_database_name + "." + to_table_name;
     }
 
-    bool hasTidbDisplayName() const
-    {
-        return tidb_display_database_name.has_value() && tidb_display_table_name.has_value();
-    }
+    String tidb_display_database_name;
+    String tidb_display_table_name;
+};
 
-    std::optional<String> tidb_display_database_name;
-    std::optional<String> tidb_display_table_name;
+/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
+struct UniqueTableName
+{
+    String database_name;
+    String table_name;
+
+    UniqueTableName(const String & database_name_, const String & table_name_) //
+        : database_name(database_name_)
+        , table_name(table_name_)
+    {}
+
+    bool operator<(const UniqueTableName & rhs) const
+    {
+        return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
+    }
 };
 
 
@@ -88,23 +89,6 @@ BlockIO InterpreterRenameQuery::execute()
     std::vector<RenameDescription> descriptions;
     descriptions.reserve(rename.elements.size());
 
-    /// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
-    struct UniqueTableName
-    {
-        String database_name;
-        String table_name;
-
-        UniqueTableName(const String & database_name_, const String & table_name_) //
-            : database_name(database_name_)
-            , table_name(table_name_)
-        {}
-
-        bool operator<(const UniqueTableName & rhs) const
-        {
-            return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
-        }
-    };
-
     std::set<UniqueTableName> unique_tables_from;
 
     /// Don't allow to drop tables (that we are renaming); do't allow to create tables in places where tables will be renamed.
@@ -119,7 +103,7 @@ BlockIO InterpreterRenameQuery::execute()
 
         unique_tables_from.emplace(from);
 
-        if (!table_guards.count(to))
+        if (!table_guards.contains(to))
             table_guards.emplace(
                 to,
                 context.getDDLGuard(
@@ -128,6 +112,10 @@ BlockIO InterpreterRenameQuery::execute()
 
         // Don't need any lock on "tidb_display" names, because we don't identify any table by that name in TiFlash
     }
+
+    // short cut
+    if (unlikely(descriptions.empty()))
+        return {};
 
     std::vector<TableLockHolder> alter_locks;
     alter_locks.reserve(unique_tables_from.size());
@@ -142,10 +130,8 @@ BlockIO InterpreterRenameQuery::execute()
       *  but only in cases when there was no exceptions during this process and server does not fall.
       */
 
-    decltype(context.getLock()) lock;
-
-    if (descriptions.size() > 1)
-        lock = context.getLock();
+    assert(!descriptions.empty());
+    auto lock = context.getLock();
 
     for (const auto & elem : descriptions)
     {
@@ -158,26 +144,19 @@ BlockIO InterpreterRenameQuery::execute()
         if (database->getEngineName() == "TiFlash")
         {
             auto * from_database_concrete = typeid_cast<DatabaseTiFlash *>(database.get());
-            if (likely(from_database_concrete))
-            {
-                // Keep for rename actions executed through ch-client.
-                const String & display_db
-                    = elem.hasTidbDisplayName() ? *elem.tidb_display_database_name : elem.to_database_name;
-                const String & display_tbl
-                    = elem.hasTidbDisplayName() ? *elem.tidb_display_table_name : elem.to_table_name;
-                from_database_concrete->renameTable(
-                    context,
-                    elem.from_table_name,
-                    *context.getDatabase(elem.to_database_name),
-                    elem.to_table_name,
-                    display_db,
-                    display_tbl);
-            }
-            else
-                throw Exception(
-                    "Failed to cast from database: " + elem.from_database_name
-                        + " as DatabaseTiFlash in renaming: " + elem.toString(),
-                    ErrorCodes::LOGICAL_ERROR);
+            RUNTIME_CHECK_MSG(
+                from_database_concrete != nullptr,
+                "Failed to cast from database: {} as DatabaseTiFlash in renaming: {}",
+                elem.from_database_name,
+                elem.toString());
+            // Keep for rename actions executed through ch-client.
+            from_database_concrete->renameTable(
+                context,
+                elem.from_table_name,
+                *context.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                elem.tidb_display_database_name,
+                elem.tidb_display_table_name);
         }
         else
         {

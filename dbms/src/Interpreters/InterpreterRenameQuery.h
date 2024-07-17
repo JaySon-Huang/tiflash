@@ -30,7 +30,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 class InterpreterRenameQuery : public IInterpreter
 {
 public:
-    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_, const String executor_name_);
+    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_, String executor_name_);
     BlockIO execute() override;
 
 private:
