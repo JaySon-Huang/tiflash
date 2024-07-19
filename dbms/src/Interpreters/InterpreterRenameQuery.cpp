@@ -78,6 +78,11 @@ struct UniqueTableName
 
 BlockIO InterpreterRenameQuery::execute()
 {
+    return executeImpl(nullptr);
+}
+
+BlockIO InterpreterRenameQuery::executeImpl(std::function<void(const TableLockHolders &)> callback)
+{
     ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
     String current_database = context.getCurrentDatabase();
@@ -117,9 +122,9 @@ BlockIO InterpreterRenameQuery::execute()
     if (unlikely(descriptions.empty()))
         return {};
 
-    std::vector<TableLockHolder> alter_locks;
+    // Acquire alter locks on the "from" table(s)
+    TableLockHolders alter_locks;
     alter_locks.reserve(unique_tables_from.size());
-
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))
             alter_locks.emplace_back(table->lockForAlter(executor_name));
@@ -167,6 +172,11 @@ BlockIO InterpreterRenameQuery::execute()
                 *context.getDatabase(elem.to_database_name),
                 elem.to_table_name);
         }
+    }
+
+    if (callback)
+    {
+        callback(alter_locks);
     }
 
     return {};

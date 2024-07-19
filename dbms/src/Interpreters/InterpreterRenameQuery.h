@@ -14,12 +14,12 @@
 
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
-class Context;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -32,6 +32,7 @@ class InterpreterRenameQuery : public IInterpreter
 public:
     InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_, String executor_name_);
     BlockIO execute() override;
+    BlockIO executeImpl(std::function<void(const TableLockHolders &)> callback);
 
 private:
     ASTPtr query_ptr;

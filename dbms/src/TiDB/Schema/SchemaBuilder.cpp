@@ -666,18 +666,8 @@ void SchemaBuilder<Getter, NameMapper>::applyRenameTable(DatabaseID database_id,
     }
 
     const String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(database_id);
-    if (!new_table_info->isLogicalPartitionTable())
-    {
-        // non-partitioned table
-        // FIXME: table_id_map should be changed under the alter lock of storage instances
-        table_id_map.emplaceTableID(table_id, database_id);
-        applyRenamePhysicalTable(database_id, new_db_display_name, *new_table_info, storage);
-        return;
-    }
-
-    // For partitioned table, try to execute rename on each partition (physical table)
-    // FIXME: table_id_map should be changed under the alter lock of storage instances
-    table_id_map.emplaceTableID(table_id, database_id);
+    // For non-partitioned table, execute rename on the corrsponding IStorage instance
+    // For partitioned table, try to execute rename on each partition (physical table)'s IStorage instance
     applyRenamePhysicalTableOfPartitioned(database_id, new_db_display_name, *new_table_info, storage);
 }
 
@@ -760,6 +750,7 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
         return;
     }
 
+    const TableID logical_table_id = new_table_info.id;
     const RenameTableElem new_display_name{new_display_database_name, new_display_table_name};
     LOG_INFO(
         log,
@@ -768,6 +759,9 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
         new_database_id,
         new_table_info.id);
 
+    // Note that rename will update table info in table create statement by modifying original table info
+    // with "tidb_display.table" instead of using new_table_info directly, so that other changes
+    // (ALTER commands) won't be saved. Besides, no need to update schema_version as table name is not structural.
     auto rename = std::make_shared<ASTRenameQuery>();
     {
         // Add the logical table to rename list
@@ -782,32 +776,40 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
 
     auto & tmt_context = context.getTMTContext();
     // Add the created physical tables to rename list
-    for (const auto & part_def : new_table_info.partition.definitions)
+    if (new_table_info.isLogicalPartitionTable())
     {
-        auto part_storage = tmt_context.getStorages().get(keyspace_id, part_def.id);
-        if (part_storage == nullptr)
+        for (const auto & part_def : new_table_info.partition.definitions)
         {
-            LOG_WARNING(
-                log,
-                "Storage instance is not exist in TiFlash, the partition is not created yet in this TiFlash instance, "
-                "applyRenamePhysicalTable is ignored, physical_table_id={} logical_table_id={}",
-                part_def.id,
-                new_table_info.id);
-            continue; // continue for next partition
-        }
+            auto part_storage = tmt_context.getStorages().get(keyspace_id, part_def.id);
+            if (part_storage == nullptr)
+            {
+                LOG_WARNING(
+                    log,
+                    "Storage instance is not exist in TiFlash, the partition is not created yet in this TiFlash "
+                    "instance, "
+                    "applyRenamePhysicalTable is ignored, physical_table_id={} logical_table_id={}",
+                    part_def.id,
+                    new_table_info.id);
+                continue; // continue for next partition
+            }
 
-        auto part_table_info = new_table_info.producePartitionTableInfo(part_def.id, name_mapper);
-        const String old_mapped_db_name = part_storage->getDatabaseName();
-        const String old_mapped_tbl_name = part_storage->getTableName();
-        const String new_mapped_tbl_name = name_mapper.mapTableName(*part_table_info);
-        rename->elements.emplace_back(ASTRenameQuery::Element{
-            .from = ASTRenameQuery::Table{old_mapped_db_name, old_mapped_tbl_name},
-            .to = ASTRenameQuery::Table{new_mapped_db_name, new_mapped_tbl_name},
-            .tidb_display = ASTRenameQuery::Table{new_display_name.database, new_display_name.table},
-        });
+            auto part_table_info = new_table_info.producePartitionTableInfo(part_def.id, name_mapper);
+            const String old_mapped_db_name = part_storage->getDatabaseName();
+            const String old_mapped_tbl_name = part_storage->getTableName();
+            const String new_mapped_tbl_name = name_mapper.mapTableName(*part_table_info);
+            rename->elements.emplace_back(ASTRenameQuery::Element{
+                .from = ASTRenameQuery::Table{old_mapped_db_name, old_mapped_tbl_name},
+                .to = ASTRenameQuery::Table{new_mapped_db_name, new_mapped_tbl_name},
+                .tidb_display = ASTRenameQuery::Table{new_display_name.database, new_display_name.table},
+            });
+        }
     }
 
-    InterpreterRenameQuery(rename, context, getThreadNameAndID()).execute();
+    GET_METRIC(tiflash_schema_internal_ddl_count, type_rename_table).Increment(rename->elements.size());
+
+    InterpreterRenameQuery(rename, context, getThreadNameAndID()).executeImpl([&, this](const TableLockHolders &) {
+        table_id_map.emplaceTableID(logical_table_id, new_database_id);
+    });
 
     // TODO:
     FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::random_ddl_fail_when_rename_partitions);
