@@ -278,10 +278,22 @@ public:
 
     void setUpBackgroundTask(const DMContextPtr & dm_context);
 
+<<<<<<< HEAD
     TableNameMeta getTableMeta() const
     {
         auto meta = table_meta.lockShared();
         return TableNameMeta{meta->db_name, meta->table_name};
+=======
+    struct TableMeta
+    {
+        String db_name;
+        String table_name;
+    };
+    TableMeta getTableMeta() const
+    {
+        auto meta = table_meta.lockShared();
+        return TableMeta{meta->db_name, meta->table_name};
+>>>>>>> 65524f070f (Cleanup useless db_name)
     }
     String getIdent() const { return fmt::format("keyspace={} table_id={}", keyspace_id, physical_table_id); }
 
