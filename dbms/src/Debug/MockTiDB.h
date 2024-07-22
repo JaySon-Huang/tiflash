@@ -168,6 +168,11 @@ public:
     TiDB::TableInfoPtr getTableInfoByID(TableID table_id);
 
     TiDB::DBInfoPtr getDBInfoByID(DatabaseID db_id);
+    String getDBNameByTableID(TableID table_id) const
+    {
+        auto tbl = getTableByID(table_id);
+        return tbl->database_name;
+    }
 
     std::pair<bool, DatabaseID> getDBIDByName(const String & database_name);
 
@@ -198,7 +203,7 @@ private:
     TablePtr dropTableByIdImpl(Context & context, TableID table_id, bool drop_regions);
     TablePtr dropTableInternal(Context & context, const TablePtr & table, bool drop_regions);
     TablePtr getTableByNameInternal(const String & database_name, const String & table_name);
-    TablePtr getTableByID(TableID table_id);
+    TablePtr getTableByID(TableID table_id) const;
 
 private:
     std::mutex tables_mutex;
@@ -210,6 +215,7 @@ private:
     std::unordered_map<Int64, SchemaDiff> version_diff;
 
     std::atomic<TableID> table_id_allocator = 30;
+    std::atomic<DatabaseID> database_id_allocator = 5;
 
     Int64 version = 0;
 };

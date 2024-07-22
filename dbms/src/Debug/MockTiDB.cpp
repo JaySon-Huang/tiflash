@@ -208,16 +208,13 @@ DatabaseID MockTiDB::newDataBase(const String & database_name)
 {
     DatabaseID schema_id = 0;
 
-    if (databases.find(database_name) == databases.end())
+    if (auto it = databases.find(database_name); it != databases.end())
     {
-        if (databases.empty())
-        {
-            schema_id = 1;
-        }
-        else
-        {
-            schema_id = databases.cbegin()->second + 1;
-        }
+        return it->second;
+    }
+    else
+    {
+        schema_id = database_id_allocator++;
         databases.emplace(database_name, schema_id);
     }
 
@@ -858,11 +855,11 @@ TablePtr MockTiDB::getTableByNameInternal(const String & database_name, const St
     return it->second;
 }
 
-TablePtr MockTiDB::getTableByID(TableID table_id)
+TablePtr MockTiDB::getTableByID(TableID table_id) const
 {
     if (auto it = tables_by_id.find(table_id); it != tables_by_id.end())
         return it->second;
-    throw Exception(fmt::format("Mock TiDB table does not exists, table_id={}", table_id), ErrorCodes::UNKNOWN_TABLE);
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Mock TiDB table does not exists, table_id={}", table_id);
 }
 
 TiDB::TableInfoPtr MockTiDB::getTableInfoByID(TableID table_id)

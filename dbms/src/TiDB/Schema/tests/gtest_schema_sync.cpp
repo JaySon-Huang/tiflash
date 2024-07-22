@@ -36,6 +36,11 @@
 
 #include <ext/scope_guard.h>
 #include <limits>
+#include <random>
+#include <thread>
+#include <vector>
+
+#include "Common/Logger.h"
 
 namespace DB
 {
@@ -560,6 +565,131 @@ try
 }
 CATCH
 
+TEST_F(SchemaSyncTest, RenamePartitionTableRandomTest)
+try
+{
+    static constexpr size_t NUM_DB_TEST = 10;
+    static constexpr size_t NUM_TABLE_TEST = 500;
+
+    // How many RENAME executed on the partition table
+    static constexpr size_t NUM_RENAME_DDL_TEST = 2000;
+
+    const String db_name = "mock_db_{}";
+    const String tbl_name = "mock_part_tbl_{}";
+
+    std::vector<TableID> logical_ids;
+    std::vector<TableID> physical_ids;
+
+    /// Prepare some data
+    {
+        for (size_t i = 0; i < 10; ++i)
+            MockTiDB::instance().newDataBase(fmt::format(fmt::runtime(db_name), i));
+        auto cols = ColumnsDescription({
+            {"col1", typeFromString("String")},
+            {"col2", typeFromString("Int64")},
+        });
+
+        auto pd_client = global_ctx.getTMTContext().getPDClient();
+        for (size_t i = 0; i < NUM_TABLE_TEST; ++i)
+        {
+            const String db0_name = "mock_db_0";
+            auto [logical_table_id, physical_table_ids] = MockTiDB::instance().newPartitionTable( //
+                db0_name,
+                fmt::format(fmt::runtime(tbl_name), i),
+                cols,
+                pd_client->getTS(),
+                "",
+                "dt",
+                {"red", "blue", "yellow"});
+            ASSERT_EQ(physical_table_ids.size(), 3);
+            logical_ids.emplace_back(logical_table_id);
+            physical_ids.insert(physical_ids.end(), physical_table_ids.begin(), physical_table_ids.end());
+        }
+        ASSERT_TRUE(!logical_ids.empty());
+    }
+
+    /// Sync schema after all tables are created in MockTiDB
+    refreshSchema();
+    LOG_INFO(Logger::get(), "test tables are created!");
+
+    /// Start to mock the random RENAME DDL workload
+    std::random_device r;
+    std::atomic<bool> success = true;
+    std::atomic<bool> rename_done = false;
+
+    // Start a thread that mock generating "RENAME" on TiDB and apply on TiFlash
+    auto th_rename = std::async([&]() {
+        std::mt19937_64 rnd_e(r());
+        std::uniform_int_distribution<size_t> dist(0, logical_ids.size() - 1);
+
+        // Rename the partition table across database
+        for (size_t i = 0; success && i < NUM_RENAME_DDL_TEST; ++i)
+        {
+            const TableID logical_table_id = logical_ids[dist(rnd_e)];
+            LOG_INFO(Logger::get(), "rename partition table begin, i={} logical_table_id={}", i, logical_table_id);
+            const String old_tbl_name = MockTiDB::instance().getTableInfoByID(logical_table_id)->name;
+            const String old_db_name = MockTiDB::instance().getDBNameByTableID(logical_table_id);
+            const String new_tbl_name = fmt::format("mock_part_tbl_{}_{:04X}", logical_table_id, dist(rnd_e));
+            const String new_db_name = fmt::format(fmt::runtime(db_name), dist(rnd_e) % NUM_DB_TEST);
+            MockTiDB::instance().renameTableTo(old_db_name, old_tbl_name, new_db_name, new_tbl_name);
+            try
+            {
+                refreshSchema();
+            }
+            catch (...)
+            {
+                success = false;
+                tryLogCurrentFatalException(
+                    Logger::get(),
+                    fmt::format("while renaming table, logical_table_id={}", logical_table_id));
+                break;
+            }
+        }
+
+        LOG_INFO(Logger::get(), "rename partition table end");
+    });
+
+    // Start a thread that mock read task accessing tables
+    auto th_refresh = std::async([&]() {
+        std::mt19937_64 rnd_e(r());
+        std::uniform_int_distribution<size_t> dist(0, logical_ids.size() + physical_ids.size() - 1);
+
+        while (success && !rename_done)
+        {
+            const size_t r = dist(rnd_e);
+            const TableID table_id = (r < logical_ids.size()) ? logical_ids[r] : (physical_ids[r - logical_ids.size()]);
+            LOG_INFO(
+                Logger::get(),
+                "Running refresh on table, table_id={} rename_done={}",
+                table_id,
+                rename_done.load());
+            try
+            {
+                refreshTableSchema(table_id);
+            }
+            catch (...)
+            {
+                success = false;
+                tryLogCurrentFatalException(
+                    Logger::get(),
+                    fmt::format("whlie refreshing table, table_id={}", table_id));
+                break;
+            }
+        }
+
+        LOG_INFO(Logger::get(), "refreshTableSchema done, success={}", success);
+    });
+
+    th_rename.get();
+    LOG_INFO(Logger::get(), "rename partition table end, stopping");
+    rename_done = true;
+
+    th_refresh.get();
+
+    ASSERT_TRUE(success);
+}
+CATCH
+
 TEST_F(SchemaSyncTest, RenamePartitionTableAcrossDatabaseWithRestart)
 try
 {
@@ -767,5 +897,6 @@ try
     ASSERT_EQ(part1_tbl->isTombstone(), true);
 }
 CATCH
+
 
 } // namespace DB::tests
