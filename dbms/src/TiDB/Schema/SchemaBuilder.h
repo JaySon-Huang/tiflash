@@ -104,11 +104,13 @@ private:
 
     void applyRenameTable(DatabaseID database_id, TiDB::TableID table_id);
 
+#if 0
     void applyRenamePhysicalTable(
         DatabaseID new_database_id,
         const String & new_display_database_name,
         const TiDB::TableInfo & new_table_info,
         const ManageableStoragePtr & storage);
+#endif
 
     struct RenameTableElem
     {
@@ -119,7 +121,8 @@ private:
         DatabaseID new_database_id,
         const String & new_display_database_name,
         const TiDB::TableInfo & new_table_info,
-        const ManageableStoragePtr & storage);
+        const ManageableStoragePtr & storage,
+        bool update_id_map);
 
     void applySetTiFlashReplica(DatabaseID database_id, TableID table_id);
     void updateTiFlashReplicaNumOnStorage(

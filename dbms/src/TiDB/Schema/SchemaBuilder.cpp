@@ -172,18 +172,21 @@ void SchemaBuilder<Getter, NameMapper>::applyExchangeTablePartition(const Schema
         partition_physical_table_id);
     GET_METRIC(tiflash_schema_internal_ddl_count, type_exchange_partition).Increment();
 
-    table_id_map.exchangeTablePartition(
-        non_partition_database_id,
-        non_partition_table_id,
-        partition_database_id,
-        partition_logical_table_id,
-        partition_physical_table_id);
-
-    if (non_partition_database_id != partition_database_id)
+    if (non_partition_database_id == partition_database_id)
+    {
+        table_id_map.exchangeTablePartition(
+            non_partition_database_id,
+            non_partition_table_id,
+            partition_database_id,
+            partition_logical_table_id,
+            partition_physical_table_id);
+    }
+    else
     {
         // Rename old non-partition table belonging new database. Now it should be belong to
         // the database of partition table.
         auto & tmt_context = context.getTMTContext();
+        ASTRenameQuery::Elements physical_tables_to_be_renamed;
         do
         {
             // skip if the instance is not created
@@ -211,7 +214,12 @@ void SchemaBuilder<Getter, NameMapper>::applyExchangeTablePartition(const Schema
 
             String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(partition_database_id);
             auto part_table_info = new_table_info->producePartitionTableInfo(non_partition_table_id, name_mapper);
-            applyRenamePhysicalTable(partition_database_id, new_db_display_name, *part_table_info, storage);
+            physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
+                .from = {},
+                .to = {},
+                .tidb_display = {},
+            });
+            // applyRenamePhysicalTable(partition_database_id, new_db_display_name, *part_table_info, storage);
         } while (false);
 
         // Rename the exchanged partition table belonging new database. Now it should belong to
@@ -242,8 +250,25 @@ void SchemaBuilder<Getter, NameMapper>::applyExchangeTablePartition(const Schema
             }
 
             String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(non_partition_database_id);
-            applyRenamePhysicalTable(non_partition_database_id, new_db_display_name, *new_table_info, storage);
+            physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
+                .from = {},
+                .to = {},
+                .tidb_display = {},
+            });
+            // applyRenamePhysicalTable(non_partition_database_id, new_db_display_name, *new_table_info, storage);
         } while (false);
+
+        auto rename = std::make_shared<ASTRenameQuery>();
+        rename->elements.swap(physical_tables_to_be_renamed);
+        InterpreterRenameQuery(rename, context, getThreadNameAndID()).executeImpl([&](const TableLockHolders &) {
+            // Update the table_id_map under alter locks on IStorage instances
+            table_id_map.exchangeTablePartition(
+                non_partition_database_id,
+                non_partition_table_id,
+                partition_database_id,
+                partition_logical_table_id,
+                partition_physical_table_id);
+        });
     }
 
     LOG_INFO(
@@ -668,9 +693,10 @@ void SchemaBuilder<Getter, NameMapper>::applyRenameTable(DatabaseID database_id,
     const String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(database_id);
     // For non-partitioned table, execute rename on the corrsponding IStorage instance
     // For partitioned table, try to execute rename on each partition (physical table)'s IStorage instance
-    applyRenamePhysicalTableOfPartitioned(database_id, new_db_display_name, *new_table_info, storage);
+    applyRenamePhysicalTableOfPartitioned(database_id, new_db_display_name, *new_table_info, storage, true);
 }
 
+#if 0
 template <typename Getter, typename NameMapper>
 void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     const DatabaseID new_database_id,
@@ -727,13 +753,15 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
         new_database_id,
         new_table_info.id);
 }
+#endif
 
 template <typename Getter, typename NameMapper>
 void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
     DatabaseID new_database_id,
     const String & new_display_database_name,
     const TiDB::TableInfo & new_table_info,
-    const ManageableStoragePtr & storage)
+    const ManageableStoragePtr & storage,
+    bool update_id_map)
 {
     const auto new_mapped_db_name = name_mapper.mapDatabaseName(new_database_id, keyspace_id);
     const auto old_mapped_db_name = storage->getDatabaseName();
@@ -786,8 +814,8 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
                 LOG_WARNING(
                     log,
                     "Storage instance is not exist in TiFlash, the partition is not created yet in this TiFlash "
-                    "instance, "
-                    "applyRenamePhysicalTable is ignored, physical_table_id={} logical_table_id={}",
+                    "instance, applyRenamePhysicalTableOfPartitioned is ignored, physical_table_id={} "
+                    "logical_table_id={}",
                     part_def.id,
                     new_table_info.id);
                 continue; // continue for next partition
@@ -808,7 +836,10 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTableOfPartitioned(
     GET_METRIC(tiflash_schema_internal_ddl_count, type_rename_table).Increment(rename->elements.size());
 
     InterpreterRenameQuery(rename, context, getThreadNameAndID()).executeImpl([&, this](const TableLockHolders &) {
-        table_id_map.emplaceTableID(logical_table_id, new_database_id);
+        if (update_id_map)
+        {
+            table_id_map.emplaceTableID(logical_table_id, new_database_id);
+        }
     });
 
     // TODO:
@@ -1618,11 +1649,12 @@ void SchemaBuilder<Getter, NameMapper>::tryFixPartitionsBelongingDatabase()
             }
 
             auto new_db_display_name = tryGetDatabaseDisplayNameFromLocal(new_database_id);
-            applyRenamePhysicalTable(
+            applyRenamePhysicalTableOfPartitioned(
                 new_database_id,
                 new_db_display_name,
                 managed_storage->getTableInfo(),
-                managed_storage);
+                managed_storage,
+                /*update_id_map=*/false);
             part_to_db_id.erase(it);
 
             LOG_INFO(
