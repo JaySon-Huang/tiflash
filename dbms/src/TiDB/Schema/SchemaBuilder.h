@@ -133,6 +133,13 @@ private:
 
     void applyExchangeTablePartition(const SchemaDiff & diff);
 
+    void applyExchageTablePartitionAcrossDatabase(
+        DatabaseID non_partition_database_id,
+        TableID non_partition_table_id,
+        DatabaseID partition_database_id,
+        TableID partition_logical_table_id,
+        TableID partition_physical_table_id);
+
     String tryGetDatabaseDisplayNameFromLocal(DatabaseID database_id);
 
     void tryFixPartitionsBelongingDatabase();

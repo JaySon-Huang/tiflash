@@ -118,12 +118,19 @@ BlockIO InterpreterRenameQuery::executeImpl(std::function<void(const TableLockHo
         // Don't need any lock on "tidb_display" names, because we don't identify any table by that name in TiFlash
     }
 
-    // short cut
+    TableLockHolders alter_locks;
+    // shortcut for nothing to be renamed
     if (unlikely(descriptions.empty()))
+    {
+        // shortcut should also call the callback
+        if (callback)
+        {
+            callback(alter_locks);
+        }
         return {};
+    }
 
     // Acquire alter locks on the "from" table(s)
-    TableLockHolders alter_locks;
     alter_locks.reserve(unique_tables_from.size());
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))

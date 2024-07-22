@@ -38,6 +38,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/KVStore/TMTContext.h>
+#include <Storages/KVStore/Types.h>
 #include <Storages/MutableSupport.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaBuilder.h>
@@ -183,98 +184,131 @@ void SchemaBuilder<Getter, NameMapper>::applyExchangeTablePartition(const Schema
     }
     else
     {
-        // Rename old non-partition table belonging new database. Now it should be belong to
-        // the database of partition table.
-        auto & tmt_context = context.getTMTContext();
-        ASTRenameQuery::Elements physical_tables_to_be_renamed;
-        do
-        {
-            // skip if the instance is not created
-            auto storage = tmt_context.getStorages().get(keyspace_id, non_partition_table_id);
-            if (storage == nullptr)
-            {
-                LOG_INFO(
-                    log,
-                    "ExchangeTablePartition: non_partition_table instance is not created in TiFlash"
-                    ", rename is ignored, table_id={}",
-                    non_partition_table_id);
-                break;
-            }
-
-            auto new_table_info = getter.getTableInfo(partition_database_id, partition_logical_table_id);
-            if (unlikely(new_table_info == nullptr))
-            {
-                LOG_INFO(
-                    log,
-                    "ExchangeTablePartition: part_logical_table table is not exist in TiKV, rename is ignored,"
-                    " table_id={}",
-                    partition_logical_table_id);
-                break;
-            }
-
-            String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(partition_database_id);
-            auto part_table_info = new_table_info->producePartitionTableInfo(non_partition_table_id, name_mapper);
-            physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
-                .from = {},
-                .to = {},
-                .tidb_display = {},
-            });
-            // applyRenamePhysicalTable(partition_database_id, new_db_display_name, *part_table_info, storage);
-        } while (false);
-
-        // Rename the exchanged partition table belonging new database. Now it should belong to
-        // the database of non-partition table
-        do
-        {
-            // skip if the instance is not created
-            auto storage = tmt_context.getStorages().get(keyspace_id, partition_physical_table_id);
-            if (storage == nullptr)
-            {
-                LOG_INFO(
-                    log,
-                    "ExchangeTablePartition: partition_physical_table instance is not created in TiFlash"
-                    ", rename is ignored, table_id={}",
-                    partition_physical_table_id);
-                break;
-            }
-
-            auto new_table_info = getter.getTableInfo(non_partition_database_id, partition_physical_table_id);
-            if (unlikely(new_table_info == nullptr))
-            {
-                LOG_INFO(
-                    log,
-                    "ExchangeTablePartition: partition_physical_table is not exist in TiKV, rename is ignored,"
-                    " table_id={}",
-                    partition_physical_table_id);
-                break;
-            }
-
-            String new_db_display_name = tryGetDatabaseDisplayNameFromLocal(non_partition_database_id);
-            physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
-                .from = {},
-                .to = {},
-                .tidb_display = {},
-            });
-            // applyRenamePhysicalTable(non_partition_database_id, new_db_display_name, *new_table_info, storage);
-        } while (false);
-
-        auto rename = std::make_shared<ASTRenameQuery>();
-        rename->elements.swap(physical_tables_to_be_renamed);
-        InterpreterRenameQuery(rename, context, getThreadNameAndID()).executeImpl([&](const TableLockHolders &) {
-            // Update the table_id_map under alter locks on IStorage instances
-            table_id_map.exchangeTablePartition(
-                non_partition_database_id,
-                non_partition_table_id,
-                partition_database_id,
-                partition_logical_table_id,
-                partition_physical_table_id);
-        });
+        applyExchageTablePartitionAcrossDatabase(
+            non_partition_database_id,
+            non_partition_table_id,
+            partition_database_id,
+            partition_logical_table_id,
+            partition_physical_table_id);
     }
 
     LOG_INFO(
         log,
         "Execute exchange partition end. database_id={} table_id={} part_database_id={} part_logical_table_id={}"
         " physical_table_id={}",
+        non_partition_database_id,
+        non_partition_table_id,
+        partition_database_id,
+        partition_logical_table_id,
+        partition_physical_table_id);
+}
+
+template <typename Getter, typename NameMapper>
+void SchemaBuilder<Getter, NameMapper>::applyExchageTablePartitionAcrossDatabase(
+    DatabaseID non_partition_database_id,
+    TableID non_partition_table_id,
+    DatabaseID partition_database_id,
+    TableID partition_logical_table_id,
+    TableID partition_physical_table_id)
+{
+    auto & tmt_context = context.getTMTContext();
+    ASTRenameQuery::Elements physical_tables_to_be_renamed;
+
+    // Rename old non-partition table belonging new database. Now it should be belong to
+    // the database of partition table.
+    do
+    {
+        // skip if the instance is not created
+        auto storage = tmt_context.getStorages().get(keyspace_id, non_partition_table_id);
+        if (storage == nullptr)
+        {
+            LOG_INFO(
+                log,
+                "ExchangeTablePartition: non_partition_table instance is not created in TiFlash"
+                ", rename is ignored, table_id={}",
+                non_partition_table_id);
+            break;
+        }
+
+        auto new_table_info = getter.getTableInfo(partition_database_id, partition_logical_table_id);
+        if (unlikely(new_table_info == nullptr))
+        {
+            LOG_INFO(
+                log,
+                "ExchangeTablePartition: part_logical_table table is not exist in TiKV, rename is ignored,"
+                " table_id={}",
+                partition_logical_table_id);
+            break;
+        }
+
+        const auto new_db_display_name = tryGetDatabaseDisplayNameFromLocal(partition_database_id);
+        const auto part_table_info = new_table_info->producePartitionTableInfo(non_partition_table_id, name_mapper);
+
+        const auto new_mapped_db_name = name_mapper.mapDatabaseName(partition_database_id, keyspace_id);
+        const auto new_mapped_tbl_name = name_mapper.mapTableName(*part_table_info);
+        physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
+            .from = {storage->getDatabaseName(), storage->getTableName()},
+            .to = {new_mapped_db_name, new_mapped_tbl_name},
+            .tidb_display = ASTRenameQuery::Table{new_db_display_name, name_mapper.displayTableName(*part_table_info)},
+        });
+        // applyRenamePhysicalTable(partition_database_id, new_db_display_name, *part_table_info, storage);
+    } while (false);
+
+    // Rename the exchanged partition table belonging new database. Now it should belong to
+    // the database of non-partition table
+    do
+    {
+        // skip if the instance is not created
+        auto storage = tmt_context.getStorages().get(keyspace_id, partition_physical_table_id);
+        if (storage == nullptr)
+        {
+            LOG_INFO(
+                log,
+                "ExchangeTablePartition: partition_physical_table instance is not created in TiFlash"
+                ", rename is ignored, table_id={}",
+                partition_physical_table_id);
+            break;
+        }
+
+        auto new_table_info = getter.getTableInfo(non_partition_database_id, partition_physical_table_id);
+        if (unlikely(new_table_info == nullptr))
+        {
+            LOG_INFO(
+                log,
+                "ExchangeTablePartition: partition_physical_table is not exist in TiKV, rename is ignored,"
+                " table_id={}",
+                partition_physical_table_id);
+            break;
+        }
+
+        const auto new_db_display_name = tryGetDatabaseDisplayNameFromLocal(non_partition_database_id);
+
+        const auto new_mapped_db_name = name_mapper.mapDatabaseName(partition_database_id, keyspace_id);
+        const auto new_mapped_tbl_name = name_mapper.mapTableName(*new_table_info);
+        physical_tables_to_be_renamed.push_back(ASTRenameQuery::Element{
+            .from = {storage->getDatabaseName(), storage->getTableName()},
+            .to = {new_mapped_db_name, new_mapped_tbl_name},
+            .tidb_display = ASTRenameQuery::Table{new_db_display_name, name_mapper.displayTableName(*new_table_info)},
+        });
+        // applyRenamePhysicalTable(non_partition_database_id, new_db_display_name, *new_table_info, storage);
+    } while (false);
+
+    auto rename = std::make_shared<ASTRenameQuery>();
+    rename->elements.swap(physical_tables_to_be_renamed);
+    InterpreterRenameQuery(rename, context, getThreadNameAndID()).executeImpl([&](const TableLockHolders &) {
+        // Update the table_id_map under alter locks on IStorage instances
+        table_id_map.exchangeTablePartition(
+            non_partition_database_id,
+            non_partition_table_id,
+            partition_database_id,
+            partition_logical_table_id,
+            partition_physical_table_id);
+    });
+
+    LOG_INFO(
+        log,
+        "ExchangeTablePartition: rename across database done, database_id={} table_id={} part_database_id={} "
+        "part_logical_table_id={} physical_table_id={}",
         non_partition_database_id,
         non_partition_table_id,
         partition_database_id,
