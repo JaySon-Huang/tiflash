@@ -1821,11 +1821,15 @@ bool SchemaBuilder<Getter, NameMapper>::applyTable(
         database_id,
         table_info->id);
     GET_METRIC(tiflash_schema_internal_ddl_count, type_modify_column).Increment();
+
+    // Note that here we must call `alterSchemaChange` with `storage->getDatabaseName` but not
+    // a database name that get by `database_id`. Because `database_id` is get from `table_id_map`
+    // that could be changed during `applyTable` is running.
     auto alter_lock = storage->lockForAlter(getThreadNameAndID());
     storage->alterSchemaChange(
         alter_lock,
         *table_info,
-        name_mapper.mapDatabaseName(database_id, keyspace_id),
+        storage->getDatabaseName(),
         name_mapper.mapTableName(*table_info),
         context);
 
