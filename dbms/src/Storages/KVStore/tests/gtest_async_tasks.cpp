@@ -254,14 +254,14 @@ try
     auto async_tasks = std::make_unique<TestAsyncTasks>(1, 1, 2);
 
     int total = 5;
-    int max_steps = 10;
+    constexpr int max_steps = 10;
     int current_step = 0;
     std::vector<char> f(total, false);
     std::vector<char> s(total, false);
     bool initial_loop = true;
     while (true)
     {
-        ASSERT(current_step < max_steps);
+        ASSERT_LT(current_step, max_steps);
         auto count = std::accumulate(f.begin(), f.end(), 0, [&](int a, bool b) -> int { return a + int(b); });
         if (count >= total)
         {
