@@ -1466,6 +1466,7 @@ String StorageDeltaMerge::getTableName() const
     return table_column_info->table_name;
 }
 
+#if 0
 String StorageDeltaMerge::getDatabaseName() const
 {
     if (storeInited())
@@ -1479,6 +1480,7 @@ String StorageDeltaMerge::getDatabaseName() const
     }
     return table_column_info->db_name;
 }
+#endif
 
 TableNameMeta StorageDeltaMerge::getTableNameMeta() const
 {

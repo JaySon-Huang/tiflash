@@ -96,7 +96,7 @@ public:
 
     virtual TiDB::StorageEngine engineType() const = 0;
 
-    virtual String getDatabaseName() const = 0;
+    // virtual String getDatabaseName() const = 0;
     virtual TableNameMeta getTableNameMeta() const = 0;
 
     /// Update tidb table info in memory.
