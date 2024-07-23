@@ -158,7 +158,7 @@ TableID createDBAndTable(String db_name, String table_name)
         EXPECT_EQ(storage->getTableName(), table_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        EXPECT_EQ(managed_storage->getTableNameMeta().db_name, db_name);
     }
     return table_id;
 }

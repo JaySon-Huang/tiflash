@@ -708,11 +708,11 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     const TableInfo & new_table_info,
     const ManageableStoragePtr & storage)
 {
-    const auto old_mapped_db_name = storage->getDatabaseName();
+    const auto old_mapped_name = storage->getTableNameMeta();
     const auto new_mapped_db_name = name_mapper.mapDatabaseName(new_database_id, keyspace_id);
     const auto old_display_table_name = name_mapper.displayTableName(storage->getTableInfo());
     const auto new_display_table_name = name_mapper.displayTableName(new_table_info);
-    if (old_mapped_db_name == new_mapped_db_name && old_display_table_name == new_display_table_name)
+    if (old_mapped_name.db_name == new_mapped_db_name && old_display_table_name == new_display_table_name)
     {
         LOG_DEBUG(
             log,
@@ -723,13 +723,12 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
         return;
     }
 
-    const auto old_mapped_tbl_name = storage->getTableName();
     GET_METRIC(tiflash_schema_internal_ddl_count, type_rename_table).Increment();
     LOG_INFO(
         log,
         "Rename table {}.{} (display name: {}) to {} begin, database_id={} table_id={}",
-        old_mapped_db_name,
-        old_mapped_tbl_name,
+        old_mapped_name.db_name,
+        old_mapped_name.table_name,
         old_display_table_name,
         name_mapper.debugCanonicalName(new_table_info, new_database_id, keyspace_id),
         new_database_id,
@@ -740,7 +739,7 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     // (ALTER commands) won't be saved. Besides, no need to update schema_version as table name is not structural.
     auto rename = std::make_shared<ASTRenameQuery>();
     ASTRenameQuery::Element elem{
-        .from = ASTRenameQuery::Table{old_mapped_db_name, old_mapped_tbl_name},
+        .from = ASTRenameQuery::Table{old_mapped_name.db_name, old_mapped_name.table_name},
         .to = ASTRenameQuery::Table{new_mapped_db_name, name_mapper.mapTableName(new_table_info)},
         .tidb_display = ASTRenameQuery::Table{new_database_display_name, new_display_table_name},
     };
@@ -751,8 +750,8 @@ void SchemaBuilder<Getter, NameMapper>::applyRenamePhysicalTable(
     LOG_INFO(
         log,
         "Rename table {}.{} (display name: {}) to {} end, database_id={} table_id={}",
-        old_mapped_db_name,
-        old_mapped_tbl_name,
+        old_mapped_name.db_name,
+        old_mapped_name.table_name,
         old_display_table_name,
         name_mapper.debugCanonicalName(new_table_info, new_database_id, keyspace_id),
         new_database_id,
@@ -1440,11 +1439,12 @@ void SchemaBuilder<Getter, NameMapper>::syncAllSchema()
 
         if (!table_id_map.tableIDInTwoMaps(table_info.id))
         {
-            applyDropPhysicalTable(it->second->getDatabaseName(), table_info.id, "SyncAllSchema");
+            const auto name_meta = it->second->getTableNameMeta();
+            applyDropPhysicalTable(name_meta.db_name, table_info.id, "SyncAllSchema");
             LOG_INFO(
                 log,
                 "Table {}.{} dropped during sync all schemas, table_id={}",
-                it->second->getDatabaseName(),
+                name_meta.db_name,
                 name_mapper.debugTableName(table_info),
                 table_info.id);
         }
@@ -1725,11 +1725,13 @@ void SchemaBuilder<Getter, NameMapper>::dropAllSchema()
         {
             continue;
         }
-        applyDropPhysicalTable(storage.second->getDatabaseName(), table_info.id, "DropAllSchema");
+
+        const auto name_meta = storage.second->getTableNameMeta();
+        applyDropPhysicalTable(name_meta.db_name, table_info.id, "DropAllSchema");
         LOG_INFO(
             log,
             "Table {}.{} dropped during drop all schemas, table_id={}",
-            storage.second->getDatabaseName(),
+            name_meta.db_name,
             name_mapper.debugTableName(table_info),
             table_info.id);
     }

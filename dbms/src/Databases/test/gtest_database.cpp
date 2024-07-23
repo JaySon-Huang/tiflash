@@ -177,7 +177,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
     }
 
     {
@@ -261,7 +263,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
     }
 
     const String to_tbl_display_name = "tbl_test";
@@ -276,7 +280,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
     }
 
     {
@@ -377,7 +383,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
     }
 
     const String to_tbl_display_name = "tbl_test";
@@ -395,7 +403,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db2_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db2_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
     }
 
     {
@@ -585,7 +595,10 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
+        // display name
         EXPECT_EQ(managed_storage->getTableInfo().name, "t");
     }
 
@@ -601,7 +614,9 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
         EXPECT_EQ(managed_storage->getTableInfo().name, new_display_tbl_name); // check display name
 
         auto tbl_meta = db->getTableMetadataPath(tbl_name);
@@ -636,7 +651,10 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
+        // display name
         EXPECT_EQ(managed_storage->getTableInfo().name, new_display_tbl_name);
     }
 }
@@ -748,7 +766,10 @@ try
         EXPECT_EQ(storage->getTableName(), tbl_name);
 
         auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
-        EXPECT_EQ(managed_storage->getDatabaseName(), db_name);
+        auto name_meta = managed_storage->getTableNameMeta();
+        EXPECT_EQ(name_meta.db_name, db_name);
+        EXPECT_EQ(name_meta.table_name, tbl_name);
+        // display name
         EXPECT_EQ(managed_storage->getTableInfo().name, "test");
     }
 }

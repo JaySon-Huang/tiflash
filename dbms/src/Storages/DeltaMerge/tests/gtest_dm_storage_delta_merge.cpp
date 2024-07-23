@@ -219,19 +219,20 @@ try
         storage->startup();
     }
 
+    // These methods won't init the DeltaMergeStore instance
     ASSERT_FALSE(storage->storeInited());
     ASSERT_EQ(storage->getTableName(), table_name);
     ASSERT_FALSE(storage->storeInited());
-    ASSERT_EQ(storage->getDatabaseName(), db_name);
+    ASSERT_EQ(storage->getTableNameMeta().db_name, db_name);
     ASSERT_FALSE(storage->storeInited());
 
     // Rename database name before store object is created.
-    const String new_db_name = "new_" + storage->getDatabaseName();
+    const String new_db_name = "new_" + storage->getTableNameMeta().db_name;
     const String new_display_table_name = "new_" + storage->getTableName();
     storage->rename(path_name, new_db_name, table_name, new_display_table_name);
     ASSERT_FALSE(storage->storeInited());
     ASSERT_EQ(storage->getTableName(), table_name);
-    ASSERT_EQ(storage->getDatabaseName(), new_db_name);
+    ASSERT_EQ(storage->getTableNameMeta().db_name, new_db_name);
     ASSERT_EQ(storage->getTableInfo().name, new_display_table_name);
 
     // prepare block data
@@ -251,7 +252,7 @@ try
     // TiFlash always use t_{table_id} as table name
     storage->rename(path_name, new_db_name, table_name, table_name);
     ASSERT_EQ(storage->getTableName(), table_name);
-    ASSERT_EQ(storage->getDatabaseName(), new_db_name);
+    ASSERT_EQ(storage->getTableNameMeta().db_name, new_db_name);
 
     storage->drop();
     // remove the storage from TiFlash context manually
