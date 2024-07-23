@@ -259,12 +259,13 @@ bool SchemaSyncService::gcImpl(Timestamp gc_safepoint, KeyspaceID keyspace_id, b
                 // Only keep a weak_ptr on storage so that the memory can be free as soon as
                 // it is dropped.
                 storages_to_gc.emplace_back(std::weak_ptr<IManageableStorage>(managed_storage));
+                auto name_meta = managed_storage->getTableNameMeta();
                 LOG_INFO(
                     keyspace_log,
                     "Detect stale table, database_name={} table_name={} database_tombstone={} table_tombstone={} "
                     "safepoint={}",
-                    managed_storage->getDatabaseName(),
-                    managed_storage->getTableName(),
+                    name_meta.db_name,
+                    name_meta.table_name,
                     db_tombstone,
                     table_tombstone,
                     gc_safepoint);
@@ -283,20 +284,19 @@ bool SchemaSyncService::gcImpl(Timestamp gc_safepoint, KeyspaceID keyspace_id, b
         if (unlikely(!storage))
             continue;
 
-        String database_name = storage->getDatabaseName();
-        String table_name = storage->getTableName();
+        const auto name_meta = storage->getTableNameMeta();
         const auto & table_info = storage->getTableInfo();
 
         auto canonical_name = [&]() {
-            auto database_id = SchemaNameMapper::tryGetDatabaseID(database_name);
+            auto database_id = SchemaNameMapper::tryGetDatabaseID(name_meta.db_name);
             if (!database_id.has_value())
             {
-                return fmt::format("{}.{} table_id={}", database_name, table_name, table_info.id);
+                return fmt::format("{}.{} table_id={}", name_meta.db_name, name_meta.table_name, table_info.id);
             }
             return fmt::format(
                 "{}.{} database_id={} table_id={}",
-                database_name,
-                table_name,
+                name_meta.db_name,
+                name_meta.table_name,
                 *database_id,
                 table_info.id);
         }();
@@ -339,8 +339,8 @@ bool SchemaSyncService::gcImpl(Timestamp gc_safepoint, KeyspaceID keyspace_id, b
             gc_safepoint,
             canonical_name);
         auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = std::move(database_name);
-        drop_query->table = std::move(table_name);
+        drop_query->database = name_meta.db_name;
+        drop_query->table = name_meta.table_name;
         drop_query->if_exists = true;
         drop_query->lock_timeout = std::chrono::milliseconds(1 * 1000); // timeout for acquring table drop lock
         ASTPtr ast_drop_query = drop_query;

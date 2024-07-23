@@ -76,8 +76,9 @@ ManageableStoragePtr ManagedStorages::getByName(
         storages.end(),
         [&](const std::pair<KeyspaceTableID, ManageableStoragePtr> & pair) {
             const auto & storage = pair.second;
-            return (include_tombstone || !storage->isTombstone()) && storage->getDatabaseName() == db
-                && storage->getTableInfo().name == table;
+            const auto name_meta = storage->getTableNameMeta();
+            return (include_tombstone || !storage->isTombstone()) //
+                && name_meta.db_name == db && name_meta.table_name == table;
         });
     if (it == storages.end())
         return nullptr;
