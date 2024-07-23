@@ -65,6 +65,7 @@ public:
     String getName() const override;
     String getTableName() const override;
     String getDatabaseName() const override;
+    TableNameMeta getTableNameMeta() const override;
     KeyspaceID getKeyspaceID() const { return _store->getKeyspaceID(); }
 
     void clearData() override;
