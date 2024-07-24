@@ -17,7 +17,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/IManageableStorage.h>
 #include <Storages/KVStore/Decode/DecodingStorageSchemaSnapshot.h>
 #include <Storages/KVStore/Decode/RegionBlockReader.h>
 #include <Storages/KVStore/MultiRaft/Spill/RegionUncommittedDataList.h>

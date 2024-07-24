@@ -1466,22 +1466,6 @@ String StorageDeltaMerge::getTableName() const
     return table_column_info->table_name;
 }
 
-#if 0
-String StorageDeltaMerge::getDatabaseName() const
-{
-    if (storeInited())
-    {
-        return _store->getTableMeta().db_name;
-    }
-    std::lock_guard lock(store_mutex);
-    if (storeInited())
-    {
-        return _store->getTableMeta().db_name;
-    }
-    return table_column_info->db_name;
-}
-#endif
-
 TableNameMeta StorageDeltaMerge::getTableNameMeta() const
 {
     if (storeInited())

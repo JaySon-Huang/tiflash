@@ -43,7 +43,6 @@
 #include <Server/IServer.h>
 #include <Storages/DeltaMerge/Remote/DisaggSnapshot.h>
 #include <Storages/DeltaMerge/Remote/WNDisaggSnapshotManager.h>
-#include <Storages/IManageableStorage.h>
 #include <Storages/KVStore/Read/LockException.h>
 #include <Storages/KVStore/Read/RegionException.h>
 #include <Storages/KVStore/TMTContext.h>

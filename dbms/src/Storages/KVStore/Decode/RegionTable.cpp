@@ -16,7 +16,6 @@
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/ExternalDTFileInfo.h>
-#include <Storages/IManageableStorage.h>
 #include <Storages/KVStore/Decode/RegionTable.h>
 #include <Storages/KVStore/Decode/TiKVRange.h>
 #include <Storages/KVStore/KVStore.h>
