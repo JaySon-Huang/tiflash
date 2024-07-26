@@ -253,7 +253,7 @@ private:
     struct TableColumnInfo
     {
         TableColumnInfo(const String & db, const String & table, const ASTPtr & pk)
-            : name_meta(db, table)
+            : name_meta(TableNameMeta{db, table})
             , pk_expr_ast(pk)
         {}
 
