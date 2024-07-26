@@ -253,13 +253,11 @@ private:
     struct TableColumnInfo
     {
         TableColumnInfo(const String & db, const String & table, const ASTPtr & pk)
-            : db_name(db)
-            , table_name(table)
+            : name_meta(db, table)
             , pk_expr_ast(pk)
         {}
 
-        String db_name;
-        String table_name;
+        TableNameMeta name_meta;
         ASTPtr pk_expr_ast;
         DM::ColumnDefines table_column_defines;
         DM::ColumnDefine handle_column_define;

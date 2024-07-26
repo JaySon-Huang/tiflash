@@ -53,6 +53,7 @@
 #include <Storages/PrimaryKeyNotMatchException.h>
 #include <Storages/StorageDeltaMerge.h>
 #include <Storages/StorageDeltaMergeHelpers.h>
+#include <Storages/TableNameMeta.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <common/logger_useful.h>
@@ -118,7 +119,7 @@ void StorageDeltaMerge::updateTableColumnInfo()
     LOG_INFO(
         log,
         "updateTableColumnInfo, table_name={} ordinary=\"{}\" materialized=\"{}\"",
-        table_column_info->table_name,
+        table_column_info->name_meta.table_name,
         columns.ordinary.toString(),
         columns.materialized.toString());
 
@@ -1447,8 +1448,7 @@ void StorageDeltaMerge::rename(
     }
     else
     {
-        table_column_info->db_name = new_database_name;
-        table_column_info->table_name = new_table_name;
+        table_column_info->name_meta = TableNameMeta{new_database_name, new_table_name};
     }
 }
 
@@ -1463,7 +1463,7 @@ String StorageDeltaMerge::getTableName() const
     {
         return _store->getTableMeta().table_name;
     }
-    return table_column_info->table_name;
+    return table_column_info->name_meta.table_name;
 }
 
 TableNameMeta StorageDeltaMerge::getTableNameMeta() const
@@ -1477,7 +1477,7 @@ TableNameMeta StorageDeltaMerge::getTableNameMeta() const
     {
         return _store->getTableMeta();
     }
-    return TableNameMeta{table_column_info->db_name, table_column_info->table_name};
+    return table_column_info->name_meta;
 }
 
 void updateDeltaMergeTableCreateStatement(
@@ -1778,8 +1778,8 @@ DeltaMergeStorePtr & StorageDeltaMerge::getAndMaybeInitStore(ThreadPool * thread
         _store = std::make_shared<DeltaMergeStore>(
             global_context,
             data_path_contains_database_name,
-            table_column_info->db_name,
-            table_column_info->table_name,
+            table_column_info->name_meta.db_name,
+            table_column_info->name_meta.table_name,
             tidb_table_info.keyspace_id,
             tidb_table_info.id,
             tidb_table_info.replica_info.count > 0,
@@ -1824,8 +1824,8 @@ bool StorageDeltaMerge::dataDirExist()
         {
             return true;
         }
-        db_name = table_column_info->db_name;
-        table_name = table_column_info->table_name;
+        db_name = table_column_info->name_meta.db_name;
+        table_name = table_column_info->name_meta.table_name;
     }
 
     auto path_pool = global_context.getPathPool().withTable(db_name, table_name, data_path_contains_database_name);
