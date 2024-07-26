@@ -51,6 +51,7 @@ struct Settings;
 
 class AlterCommands;
 
+
 /** Storage. Responsible for
   * - storage of the table data;
   * - the definition in which files (or not in files) the data is stored;

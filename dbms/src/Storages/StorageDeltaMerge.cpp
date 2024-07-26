@@ -1480,20 +1480,6 @@ String StorageDeltaMerge::getDatabaseName() const
     return table_column_info->db_name;
 }
 
-TableNameMeta StorageDeltaMerge::getTableNameMeta() const
-{
-    if (storeInited())
-    {
-        return _store->getTableMeta();
-    }
-    std::lock_guard lock(store_mutex);
-    if (storeInited())
-    {
-        return _store->getTableMeta();
-    }
-    return TableNameMeta{table_column_info->db_name, table_column_info->table_name};
-}
-
 void updateDeltaMergeTableCreateStatement(
     const String & database_name,
     const String & table_name,

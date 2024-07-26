@@ -14,6 +14,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Logger.h>
 #include <Common/TiFlashMetrics.h>
 #include <Databases/IDatabase.h>
 #include <Debug/MockTiDB.h>
@@ -39,8 +40,6 @@
 #include <random>
 #include <thread>
 #include <vector>
-
-#include "Common/Logger.h"
 
 namespace DB
 {

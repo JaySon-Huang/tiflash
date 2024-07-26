@@ -23,7 +23,6 @@
 #include <Storages/KVStore/Decode/TiKVHandle.h>
 #include <Storages/KVStore/StorageEngineType.h>
 #include <Storages/KVStore/Types.h>
-#include <Storages/TableNameMeta.h>
 
 
 namespace TiDB
@@ -97,7 +96,6 @@ public:
     virtual TiDB::StorageEngine engineType() const = 0;
 
     virtual String getDatabaseName() const = 0;
-    virtual TableNameMeta getTableNameMeta() const = 0;
 
     /// Update tidb table info in memory.
     virtual void setTableInfo(const TiDB::TableInfo & table_info_) = 0;
