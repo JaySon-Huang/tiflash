@@ -828,8 +828,7 @@ std::optional<QualifiedName> mappedTableWithOptional(
         return std::nullopt;
     }
 
-    auto name_meta = storage->getTableNameMeta();
-    return std::make_pair(name_meta.db_name, name_meta.table_name);
+    return std::make_pair(storage->getDatabaseName(), storage->getTableName());
 }
 
 QualifiedName mappedTable(
