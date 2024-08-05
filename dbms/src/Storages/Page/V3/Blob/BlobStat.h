@@ -87,24 +87,28 @@ public:
 
         /**
           * The return value is the valid data size remained in the BlobFile after the remove
+          * Thread-safe
           */
         size_t removePosFromStat(BlobFileOffset offset, size_t buf_size);
 
         /**
          * This method is only used when blobstore restore
          * Restore space map won't change the `sm_total_size`/`sm_valid_size`/`sm_valid_rate`
+         * Not thread-safe
          */
         std::tuple<bool, String> restoreSpaceMap(BlobFileOffset offset, size_t buf_size);
 
         /**
           * After we restore the space map.
           * We still need to recalculate a `sm_total_size`/`sm_valid_size`/`sm_valid_rate`.
+          * Not thread-safe
           */
         void recalculateSpaceMap();
 
         /**
           * The `sm_max_cap` is not accurate after GC removes out-of-date data, or after restoring from disk.
           * Caller should call this function to update the `sm_max_cap` so that we can reuse the space in this BlobStat.
+          * Not thread-safe
           */
         void recalculateCapacity();
     };
@@ -126,13 +130,10 @@ public:
     //
     [[nodiscard]] std::lock_guard<std::mutex> lock() const;
 
+    // Not thread-safe
     BlobStatPtr createStatNotChecking(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> &);
 
-    BlobStatPtr createStat(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> & guard);
-
-    void eraseStat(const BlobStatPtr && stat, const std::lock_guard<std::mutex> &);
-
-    void eraseStat(BlobFileId blob_file_id, const std::lock_guard<std::mutex> &);
+    void eraseStat(const BlobStatPtr && stat);
 
     /**
      * Change all existing BlobStat to be `ReadOnly`. So following new blobs will
@@ -140,9 +141,31 @@ public:
      */
     void setAllToReadOnly();
 
+    /**
+     * Lock a `BlobStat` for inserting a buffer with `length`.
+     * If there is no existing `BlobStat` for inserting, this function
+     * will create a new `BlobStat`.
+     * Returns: {A unique_lock on the `BlobStat`, `BlobStat` for inserting}.
+     */
     [[nodiscard]] std::tuple<std::unique_lock<std::mutex>, BlobStatPtr> //
     lockStatForInsert(size_t length, PageType page_type);
 
+    /**
+     * Try to find the existing `BlobStat` by `blob_id`.
+     * Return the `BlobStat` with the given `blob_id`.
+     * If `ignore_not_exist` == true, this function will return nullptr if not exist
+     * Otherwise this function will throw an exception.
+     */
+    BlobStatPtr blobIdToStat(BlobFileId file_id, bool ignore_not_exist = false);
+
+    using StatsMap = std::map<String, std::list<BlobStatPtr>>;
+    StatsMap getStats() const;
+
+    static std::pair<BlobFileId, String> getBlobIdFromName(const String & blob_name);
+
+#ifndef DBMS_PUBLIC_GTEST
+private:
+#endif
     /**
      * Choose a available `BlobStat` from `BlobStats`.
      * 
@@ -162,16 +185,10 @@ public:
         PageType page_type,
         const std::lock_guard<std::mutex> &);
 
-    BlobStatPtr blobIdToStat(BlobFileId file_id, bool ignore_not_exist = false);
+    BlobStatPtr createStat(BlobFileId blob_file_id, UInt64 max_caps, const std::lock_guard<std::mutex> & guard);
 
-    using StatsMap = std::map<String, std::list<BlobStatPtr>>;
-    StatsMap getStats() const;
+    void eraseStatImpl(const BlobStatPtr && stat, const std::lock_guard<std::mutex> &);
 
-    static std::pair<BlobFileId, String> getBlobIdFromName(const String & blob_name);
-
-#ifndef DBMS_PUBLIC_GTEST
-private:
-#endif
     std::tuple<bool, String> restoreByEntry(const PageEntryV3 & entry);
     void restore();
     template <typename>

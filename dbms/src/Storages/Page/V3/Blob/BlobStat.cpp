@@ -129,7 +129,7 @@ BlobStats::BlobStatPtr BlobStats::createStat(
             if (stat->id == blob_file_id)
             {
                 throw Exception(
-                    fmt::format("BlobStats can not create [blob_id={}] which is exist", blob_file_id),
+                    fmt::format("BlobStats can not create, blob_id is exist, blob_id={}", blob_file_id),
                     ErrorCodes::LOGICAL_ERROR);
             }
         }
@@ -144,7 +144,7 @@ BlobStats::BlobStatPtr BlobStats::createStatNotChecking(
     UInt64 max_caps,
     const std::lock_guard<std::mutex> &)
 {
-    LOG_INFO(log, "Created a new BlobStat [blob_id={}] [capacity={}]", blob_file_id, max_caps);
+    LOG_INFO(log, "Created a new BlobStat, blob_id={} capacity={}", blob_file_id, max_caps);
     // Only BlobFile which total capacity is smaller or equal to config.file_limit_size can be reused for another write
     auto stat_type
         = max_caps <= config.file_limit_size ? BlobStats::BlobStatType::NORMAL : BlobStats::BlobStatType::READ_ONLY;
@@ -164,38 +164,16 @@ BlobStats::BlobStatPtr BlobStats::createStatNotChecking(
     return stat;
 }
 
-void BlobStats::eraseStat(const BlobStatPtr && stat, const std::lock_guard<std::mutex> &)
+void BlobStats::eraseStat(const BlobStatPtr && stat)
+{
+    auto stats_lock = lock();
+    eraseStatImpl(std::move(stat), stats_lock);
+}
+
+void BlobStats::eraseStatImpl(const BlobStatPtr && stat, const std::lock_guard<std::mutex> &)
 {
     PageFileIdAndLevel id_lvl{stat->id, 0};
     stats_map[delegator->getPageFilePath(id_lvl)].remove(stat);
-}
-
-void BlobStats::eraseStat(BlobFileId blob_file_id, const std::lock_guard<std::mutex> & lock)
-{
-    BlobStatPtr stat = nullptr;
-
-    for (auto & [path, stats] : stats_map)
-    {
-        (void)path;
-        for (const auto & stat_in_map : stats)
-        {
-            if (stat_in_map->id == blob_file_id)
-            {
-                stat = stat_in_map;
-                break;
-            }
-        }
-    }
-
-    if (stat == nullptr)
-    {
-        LOG_ERROR(log, "BlobStat not exist [blob_id={}]", blob_file_id);
-        return;
-    }
-
-    LOG_DEBUG(log, "Erase BlobStat from maps [blob_id={}]", blob_file_id);
-
-    eraseStat(std::move(stat), lock);
 }
 
 void BlobStats::setAllToReadOnly() NO_THREAD_SAFETY_ANALYSIS

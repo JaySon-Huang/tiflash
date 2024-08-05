@@ -44,6 +44,34 @@ public:
         delegator = std::make_shared<DB::tests::MockDiskDelegatorMulti>(paths);
     }
 
+    void eraseStatByID(BlobStats & stats, BlobFileId blob_id)
+    {
+        BlobStats::BlobStatPtr stat = nullptr;
+
+        auto lock = stats.lock();
+        for (auto & [path, stats] : stats.stats_map)
+        {
+            (void)path;
+            for (const auto & stat_in_map : stats)
+            {
+                if (stat_in_map->id == blob_id)
+                {
+                    stat = stat_in_map;
+                    break;
+                }
+            }
+        }
+
+        if (stat == nullptr)
+        {
+            LOG_ERROR(logger, "BlobStat not exist, blob_id={}", blob_id);
+            return;
+        }
+
+        LOG_DEBUG(logger, "Erase BlobStat from maps, blob_id={}", blob_id);
+        stats.eraseStatImpl(std::move(stat), lock);
+    }
+
 protected:
     BlobConfig config;
     LoggerPtr logger;
@@ -291,8 +319,8 @@ TEST_F(BlobStoreStatsTest, testStats)
     ASSERT_EQ(stats_copy.size(), std::min(getTotalStatsNum(stats_copy), path_num));
     ASSERT_EQ(getTotalStatsNum(stats_copy), 3);
 
-    stats.eraseStat(10, stats.lock());
-    stats.eraseStat(20, stats.lock());
+    eraseStatByID(stats, 10);
+    eraseStatByID(stats, 20);
     ASSERT_EQ(getTotalStatsNum(stats.getStats()), 1);
 }
 
@@ -337,7 +365,7 @@ TEST_F(BlobStoreStatsTest, testStat)
     ASSERT_EQ(stat->sm_valid_size, 10 + 100 + 20);
     ASSERT_EQ(stat->sm_valid_rate, 1);
 
-    stat->removePosFromStat(10, 100)
+    stat->removePosFromStat(10, 100);
     ASSERT_EQ(stat->sm_total_size, 10 + 100 + 20);
     ASSERT_EQ(stat->sm_valid_size, 10 + 20);
     ASSERT_LE(stat->sm_valid_rate, 1);

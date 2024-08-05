@@ -762,11 +762,8 @@ void BlobStore<Trait>::removePosFromStats(BlobFileId blob_id, BlobFileOffset off
         offset,
         size);
 
-    {
-        // Remove the stat from memory
-        auto lock_stats = blob_stats.lock();
-        blob_stats.eraseStat(std::move(stat), lock_stats);
-    }
+    // Remove the stat from memory
+    blob_stats.eraseStat(std::move(stat));
 
     BlobFilePtr blob_file_to_removed;
     {
