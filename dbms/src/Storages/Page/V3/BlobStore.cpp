@@ -727,57 +727,15 @@ std::pair<BlobFileId, BlobFileOffset> BlobStore<Trait>::getPosFromStats(size_t s
     NO_THREAD_SAFETY_ANALYSIS
 {
     Stopwatch watch;
-    BlobStatPtr stat;
-
-    // TODO: make this lambda as a function of BlobStats to simplify code
-    auto lock_stat = [size, this, &stat, &page_type]() NO_THREAD_SAFETY_ANALYSIS {
-        auto lock_stats = blob_stats.lock();
-        BlobFileId blob_file_id = INVALID_BLOBFILE_ID;
-        std::tie(stat, blob_file_id) = blob_stats.chooseStat(size, page_type, lock_stats);
-        if (stat == nullptr)
-        {
-            // No valid stat for putting data with `size`, create a new one
-            stat = blob_stats.createStat(blob_file_id, std::max(size, config.file_limit_size.get()), lock_stats);
-        }
-
-        // We must get the lock from BlobStat under the BlobStats lock
-        // to ensure that BlobStat updates are serialized.
-        // Otherwise it may cause stat to fail to get the span for writing
-        // and throwing exception.
-        return stat->lock();
-    }();
+    auto [lock_stat, stat] = blob_stats.lockStatForInsert(size, page_type);
     GET_METRIC(tiflash_storage_page_write_duration_seconds, type_choose_stat).Observe(watch.elapsedSeconds());
     watch.restart();
     SCOPE_EXIT({ //
         GET_METRIC(tiflash_storage_page_write_duration_seconds, type_search_pos).Observe(watch.elapsedSeconds());
     });
 
-    // We need to assume that this insert will reduce max_cap.
-    // Because other threads may also be waiting for BlobStats to chooseStat during this time.
-    // If max_cap is not reduced, it may cause the same BlobStat to accept multiple buffers and exceed its max_cap.
-    // After the BlobStore records the buffer size, max_caps will also get an accurate update.
-    // So there won't get problem in reducing max_caps here.
-    auto old_max_cap = stat->sm_max_caps;
-    assert(stat->sm_max_caps >= size);
-    stat->sm_max_caps -= size;
-
     // Get Position from single stat
     BlobFileOffset offset = stat->getPosFromStat(size, lock_stat);
-
-    // Can't insert into this spacemap
-    if (offset == INVALID_BLOBFILE_OFFSET)
-    {
-        LOG_ERROR(Logger::get(), stat->smap->toDebugString());
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Get postion from BlobStat failed, it may caused by `sm_max_caps` is no correct. size={} "
-            "old_max_caps={} max_caps={} blob_id={}",
-            size,
-            old_max_cap,
-            stat->sm_max_caps,
-            stat->id);
-    }
-
     return std::make_pair(stat->id, offset);
 }
 

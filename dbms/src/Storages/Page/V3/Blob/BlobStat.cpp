@@ -212,6 +212,27 @@ void BlobStats::setAllToReadOnly() NO_THREAD_SAFETY_ANALYSIS
     }
 }
 
+[[nodiscard]] std::tuple<std::unique_lock<std::mutex>, BlobStats::BlobStatPtr> //
+BlobStats::lockStatForInsert(size_t length, PageType page_type) NO_THREAD_SAFETY_ANALYSIS
+{
+    auto lock_stats = lock();
+    BlobFileId blob_file_id = INVALID_BLOBFILE_ID;
+    BlobStatPtr stat;
+    std::tie(stat, blob_file_id) = chooseStat(length, page_type, lock_stats);
+    if (stat == nullptr)
+    {
+        // No valid stat for putting data with `length`, create a new one
+        stat = createStat(blob_file_id, std::max(length, config.file_limit_size.get()), lock_stats);
+    }
+
+    // We must get the lock from BlobStat under the BlobStats lock
+    // to ensure that BlobStat updates are serialized.
+    // Otherwise it may cause stat to fail to get the span for writing
+    // and throwing exception.
+    auto lock_on_stat = stat->lock();
+    return {std::move(lock_on_stat), std::move(stat)};
+}
+
 std::pair<BlobStats::BlobStatPtr, BlobFileId> BlobStats::chooseStat(
     size_t buf_size,
     PageType page_type,
@@ -310,6 +331,15 @@ BlobFileOffset BlobStats::BlobStat::getPosFromStat(size_t buf_size, const std::u
     UInt64 max_cap = 0;
     bool expansion = true;
 
+    // We need to assume that this insert will reduce max_cap.
+    // Because other threads may also be waiting for BlobStats to chooseStat during this time.
+    // If max_cap is not reduced, it may cause the same BlobStat to accept multiple buffers and exceed its max_cap.
+    // After the BlobStore records the buffer size, max_caps will also get an accurate update.
+    // So there won't get problem in reducing max_caps here.
+    const auto old_max_cap = sm_max_caps;
+    assert(sm_max_caps >= buf_size);
+    sm_max_caps -= buf_size;
+
     std::tie(offset, max_cap, expansion) = smap->searchInsertOffset(buf_size);
     ProfileEvents::increment(expansion ? ProfileEvents::PSV3MBlobExpansion : ProfileEvents::PSV3MBlobReused);
 
@@ -318,27 +348,39 @@ BlobFileOffset BlobStats::BlobStat::getPosFromStat(size_t buf_size, const std::u
      * Max capability still need update.
      */
     sm_max_caps = max_cap;
-    if (offset != INVALID_BLOBFILE_OFFSET)
+    // Can't insert into this spacemap
+    if (unlikely(offset == INVALID_BLOBFILE_OFFSET))
     {
-        if (offset + buf_size > sm_total_size)
-        {
-            // This file must be expanded
-            auto expand_size = buf_size - (sm_total_size - offset);
-            sm_total_size += expand_size;
-            sm_valid_size += buf_size;
-        }
-        else
-        {
-            /**
-             * The `offset` reuses the original address. 
-             * Current blob file is not expanded.
-             * Only update valid size.
-             */
-            sm_valid_size += buf_size;
-        }
-
-        sm_valid_rate = sm_valid_size * 1.0 / sm_total_size;
+        LOG_ERROR(Logger::get(), smap->toDebugString());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Get postion from BlobStat failed, it may caused by `sm_max_caps` is no correct. size={} "
+            "old_max_caps={} max_caps={} blob_id={}",
+            buf_size,
+            old_max_cap,
+            max_cap,
+            id);
     }
+
+    assert(offset != INVALID_BLOBFILE_OFFSET);
+    if (offset + buf_size > sm_total_size)
+    {
+        // This file must be expanded
+        auto expand_size = buf_size - (sm_total_size - offset);
+        sm_total_size += expand_size;
+        sm_valid_size += buf_size;
+    }
+    else
+    {
+        /**
+         * The `offset` reuses the original address. 
+         * Current blob file is not expanded.
+         * Only update valid size.
+         */
+        sm_valid_size += buf_size;
+    }
+
+    sm_valid_rate = sm_valid_size * 1.0 / sm_total_size;
     return offset;
 }
 

@@ -23,6 +23,8 @@
 #include <Storages/PathPool.h>
 #include <common/types.h>
 
+#include <mutex>
+
 namespace DB::PS::V3
 {
 
@@ -137,6 +139,9 @@ public:
      * be written to new `BlobStat`.
      */
     void setAllToReadOnly();
+
+    [[nodiscard]] std::tuple<std::unique_lock<std::mutex>, BlobStatPtr> //
+    lockStatForInsert(size_t length, PageType page_type);
 
     /**
      * Choose a available `BlobStat` from `BlobStats`.

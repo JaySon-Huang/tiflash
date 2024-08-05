@@ -15,6 +15,7 @@
 #pragma once
 #include <Common/Exception.h>
 #include <Storages/Page/V3/MapUtils.h>
+#include <Storages/Page/V3/PageDefines.h>
 #include <Storages/Page/V3/spacemap/SpaceMap.h>
 #include <fmt/format.h>
 
@@ -235,7 +236,7 @@ protected:
         if (unlikely(free_map.empty()))
         {
             LOG_ERROR(Logger::get(), "Current space map is full");
-            return std::make_tuple(UINT64_MAX, 0, false);
+            return std::make_tuple(INVALID_BLOBFILE_OFFSET, 0, false);
         }
         RUNTIME_CHECK_MSG(
             !free_map_invert_index.empty(),
@@ -244,7 +245,7 @@ protected:
         if (unlikely(iter == free_map_invert_index.end()))
         {
             LOG_ERROR(Logger::get(), "Can't found any place to insert for size {}", size);
-            return std::make_tuple(UINT64_MAX, free_map_invert_index.rbegin()->first, false);
+            return std::make_tuple(INVALID_BLOBFILE_OFFSET, free_map_invert_index.rbegin()->first, false);
         }
         auto length = iter->first;
         auto offset = *(iter->second.begin());
