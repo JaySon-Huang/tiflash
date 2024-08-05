@@ -332,26 +332,20 @@ BlobFileOffset BlobStats::BlobStat::getPosFromStat(size_t buf_size, const std::u
     bool expansion = true;
 
     // We need to assume that this insert will reduce max_cap.
-    // Because other threads may also be waiting for BlobStats to chooseStat during this time.
-    // If max_cap is not reduced, it may cause the same BlobStat to accept multiple buffers and exceed its max_cap.
-    // After the BlobStore records the buffer size, max_caps will also get an accurate update.
-    // So there won't get problem in reducing max_caps here.
     const auto old_max_cap = sm_max_caps;
     assert(sm_max_caps >= buf_size);
-    sm_max_caps -= buf_size;
 
     std::tie(offset, max_cap, expansion) = smap->searchInsertOffset(buf_size);
     ProfileEvents::increment(expansion ? ProfileEvents::PSV3MBlobExpansion : ProfileEvents::PSV3MBlobReused);
 
-    /**
-     * Whatever `searchInsertOffset` success or failed,
-     * Max capability still need update.
-     */
+    // Whatever `searchInsertOffset` success or failed, Max capability still need update.
+    // Other threads may also be waiting on the lock on the same `stat::getPosFromStat` concurrently.
+    // If max_cap is not updated, it may make the same blob_id accept multiple buffers and exceed its max_cap.
     sm_max_caps = max_cap;
+
     // Can't insert into this spacemap
     if (unlikely(offset == INVALID_BLOBFILE_OFFSET))
     {
-        LOG_ERROR(Logger::get(), smap->toDebugString());
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Get postion from BlobStat failed, it may caused by `sm_max_caps` is no correct. size={} "
@@ -384,21 +378,18 @@ BlobFileOffset BlobStats::BlobStat::getPosFromStat(size_t buf_size, const std::u
     return offset;
 }
 
-size_t BlobStats::BlobStat::removePosFromStat(
-    BlobFileOffset offset,
-    size_t buf_size,
-    const std::unique_lock<std::mutex> &)
+size_t BlobStats::BlobStat::removePosFromStat(BlobFileOffset offset, size_t buf_size)
 {
+    auto stat_lock = lock();
     if (!smap->markFree(offset, buf_size))
     {
         LOG_ERROR(Logger::get(), smap->toDebugString());
         throw Exception(
-            fmt::format(
-                "Remove position from BlobStat failed, invalid position [offset={}] [buf_size={}] [blob_id={}]",
-                offset,
-                buf_size,
-                id),
-            ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::LOGICAL_ERROR,
+            "Remove position from BlobStat failed, invalid position, offset={} buf_size={} blob_id={}",
+            offset,
+            buf_size,
+            id);
     }
 
     sm_valid_size -= buf_size;

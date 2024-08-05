@@ -337,7 +337,7 @@ TEST_F(BlobStoreStatsTest, testStat)
     ASSERT_EQ(stat->sm_valid_size, 10 + 100 + 20);
     ASSERT_EQ(stat->sm_valid_rate, 1);
 
-    stat->removePosFromStat(10, 100, stat->lock());
+    stat->removePosFromStat(10, 100)
     ASSERT_EQ(stat->sm_total_size, 10 + 100 + 20);
     ASSERT_EQ(stat->sm_valid_size, 10 + 20);
     ASSERT_LE(stat->sm_valid_rate, 1);
@@ -355,7 +355,7 @@ TEST_F(BlobStoreStatsTest, testStat)
     ASSERT_LE(stat->sm_valid_rate, 1);
 
     // Unmark the last range
-    stat->removePosFromStat(130, 110, stat->lock());
+    stat->removePosFromStat(130, 110);
     ASSERT_EQ(stat->sm_total_size, 10 + 100 + 20 + 110);
     ASSERT_EQ(stat->sm_valid_size, 10 + 20 + 90);
     ASSERT_LE(stat->sm_valid_rate, 1);
@@ -410,12 +410,12 @@ TEST_F(BlobStoreStatsTest, StatWithEmptyBlob)
     ASSERT_EQ(stat->sm_valid_size, 10 + 20 + 100);
     ASSERT_EQ(stat->sm_valid_rate, 1);
 
-    stat->removePosFromStat(10, 0, stat->lock());
+    stat->removePosFromStat(10, 0);
     ASSERT_EQ(stat->sm_total_size, 10 + 20 + 100);
     ASSERT_EQ(stat->sm_valid_size, 10 + 20 + 100);
     ASSERT_EQ(stat->sm_valid_rate, 1.0);
 
-    stat->removePosFromStat(10, 20, stat->lock());
+    stat->removePosFromStat(10, 20);
     ASSERT_EQ(stat->sm_total_size, 10 + 20 + 100);
     ASSERT_EQ(stat->sm_valid_size, 10 + 100);
     ASSERT_LE(stat->sm_valid_rate, 1);

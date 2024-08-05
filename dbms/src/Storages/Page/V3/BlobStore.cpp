@@ -744,21 +744,16 @@ void BlobStore<Trait>::removePosFromStats(BlobFileId blob_id, BlobFileOffset off
     NO_THREAD_SAFETY_ANALYSIS
 {
     const auto & stat = blob_stats.blobIdToStat(blob_id);
+    auto remaining_valid_size = stat->removePosFromStat(offset, size);
+    if (bool remove_file_on_disk = stat->isReadOnly() && (remaining_valid_size == 0); !remove_file_on_disk)
     {
-        auto lock = stat->lock();
-        auto remaining_valid_size = stat->removePosFromStat(offset, size, lock);
-        if (bool remove_file_on_disk = stat->isReadOnly() && (remaining_valid_size == 0); !remove_file_on_disk)
-        {
-            return;
-        }
-        // BlobFile which is read-only won't be reused for another writing,
-        // so it's safe and necessary to remove it from disk.
+        return;
     }
 
-
+    // BlobFile which is read-only won't be reused for another writing,
+    // so it's safe and necessary to remove it from disk.
     // Note that we must release the lock on blob_stat before removing it
     // from all blob_stats, or deadlocks could happen.
-    // As the blob_stat has been became read-only, it is safe to release the lock.
     LOG_INFO(
         log,
         "Removing BlobFile, blob_id={} read_only={} offset={} size={}",

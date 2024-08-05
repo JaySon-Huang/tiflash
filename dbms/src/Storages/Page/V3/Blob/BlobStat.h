@@ -88,7 +88,7 @@ public:
         /**
           * The return value is the valid data size remained in the BlobFile after the remove
           */
-        size_t removePosFromStat(BlobFileOffset offset, size_t buf_size, const std::unique_lock<std::mutex> &);
+        size_t removePosFromStat(BlobFileOffset offset, size_t buf_size);
 
         /**
          * This method is only used when blobstore restore

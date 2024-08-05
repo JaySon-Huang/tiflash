@@ -235,23 +235,25 @@ protected:
 
         if (unlikely(free_map.empty()))
         {
-            LOG_ERROR(Logger::get(), "Current space map is full");
+            LOG_ERROR(Logger::get(), "Current space map is full, {}", toDebugString());
             return std::make_tuple(INVALID_BLOBFILE_OFFSET, 0, false);
         }
         RUNTIME_CHECK_MSG(
             !free_map_invert_index.empty(),
             "Invalid state: free_map is empty but invert index is not empty");
+        // Find a free block that is larger or equal to `size`
         auto iter = free_map_invert_index.lower_bound(size);
         if (unlikely(iter == free_map_invert_index.end()))
         {
-            LOG_ERROR(Logger::get(), "Can't found any place to insert for size {}", size);
+            LOG_ERROR(Logger::get(), "Can't found any place to insert, size={} {}", size, toDebugString());
             return std::make_tuple(INVALID_BLOBFILE_OFFSET, free_map_invert_index.rbegin()->first, false);
         }
         auto length = iter->first;
+        assert(length >= size);
+        assert(!iter->second.empty());
         auto offset = *(iter->second.begin());
         bool is_expansion = (offset + length == end);
         deleteFromInvertIndex(length, offset);
-        assert(length >= size);
         free_map.erase(offset);
         if (length > size)
         {
