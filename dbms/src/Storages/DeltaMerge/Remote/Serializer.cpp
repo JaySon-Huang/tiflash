@@ -230,40 +230,36 @@ ColumnFileSetSnapshotPtr Serializer::deserializeColumnFileSet(
     const Remote::IDataStorePtr & data_store,
     const RowKeyRange & segment_range)
 {
-    auto empty_data_provider = std::make_shared<ColumnFileDataProviderNop>();
-    auto ret = std::make_shared<ColumnFileSetSnapshot>(empty_data_provider);
-    ret->column_files.reserve(proto.size());
+    ColumnFiles column_files;
+    column_files.reserve(proto.size());
     for (const auto & remote_column_file : proto)
     {
         if (remote_column_file.has_tiny())
         {
-            ret->column_files.push_back(deserializeCFTiny(dm_context, remote_column_file.tiny()));
+            column_files.emplace_back(deserializeCFTiny(dm_context, remote_column_file.tiny()));
         }
         else if (remote_column_file.has_delete_range())
         {
-            ret->column_files.push_back(deserializeCFDeleteRange(remote_column_file.delete_range()));
+            column_files.emplace_back(deserializeCFDeleteRange(remote_column_file.delete_range()));
         }
         else if (remote_column_file.has_big())
         {
             const auto & big_file = remote_column_file.big();
-            ret->column_files.push_back(deserializeCFBig(big_file, data_store, segment_range));
+            column_files.emplace_back(deserializeCFBig(big_file, data_store, segment_range));
         }
         else if (remote_column_file.has_in_memory())
         {
-            ret->column_files.push_back(deserializeCFInMemory(remote_column_file.in_memory()));
+            column_files.emplace_back(deserializeCFInMemory(remote_column_file.in_memory()));
         }
         else
         {
             RUNTIME_CHECK_MSG(false, "Unexpected proto ColumnFile");
         }
     }
-    for (const auto & column_file : ret->column_files)
-    {
-        ret->rows += column_file->getRows();
-        ret->bytes += column_file->getBytes();
-        ret->deletes += column_file->getDeletes();
-    }
-    return ret;
+    auto empty_data_provider = std::make_shared<ColumnFileDataProviderNop>();
+    return ColumnFileSetSnapshot::buildFromColumnFiles(
+        empty_data_provider,
+        std::move(column_files));
 }
 
 RemotePb::ColumnFileRemote Serializer::serializeCFInMemory(const ColumnFileInMemory & cf_in_mem, bool need_mem_data)

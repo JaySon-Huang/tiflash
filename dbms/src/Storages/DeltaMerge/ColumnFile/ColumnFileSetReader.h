@@ -88,7 +88,7 @@ class ColumnFileSetInputStream : public SkippableBlockInputStream
 {
 private:
     ColumnFileSetReader reader;
-    ColumnFiles & column_files;
+    const ColumnFiles & column_files;
     size_t column_files_count;
 
     ColumnFileReaderPtr cur_column_file_reader = {};
