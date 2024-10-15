@@ -427,12 +427,7 @@ ColumnFileSetSnapshotPtr ColumnFilePersistedSet::createSnapshot(const IColumnFil
         throw Exception("Rows and deletes check failed.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    return std::make_shared<ColumnFileSetSnapshot>(
-        data_provider,
-        std::move(column_files),
-        rows,
-        bytes,
-        deletes);
+    return std::make_shared<ColumnFileSetSnapshot>(data_provider, std::move(column_files), rows, bytes, deletes);
 }
 
-} // namespace DB
+} // namespace DB::DM
