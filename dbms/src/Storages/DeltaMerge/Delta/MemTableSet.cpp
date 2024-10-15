@@ -244,8 +244,8 @@ ColumnFileSetSnapshotPtr MemTableSet::createSnapshot(
 
     size_t total_rows = 0;
     size_t total_deletes = 0;
-    ColumnFiles column_files;
-    column_files.reserve(column_files.size());
+    ColumnFiles column_files_snap;
+    column_files_snap.reserve(column_files.size());
     for (const auto & file : column_files)
     {
         // ColumnFile is not a thread-safe object, but only ColumnFileInMemory may be appendable after its creation.
@@ -255,11 +255,11 @@ ColumnFileSetSnapshotPtr MemTableSet::createSnapshot(
             // Compact threads could update the value of ColumnFileInMemory,
             // and since ColumnFile is not multi-threads safe, we should create a new column file object.
             // TODO: When `disable_sharing == true`, may be we can safely use the same ptr without the clone.
-            column_files.emplace_back(m->clone());
+            column_files_snap.emplace_back(m->clone());
         }
         else
         {
-            column_files.emplace_back(file);
+            column_files_snap.emplace_back(file);
         }
         total_rows += file->getRows();
         total_deletes += file->getDeletes();
@@ -274,7 +274,7 @@ ColumnFileSetSnapshotPtr MemTableSet::createSnapshot(
         total_deletes,
         deletes.load());
 
-    return std::make_shared<ColumnFileSetSnapshot>(data_provider, std::move(column_files), rows, bytes, deletes);
+    return std::make_shared<ColumnFileSetSnapshot>(data_provider, std::move(column_files_snap), rows, bytes, deletes);
 }
 
 ColumnFileFlushTaskPtr MemTableSet::buildFlushTask(
