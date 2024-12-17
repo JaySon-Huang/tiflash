@@ -38,18 +38,18 @@ public:
 
         if (likely(reader.dmfile->useMetaV2()))
         {
-            // the col_mark is merged into metav2
+            // the col_mark is merged into ".merged" files
             return loadColMarkFromMetav2To(res, size);
         }
-        else if (unlikely(!reader.dmfile->getConfiguration()))
-        {
-            // without checksum, simply load the raw bytes from file
-            return loadRawColMarkTo(res, size);
-        }
-        else
+        else if (likely(reader.dmfile->getConfiguration()))
         {
             // checksum is enabled but not merged into meta v2
             return loadColMarkWithChecksumTo(res, size);
+        }
+        else
+        {
+            // without checksum, simply load the raw bytes from file
+            return loadRawColMarkTo(res, size);
         }
     }
 

@@ -264,7 +264,7 @@ void DMFileWriter::finalizeColumn(ColId col_id, DataTypePtr type)
     auto & col_stat = dmfile->meta->getColumnStats().at(col_id);
 
 #ifndef NDEBUG
-    auto examine_buffer_size = [&](auto & buf, auto & fp) {
+    auto examine_buffer_size = [](auto & buf, auto & fp) {
         if (!fp.isEncryptionEnabled())
         {
             auto fd = buf.getFD();
