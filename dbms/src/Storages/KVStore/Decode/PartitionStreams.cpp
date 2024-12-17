@@ -410,7 +410,11 @@ static inline std::pair<UInt64, UInt64> parseTS(UInt64 ts)
     return {physical, logical};
 }
 
-static inline void reportUpstreamLatency(const RegionDataReadInfoList & data_list_read, const LoggerPtr & log)
+static inline void reportUpstreamLatency(
+    const RegionDataReadInfoList & data_list_read,
+    const KeyspaceTableID ks_tbl_id,
+    const RegionID region_id,
+    const LoggerPtr & log)
 {
     if (unlikely(data_list_read.empty()))
     {
@@ -433,7 +437,12 @@ static inline void reportUpstreamLatency(const RegionDataReadInfoList & data_lis
         {
             LOG_INFO(
                 log,
-                "unexpected upstream latency, pk={} write_type={} latency_ms={} commit_ts={} physical_ms={} curr_ms={}",
+                "unexpected upstream latency, keyspace={} table_id={} region_id={} commit_rows={} pk={} write_type={}"
+                " latency_ms={} commit_ts={} physical_ms={} curr_ms={}",
+                ks_tbl_id.first,
+                ks_tbl_id.second,
+                region_id,
+                data_list_read.size(),
                 first_data_read.pk.toDebugString(),
                 first_data_read.write_type,
                 latency_ms,
@@ -465,7 +474,7 @@ DM::WriteResult RegionTable::writeCommittedByRegion(
         return std::nullopt;
 
     RegionDataReadInfoList & data_list_read = maybe_data_list_read.value();
-    reportUpstreamLatency(data_list_read, log);
+    reportUpstreamLatency(data_list_read, region->getKeyspaceTableID(), region->id(), log);
     auto write_result = writeRegionDataToStorage(context, region, data_list_read, log);
     auto prev_region_size = region->dataSize();
     RemoveRegionCommitCache(region, data_list_read);

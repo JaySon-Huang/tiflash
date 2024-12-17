@@ -496,9 +496,8 @@ std::pair<EngineStoreApplyRes, DM::WriteResult> Region::handleWriteRaftCmd(
                 }
                 LOG_ERROR(
                     log,
-                    "{} catch exception: {}, while applying `RegionTable::writeCommittedByRegion` on [term {}, index "
-                    "{}], "
-                    "entries {}",
+                    "{} catch exception: {}, while applying `RegionTable::writeCommittedByRegion` on"
+                    " term={} index={} entries={}",
                     toString(),
                     e.message(),
                     term,

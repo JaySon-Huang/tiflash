@@ -347,16 +347,6 @@ Region::~Region()
     data.reportDealloc(data.cf_data_size);
 }
 
-TableID Region::getMappedTableID() const
-{
-    return mapped_table_id;
-}
-
-KeyspaceID Region::getKeyspaceID() const
-{
-    return keyspace_id;
-}
-
 void Region::setPeerState(raft_serverpb::PeerState state)
 {
     meta.setPeerState(state);

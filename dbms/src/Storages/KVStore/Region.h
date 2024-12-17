@@ -20,6 +20,7 @@
 #include <Storages/KVStore/MultiRaft/RegionData.h>
 #include <Storages/KVStore/MultiRaft/RegionMeta.h>
 #include <Storages/KVStore/MultiRaft/RegionSerde.h>
+#include <Storages/KVStore/Types.h>
 #include <common/logger_useful.h>
 
 #include <shared_mutex>
@@ -209,8 +210,9 @@ public: // Stats
     RegionVersion version() const;
     RegionVersion confVer() const;
 
-    TableID getMappedTableID() const;
-    KeyspaceID getKeyspaceID() const;
+    TableID getMappedTableID() const { return mapped_table_id; }
+    KeyspaceID getKeyspaceID() const { return keyspace_id; }
+    KeyspaceTableID getKeyspaceTableID() const { return KeyspaceTableID{keyspace_id, mapped_table_id}; }
 
     /// get approx rows, bytes info about mem cache.
     std::pair<size_t, size_t> getApproxMemCacheInfo() const;
