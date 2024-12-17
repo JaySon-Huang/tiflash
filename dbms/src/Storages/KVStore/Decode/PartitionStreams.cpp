@@ -339,9 +339,9 @@ std::variant<RegionDataReadInfoList, RegionException::RegionReadStatus, LockInfo
     return data_list_read;
 }
 
-std::optional<RegionDataReadInfoList> ReadRegionCommitCache(const RegionPtr & region, bool lock_region)
+std::optional<RegionDataReadInfoList> ReadRegionCommitCache(const RegionPtr & region)
 {
-    auto scanner = region->createCommittedScanner(lock_region, true);
+    auto scanner = region->createCommittedScanner(/*use_lock=*/true, /*need_value=*/true);
 
     /// Some sanity checks for region meta.
     if (region->isPendingRemove())
@@ -385,10 +385,10 @@ std::optional<RegionDataReadInfoList> ReadRegionCommitCache(const RegionPtr & re
     return data_list_read;
 }
 
-void RemoveRegionCommitCache(const RegionPtr & region, const RegionDataReadInfoList & data_list_read, bool lock_region)
+void RemoveRegionCommitCache(const RegionPtr & region, const RegionDataReadInfoList & data_list_read)
 {
     /// Remove data in region.
-    auto remover = region->createCommittedRemover(lock_region);
+    auto remover = region->createCommittedRemover(/*use_lock=*/true);
     for (const auto & [handle, write_type, commit_ts, value] : data_list_read)
     {
         std::ignore = write_type;
@@ -410,13 +410,14 @@ static inline std::pair<UInt64, UInt64> parseTS(UInt64 ts)
     return {physical, logical};
 }
 
-static inline void reportUpstreamLatency(const RegionDataReadInfoList & data_list_read)
+static inline void reportUpstreamLatency(const RegionDataReadInfoList & data_list_read, const LoggerPtr & log)
 {
     if (unlikely(data_list_read.empty()))
     {
         return;
     }
-    auto ts = data_list_read.front().commit_ts;
+    const auto & first_data_read = data_list_read.front();
+    auto ts = first_data_read.commit_ts;
     auto [physical_ms, logical] = parseTS(ts);
     std::ignore = logical;
     UInt64 curr_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now())
@@ -426,6 +427,20 @@ static inline void reportUpstreamLatency(const RegionDataReadInfoList & data_lis
     {
         auto latency_ms = curr_ms - physical_ms;
         GET_METRIC(tiflash_raft_upstream_latency, type_write).Observe(static_cast<double>(latency_ms) / 1000.0);
+
+        // !!DEBUGGING!!
+        if (latency_ms > 1000)
+        {
+            LOG_INFO(
+                log,
+                "unexpected upstream latency, pk={} write_type={} latency_ms={} commit_ts={} physical_ms={} curr_ms={}",
+                first_data_read.pk.toDebugString(),
+                first_data_read.write_type,
+                latency_ms,
+                ts,
+                physical_ms,
+                curr_ms);
+        }
     }
 }
 
@@ -433,8 +448,7 @@ DM::WriteResult RegionTable::writeCommittedByRegion(
     Context & context,
     const RegionPtrWithBlock & region,
     RegionDataReadInfoList & data_list_to_remove,
-    const LoggerPtr & log,
-    bool lock_region)
+    const LoggerPtr & log)
 {
     std::optional<RegionDataReadInfoList> maybe_data_list_read = std::nullopt;
     if (region.pre_decode_cache)
@@ -444,17 +458,17 @@ DM::WriteResult RegionTable::writeCommittedByRegion(
     }
     else
     {
-        maybe_data_list_read = ReadRegionCommitCache(region, lock_region);
+        maybe_data_list_read = ReadRegionCommitCache(region);
     }
 
     if (!maybe_data_list_read.has_value())
         return std::nullopt;
 
     RegionDataReadInfoList & data_list_read = maybe_data_list_read.value();
-    reportUpstreamLatency(data_list_read);
+    reportUpstreamLatency(data_list_read, log);
     auto write_result = writeRegionDataToStorage(context, region, data_list_read, log);
     auto prev_region_size = region->dataSize();
-    RemoveRegionCommitCache(region, data_list_read, lock_region);
+    RemoveRegionCommitCache(region, data_list_read);
     auto new_region_size = region->dataSize();
     if likely (new_region_size <= prev_region_size)
     {
@@ -612,7 +626,7 @@ Block GenRegionBlockDataWithSchema(
     }); // Mock a GC safepoint for testing compaction filter
     region->tryCompactionFilter(gc_safepoint);
 
-    std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region, true);
+    std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region);
 
     Block res_block;
     // No committed data, just return

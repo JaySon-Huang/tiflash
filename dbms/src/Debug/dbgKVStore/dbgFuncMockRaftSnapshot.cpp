@@ -559,7 +559,7 @@ RegionPtrWithBlock::CachePtr GenRegionPreDecodeBlockData(const RegionPtr & regio
     std::optional<RegionDataReadInfoList> data_list_read = std::nullopt;
     try
     {
-        data_list_read = ReadRegionCommitCache(region, true);
+        data_list_read = ReadRegionCommitCache(region);
         if (!data_list_read)
             return nullptr;
     }

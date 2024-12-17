@@ -138,8 +138,7 @@ public:
         Context & context,
         const RegionPtrWithBlock & region,
         RegionDataReadInfoList & data_list_to_remove,
-        const LoggerPtr & log,
-        bool lock_region = true);
+        const LoggerPtr & log);
 
     /// Check transaction locks in region, and write committed data in it into storage engine if check passed. Otherwise throw an LockException.
     /// The write logic is the same as #writeCommittedByRegion, with some extra checks about region version and conf_version.

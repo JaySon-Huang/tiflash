@@ -29,11 +29,10 @@ class StorageDeltaMerge;
 class TMTContext;
 struct RegionPtrWithBlock;
 
-std::optional<RegionDataReadInfoList> ReadRegionCommitCache(const RegionPtr & region, bool lock_region);
+std::optional<RegionDataReadInfoList> ReadRegionCommitCache(const RegionPtr & region);
 void RemoveRegionCommitCache(
     const RegionPtr & region,
-    const RegionDataReadInfoList & data_list_read,
-    bool lock_region = true);
+    const RegionDataReadInfoList & data_list_read);
 
 std::tuple<TableLockHolder, std::shared_ptr<StorageDeltaMerge>, DecodingStorageSchemaSnapshotConstPtr> //
 AtomicGetStorageSchema(RegionID region_id, KeyspaceID keyspace_id, TableID table_id, TMTContext & tmt);

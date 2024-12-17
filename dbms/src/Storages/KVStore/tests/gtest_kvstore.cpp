@@ -661,7 +661,7 @@ TEST_F(RegionKVStoreOldTest, RegionReadWrite)
         }
         {
             // The record is committed since there is a write record.
-            std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region, true);
+            std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region);
             ASSERT_TRUE(data_list_read);
             ASSERT_EQ(1, data_list_read->size());
             RemoveRegionCommitCache(region, *data_list_read);
@@ -714,7 +714,7 @@ TEST_F(RegionKVStoreOldTest, RegionReadWrite)
         region->remove("write", RecordKVFormat::genKey(table_id, 4, 8));
         ASSERT_EQ(1, region->writeCFCount());
         {
-            std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region, true);
+            std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region);
             ASSERT_TRUE(data_list_read);
             ASSERT_EQ(1, data_list_read->size());
             RemoveRegionCommitCache(region, *data_list_read);

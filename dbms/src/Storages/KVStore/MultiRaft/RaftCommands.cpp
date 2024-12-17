@@ -478,7 +478,7 @@ std::pair<EngineStoreApplyRes, DM::WriteResult> Region::handleWriteRaftCmd(
             try
             {
                 write_result
-                    = RegionTable::writeCommittedByRegion(context, shared_from_this(), data_list_to_remove, log, true);
+                    = RegionTable::writeCommittedByRegion(context, shared_from_this(), data_list_to_remove, log);
             }
             catch (DB::Exception & e)
             {

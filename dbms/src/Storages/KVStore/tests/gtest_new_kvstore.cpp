@@ -134,7 +134,7 @@ try
         region->insert("default", TiKVKey::copyFrom(str_key), TiKVValue::copyFrom(str_val_default));
         ASSERT_EQ(root_of_kvstore_mem_trackers->get(), str_key.dataSize() + str_val_default.size());
         region->insert("write", TiKVKey::copyFrom(str_key), TiKVValue::copyFrom(str_val_write));
-        std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region, true);
+        std::optional<RegionDataReadInfoList> data_list_read = ReadRegionCommitCache(region);
         ASSERT_TRUE(data_list_read);
         ASSERT_EQ(1, data_list_read->size());
         RemoveRegionCommitCache(region, *data_list_read);
@@ -408,7 +408,7 @@ try
                           ->rawWrite(region_id, {str_key}, {str_val}, {WriteCmdType::Put}, {ColumnFamilyType::Write});
                 EXPECT_THROW(proxy_instance->doApply(kvs, ctx.getTMTContext(), cond, region_id, index), Exception);
                 UNUSED(term);
-                EXPECT_THROW(ReadRegionCommitCache(kvr1, true), Exception);
+                EXPECT_THROW(ReadRegionCommitCache(kvr1), Exception);
             }
         }
     }

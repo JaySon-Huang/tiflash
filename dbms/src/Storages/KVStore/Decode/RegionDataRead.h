@@ -17,8 +17,6 @@
 #include <Storages/DeltaMerge/ExternalDTFileInfo.h>
 #include <Storages/KVStore/Decode/DecodedTiKVKeyValue.h>
 
-#include <list>
-
 namespace DB
 {
 
@@ -51,6 +49,7 @@ struct RegionDataReadInfo
 
 public:
     RawTiDBPK pk;
+    // write_type == Region::PutFlag / Region::DelFlag
     UInt8 write_type;
     Timestamp commit_ts;
     std::shared_ptr<const TiKVValue> value;

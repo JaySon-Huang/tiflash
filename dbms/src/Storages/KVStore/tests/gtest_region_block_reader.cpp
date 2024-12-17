@@ -668,7 +668,7 @@ try
         region->insert(ColumnFamilyType::Write, TiKVKey(bytesFromHexString(k)), TiKVValue(bytesFromHexString(v)));
     }
 
-    auto data_list_read = ReadRegionCommitCache(region, true);
+    auto data_list_read = ReadRegionCommitCache(region);
     ASSERT_TRUE(data_list_read.has_value());
 
     auto decoding_schema = getDecodingStorageSchemaSnapshot(table_info);
