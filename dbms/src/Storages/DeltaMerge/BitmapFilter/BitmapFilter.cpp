@@ -28,7 +28,7 @@ void BitmapFilter::set(BlockInputStreamPtr & stream)
     for (;;)
     {
         FilterPtr f = nullptr;
-        auto blk = stream->read(f, /*res_filter*/ true);
+        auto blk = stream->read();
         if (unlikely(!blk))
         {
             break;

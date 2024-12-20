@@ -35,13 +35,7 @@ public:
     Block getHeader() const override { return action.getHeader(); }
 
 protected:
-    Block readImpl() override
-    {
-        FilterPtr filter_ignored;
-        return readImpl(filter_ignored, false);
-    }
-
-    Block readImpl(FilterPtr & res_filter, bool return_filter) override;
+    Block readImpl() override;
 
 public:
     struct Options

@@ -67,7 +67,6 @@ private:
 
     DM::SegmentPtr cur_segment;
 
-    FilterPtr filter_ignored = nullptr;
     std::optional<Block> t_block;
 
     size_t total_rows = 0;

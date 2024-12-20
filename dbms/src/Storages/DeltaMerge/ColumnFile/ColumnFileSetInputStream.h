@@ -47,13 +47,7 @@ public:
 
     size_t skipNextBlock() override;
 
-    Block read() override
-    {
-        FilterPtr filter = nullptr;
-        return read(filter, false);
-    }
-
-    Block read(FilterPtr & res_filter, bool return_filter) override;
+    Block read() override;
 
     Block readWithFilter(const IColumn::Filter & filter) override;
 };

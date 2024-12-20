@@ -44,7 +44,7 @@ RNSegmentInputStream::~RNSegmentInputStream()
     GET_METRIC(tiflash_disaggregated_breakdown_duration_seconds, type_stream_read).Observe(duration_read_sec);
 }
 
-Block RNSegmentInputStream::readImpl(FilterPtr & res_filter, bool return_filter)
+Block RNSegmentInputStream::readImpl()
 {
     if (done)
         return {};
@@ -84,7 +84,7 @@ Block RNSegmentInputStream::readImpl(FilterPtr & res_filter, bool return_filter)
 
         Stopwatch w{CLOCK_MONOTONIC_COARSE};
         FAIL_POINT_PAUSE(FailPoints::pause_when_reading_from_dt_stream);
-        Block res = current_seg_task->getInputStream()->read(res_filter, return_filter);
+        Block res = current_seg_task->getInputStream()->read();
         duration_read_sec += w.elapsedSeconds();
 
         if (!res)

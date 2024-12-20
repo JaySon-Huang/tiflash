@@ -91,13 +91,7 @@ public:
     String getName() const override { return "DeltaMergeVersionFilter"; }
     Block getHeader() const override { return header; }
 
-    Block read() override
-    {
-        FilterPtr f;
-        return read(f, false);
-    }
-
-    Block read(FilterPtr & res_filter, bool return_filter) override;
+    Block read() override;
 
     size_t getEffectiveNumRows() const { return effective_num_rows; }
     size_t getNotCleanRows() const { return not_clean_rows; }

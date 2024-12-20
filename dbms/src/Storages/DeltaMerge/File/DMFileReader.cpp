@@ -133,6 +133,7 @@ bool DMFileReader::getSkippedRows(size_t & skip_rows)
         skip_rows += pack_stats[next_pack_id].rows;
     addSkippedRows(skip_rows);
 
+    // return false if it is the end of stream.
     return !read_block_infos.empty();
 }
 
@@ -140,7 +141,10 @@ bool DMFileReader::getSkippedRows(size_t & skip_rows)
 size_t DMFileReader::skipNextBlock()
 {
     if (size_t skip_rows = 0; !getSkippedRows(skip_rows))
+    {
+        // no block left in the stream
         return 0;
+    }
 
     const auto [start_pack_id, pack_count, rs_result, read_rows] = read_block_infos.front();
     read_block_infos.pop_front();

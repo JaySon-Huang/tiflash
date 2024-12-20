@@ -55,9 +55,6 @@ Block FilterBlockInputStream::readImpl(FilterPtr & res_filter, bool return_filte
     /// Until non-empty block after filtering or end of stream.
     while (true)
     {
-        // The child of FilterBlockInputStream is UnorderInputStream typically
-        // which does not support read(FilterPtr & res_filter, bool return_filter),
-        // so we call read() here.
         res = children.back()->read();
 
         if (!res)

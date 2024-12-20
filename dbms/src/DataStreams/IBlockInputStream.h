@@ -73,12 +73,6 @@ public:
       */
     virtual Block read() = 0;
 
-    /** Read next block.
-      * If 'return_filter' is true, and this stream will do some filtering, then this function will return the original block,
-      * and returns the filter data by 'res_filter'. The caller is responsible to do filtering itself.
-      */
-    virtual Block read(FilterPtr & /*res_filter*/, bool /*return_filter*/) { return read(); }
-
     /** Get information about the last block received.
       */
     virtual BlockExtraInfo getBlockExtraInfo() const

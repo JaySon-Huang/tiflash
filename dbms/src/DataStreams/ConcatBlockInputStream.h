@@ -41,17 +41,11 @@ public:
 protected:
     Block readImpl() override
     {
-        FilterPtr filter_ignored;
-        return readImpl(filter_ignored, false);
-    }
-
-    Block readImpl(FilterPtr & res_filter, bool return_filter) override
-    {
         Block res;
 
         while (current_stream != children.end())
         {
-            res = (*current_stream)->read(res_filter, return_filter);
+            res = (*current_stream)->read();
 
             if (res)
                 break;

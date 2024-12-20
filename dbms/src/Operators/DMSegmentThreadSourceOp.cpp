@@ -107,7 +107,7 @@ OperatorStatus DMSegmentThreadSourceOp::executeIOImpl()
     }
     FAIL_POINT_PAUSE(FailPoints::pause_when_reading_from_dt_stream);
 
-    Block res = cur_stream->read(filter_ignored, false);
+    Block res = cur_stream->read();
     if (res)
     {
         t_block.emplace(std::move(res));

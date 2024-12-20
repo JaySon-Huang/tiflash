@@ -20,9 +20,7 @@ namespace ProfileEvents
 extern const Event DMCleanReadRows;
 } // namespace ProfileEvents
 
-namespace DB
-{
-namespace DM
+namespace DB::DM
 {
 template <DMVersionFilterMode MODE>
 void DMVersionFilterBlockInputStream<MODE>::readPrefix()
@@ -43,7 +41,7 @@ void DMVersionFilterBlockInputStream<MODE>::readSuffix()
 }
 
 template <DMVersionFilterMode MODE>
-Block DMVersionFilterBlockInputStream<MODE>::read(FilterPtr & res_filter, bool return_filter)
+Block DMVersionFilterBlockInputStream<MODE>::read()
 {
     while (true)
     {
@@ -418,32 +416,22 @@ Block DMVersionFilterBlockInputStream<MODE>::read(FilterPtr & res_filter, bool r
             return getNewBlock(cur_raw_block);
         }
 
-        if (return_filter)
+        Block res;
+        if (cur_raw_block.segmentRowIdCol() == nullptr)
         {
-            // The caller of this method should do the filtering, we just need to return the original block.
-            res_filter = &filter;
-            return getNewBlock(cur_raw_block);
+            res = select_by_colid_action.filterAndTransform(cur_raw_block, filter, passed_count);
         }
         else
         {
-            Block res;
-            if (cur_raw_block.segmentRowIdCol() == nullptr)
-            {
-                res = select_by_colid_action.filterAndTransform(cur_raw_block, filter, passed_count);
-            }
-            else
-            {
-                // `DMVersionFilterBlockInputStream` is the last stage for generating segment row id.
-                // In the way we use it, the other columns are not used subsequently.
-                res.setSegmentRowIdCol(cur_raw_block.segmentRowIdCol()->filter(filter, passed_count));
-            }
-            return res;
+            // `DMVersionFilterBlockInputStream` is the last stage for generating segment row id.
+            // In the way we use it, the other columns are not used subsequently.
+            res.setSegmentRowIdCol(cur_raw_block.segmentRowIdCol()->filter(filter, passed_count));
         }
-    }
+        return res;
+    } // read until block is returned or the sub-stream ends
 }
 
 template class DMVersionFilterBlockInputStream<DMVersionFilterMode::MVCC>;
 template class DMVersionFilterBlockInputStream<DMVersionFilterMode::COMPACT>;
 
-} // namespace DM
-} // namespace DB
+} // namespace DB::DM

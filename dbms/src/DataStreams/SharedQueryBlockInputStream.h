@@ -21,8 +21,6 @@
 #include <Common/typeid_cast.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 
-#include <thread>
-
 namespace DB
 {
 namespace FailPoints
@@ -50,7 +48,7 @@ public:
         children.push_back(in);
     }
 
-    ~SharedQueryBlockInputStream()
+    ~SharedQueryBlockInputStream() override
     {
         try
         {
@@ -110,13 +108,13 @@ public:
         ptr->cancel(kill);
     }
 
-    virtual void collectNewThreadCountOfThisLevel(int & cnt) override { ++cnt; }
+    void collectNewThreadCountOfThisLevel(int & cnt) override { ++cnt; }
 
 protected:
     /// The BlockStreamProfileInfo of SharedQuery is useless,
     /// and it will trigger tsan UT fail because of data race.
     /// So overriding method `read` here.
-    Block read(FilterPtr &, bool) override
+    Block readImpl() override
     {
         std::unique_lock lock(mutex);
 
@@ -138,7 +136,6 @@ protected:
 
         return block;
     }
-    Block readImpl() override { throw Exception("Unsupport"); }
 
     void fetchBlocks()
     {

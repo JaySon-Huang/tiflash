@@ -17,18 +17,16 @@
 #include <Common/FailPoint.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <Storages/DeltaMerge/DMContext_fwd.h>
+#include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 
-namespace DB
-{
-namespace FailPoints
+namespace DB::FailPoints
 {
 extern const char pause_when_reading_from_dt_stream[];
-} // namespace FailPoints
+} // namespace DB::FailPoints
 
-namespace DM
+namespace DB::DM
 {
 
 class DMSegmentThreadInputStream : public IProfilingBlockInputStream
@@ -66,12 +64,6 @@ public:
 protected:
     Block readImpl() override
     {
-        FilterPtr filter_ignored;
-        return readImpl(filter_ignored, false);
-    }
-
-    Block readImpl(FilterPtr & res_filter, bool return_filter) override
-    {
         if (done)
             return {};
         while (true)
@@ -103,8 +95,7 @@ protected:
             }
             FAIL_POINT_PAUSE(FailPoints::pause_when_reading_from_dt_stream);
 
-            Block res = cur_stream->read(res_filter, return_filter);
-
+            Block res = cur_stream->read();
             if (res)
             {
                 total_rows += res.rows();
@@ -143,5 +134,4 @@ private:
     LoggerPtr log;
 };
 
-} // namespace DM
-} // namespace DB
+} // namespace DB::DM

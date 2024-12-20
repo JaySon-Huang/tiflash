@@ -44,12 +44,6 @@ IProfilingBlockInputStream::IProfilingBlockInputStream()
 
 Block IProfilingBlockInputStream::read()
 {
-    FilterPtr filter;
-    return read(filter, false);
-}
-
-Block IProfilingBlockInputStream::read(FilterPtr & res_filter, bool return_filter)
-{
     FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::exception_during_query_run);
 
     if (total_rows_approx)
@@ -76,10 +70,7 @@ Block IProfilingBlockInputStream::read(FilterPtr & res_filter, bool return_filte
 
     if (!limit_exceeded_need_break)
     {
-        if (return_filter)
-            res = readImpl(res_filter, return_filter);
-        else
-            res = readImpl();
+        res = readImpl();
     }
 
     if (res)

@@ -69,7 +69,7 @@ Block LateMaterializationBlockInputStream::read()
     // Until non-empty block after filtering or end of stream.
     while (true)
     {
-        filter_column_block = filter_column_stream->read(filter, true);
+        filter_column_block = filter_column_stream->read();
 
         // If filter_column_block is empty, it means that the stream has ended.
         // No need to read the rest_column_stream, just return an empty block.
