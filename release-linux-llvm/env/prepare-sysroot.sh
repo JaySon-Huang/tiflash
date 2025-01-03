@@ -18,7 +18,7 @@ set -ueox pipefail
 
 CMAKE_VERSION="3.24.2"
 ARCH=$(uname -m)
-LLVM_VERSION="17.0.6"
+LLVM_VERSION="19.1.6"
 CCACHE_VERSION="4.10.2"
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 SYSROOT="${SCRIPTPATH}/sysroot"
