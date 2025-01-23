@@ -23,6 +23,8 @@
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 
+#include <memory>
+
 namespace DB::DM
 {
 

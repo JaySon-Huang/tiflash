@@ -71,6 +71,7 @@
 
 #include <ext/scope_guard.h>
 #include <memory>
+#include "Storages/DeltaMerge/File/DMFilePackFilter_fwd.h"
 
 
 namespace ProfileEvents
@@ -531,7 +532,7 @@ Segment::SegmentMetaInfos Segment::readAllSegmentsMetaInfoInRange( //
     {
         // If there is a table building cache, then other table may block to read the built cache.
         // If the remote reader causes much time to retrieve data, then these tasks could block here.
-        // However, when the execlusive holder is canceled due to timeout, the readers could eventually get the lock.
+        // However, when the exclusive holder is canceled due to timeout, the readers could eventually get the lock.
         auto lock = end_to_segment_id_cache->writeLock();
         // - Set to `true`: The building task is done.
         // - Set to `false`: It is not build yet, or it is building.
@@ -573,7 +574,7 @@ Segment::SegmentMetaInfos Segment::readAllSegmentsMetaInfoInRange( //
     if (cancel_handle->isCanceled())
     {
         LOG_INFO(log, "FAP is canceled when building segments");
-        // FAP task would be cleaned in FastAddPeerImplWrite. So returning incompelete result could be OK.
+        // FAP task would be cleaned in FastAddPeerImplWrite. So returning incomplete result could be OK.
         return {};
     }
 }
@@ -1405,7 +1406,7 @@ StableValueSpacePtr Segment::prepareMergeDelta(
         segment_snap,
         rowkey_range,
         dm_context.stable_pack_rows,
-        /*reorginize_block*/ true);
+        /*reorganize_block*/ true);
 
     auto new_stable = createNewStable(dm_context, schema_snap, data_stream, segment_snap->stable->getId(), wbs);
 
@@ -2806,7 +2807,7 @@ std::pair<DeltaIndexPtr, bool> Segment::ensurePlace(
 {
     const auto & stable_snap = segment_snap->stable;
     auto delta_snap = delta_reader->getDeltaSnap();
-    // Try to clone from the sahred delta index, if it fails to reuse the shared delta index,
+    // Try to clone from the shared delta index, if it fails to reuse the shared delta index,
     // it will return an empty delta index and we should place it in the following branch.
     auto my_delta_index = delta_snap->getSharedDeltaIndex()->tryClone(delta_snap->getRows(), delta_snap->getDeletes());
     auto my_delta_tree = my_delta_index->getDeltaTree();
@@ -3211,7 +3212,6 @@ BitmapFilterPtr Segment::buildBitmapFilterStableOnly(
         new_pack_filter_results,
         /*is_fast_scan*/ false,
         /*enable_del_clean_read*/ false,
-        /*read_packs*/ {},
         /*need_row_id*/ true);
     stream = std::make_shared<DMRowKeyFilterBlockInputStream<true>>(stream, read_ranges, 0);
     const ColumnDefines read_columns{
@@ -3262,7 +3262,6 @@ SkippableBlockInputStreamPtr Segment::getConcatSkippableBlockInputStream(
         pack_filter_results,
         is_fast_scan,
         enable_del_clean_read,
-        /* read_packs */ {},
         NeedRowID);
 
     auto columns_to_read_ptr = std::make_shared<ColumnDefines>(columns_to_read);
@@ -3319,7 +3318,6 @@ std::tuple<SkippableBlockInputStreamPtr, bool> Segment::getConcatVectorIndexBloc
         pack_filter_results,
         is_fast_scan,
         enable_del_clean_read,
-        /* read_packs */ {},
         NeedRowID,
         bitmap_filter);
 
