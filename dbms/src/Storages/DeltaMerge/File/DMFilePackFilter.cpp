@@ -302,6 +302,16 @@ void DMFilePackFilter::tryLoadIndex(RSCheckParam & param, ColId col_id)
     loadIndex(param.indexes, dmfile, file_provider, index_cache, set_cache_if_miss, col_id, read_limiter, scan_context);
 }
 
+/**
+ * @brief For all the packs in `pack_filter_results`, if all the rows in the pack
+ *        compliant with RowKey filter and MVCC filter (by `start_ts`) requirements, then
+ *        we skip reading the packs from disk and return the skipped ranges and new
+ *        PackFilterResults for building bitmap.
+ * @return <SkippedRanges, NewPackFilterResults>
+ *        - SkippedRanges: All the rows in the ranges compliant the requirements
+ *        - NewPackFilterResults: Those pack should be read from disk and go through the
+ *                                RowKey filter and MVCC filter
+ */
 std::pair<std::vector<DMFilePackFilter::Range>, DMFilePackFilterResults> DMFilePackFilter::
     getSkippedRangeAndFilterForBitmapFilter(
         const DMContext & dm_context,
@@ -344,6 +354,8 @@ std::pair<std::vector<DMFilePackFilter::Range>, DMFilePackFilterResults> DMFileP
             if (handle_res[pack_id] == RSResult::Some || pack_stat.not_clean > 0
                 || pack_filter->getMaxVersion(dmfile, pack_id, file_provider, dm_context.scan_context) > start_ts)
             {
+                // `not_clean > 0` means there are more than one version for some rowkeys in this pack
+                // `pack.max_version > start_ts` means some rows will be filtered by MVCC reading
                 // We need to read this pack to do RowKey or MVCC filter.
                 continue;
             }

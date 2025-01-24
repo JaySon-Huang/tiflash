@@ -71,6 +71,7 @@
 
 #include <ext/scope_guard.h>
 #include <memory>
+#include "Storages/DeltaMerge/File/DMFilePackFilter_fwd.h"
 
 
 namespace ProfileEvents
@@ -3211,7 +3212,6 @@ BitmapFilterPtr Segment::buildBitmapFilterStableOnly(
         new_pack_filter_results,
         /*is_fast_scan*/ false,
         /*enable_del_clean_read*/ false,
-        /*read_packs*/ {},
         /*need_row_id*/ true);
     stream = std::make_shared<DMRowKeyFilterBlockInputStream<true>>(stream, read_ranges, 0);
     const ColumnDefines read_columns{
@@ -3262,7 +3262,6 @@ SkippableBlockInputStreamPtr Segment::getConcatSkippableBlockInputStream(
         pack_filter_results,
         is_fast_scan,
         enable_del_clean_read,
-        /* read_packs */ {},
         NeedRowID);
 
     auto columns_to_read_ptr = std::make_shared<ColumnDefines>(columns_to_read);
@@ -3319,7 +3318,6 @@ std::tuple<SkippableBlockInputStreamPtr, bool> Segment::getConcatVectorIndexBloc
         pack_filter_results,
         is_fast_scan,
         enable_del_clean_read,
-        /* read_packs */ {},
         NeedRowID,
         bitmap_filter);
 
