@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 #include <magic_enum.hpp>

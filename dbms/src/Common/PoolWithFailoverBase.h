@@ -20,7 +20,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/randomSeed.h>
 #include <Core/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <time.h>
 
 #include <climits>

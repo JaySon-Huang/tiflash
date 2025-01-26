@@ -35,7 +35,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/CancellationHook.h>
 #include <TiDB/Collation/Collator.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <functional>
 #include <memory>

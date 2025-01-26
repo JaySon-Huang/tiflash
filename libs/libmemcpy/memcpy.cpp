@@ -14,7 +14,7 @@
 
 #ifndef NO_TIFLASH_INTERNAL_MEMCPY
 
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 
 /// This is needed to generate an object file for linking.
 

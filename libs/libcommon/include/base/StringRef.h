@@ -15,11 +15,11 @@
 #pragma once
 
 #include <city.h>
-#include <common/defines.h>
-#include <common/mem_utils.h>
-#include <common/mem_utils_opt.h>
-#include <common/types.h>
-#include <common/unaligned.h>
+#include <base/defines.h>
+#include <base/mem_utils.h>
+#include <base/mem_utils_opt.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 
 #include <cassert>
 #include <functional>

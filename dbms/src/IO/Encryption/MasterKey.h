@@ -18,7 +18,7 @@
 #include <Common/TiFlashException.h>
 #include <IO/Encryption/AESCTRCipher.h>
 #include <IO/Encryption/EncryptionKey.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

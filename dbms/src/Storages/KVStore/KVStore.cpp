@@ -32,7 +32,7 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/KVStore/Types.h>
 #include <Storages/StorageDeltaMerge.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <mutex>
 #include <tuple>

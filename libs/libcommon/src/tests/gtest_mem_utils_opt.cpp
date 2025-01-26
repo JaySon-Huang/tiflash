@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/defines.h>
-#include <common/mem_utils_opt.h>
-#include <common/memcpy.h>
+#include <base/defines.h>
+#include <base/mem_utils_opt.h>
+#include <base/memcpy.h>
 #include <fmt/core.h>
 #include <gtest/gtest.h>
 

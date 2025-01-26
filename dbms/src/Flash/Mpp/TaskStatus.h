@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 namespace DB
 {

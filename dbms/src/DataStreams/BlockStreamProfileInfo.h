@@ -20,7 +20,7 @@
 #include <vector>
 
 #if __APPLE__
-#include <common/apple_rt.h>
+#include <base/apple_rt.h>
 #endif
 
 namespace DB

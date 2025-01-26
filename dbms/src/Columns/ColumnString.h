@@ -20,7 +20,7 @@
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 #include <TiDB/Collation/CollatorUtils.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 
 namespace DB
 {

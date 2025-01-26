@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 namespace DB

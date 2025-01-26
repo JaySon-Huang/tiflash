@@ -26,7 +26,7 @@
 #include <Flash/Mpp/MPPTunnelSet.h>
 #include <Flash/Mpp/TaskStatus.h>
 #include <Interpreters/Context_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <kvproto/mpp.pb.h>
 
 #include <atomic>

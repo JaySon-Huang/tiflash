@@ -18,7 +18,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/trivial_value_traits.hpp>

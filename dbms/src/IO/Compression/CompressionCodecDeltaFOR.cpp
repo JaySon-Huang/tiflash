@@ -18,7 +18,7 @@
 #include <IO/Compression/CompressionCodecFOR.h>
 #include <IO/Compression/CompressionInfo.h>
 #include <IO/Compression/EncodingUtil.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <magic_enum.hpp>
 

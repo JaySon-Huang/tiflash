@@ -16,7 +16,7 @@
 #include <malloc.h>
 #endif
 #include <Common/StackTrace.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <execinfo.h>
 StackTrace::StackTrace()
 {

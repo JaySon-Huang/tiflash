@@ -23,7 +23,7 @@
 #include <Storages/DeltaMerge/Remote/DisaggTaskId.h>
 #include <Storages/DeltaMerge/Remote/WNDisaggSnapshotManager_fwd.h>
 #include <Storages/KVStore/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/chrono.h>
 
 namespace DB::DM::Remote

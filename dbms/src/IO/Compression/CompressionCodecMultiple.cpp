@@ -18,7 +18,7 @@
 #include <IO/Compression/CompressionInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 
 namespace DB

@@ -20,7 +20,7 @@
 #include <Flash/Coprocessor/TiDBTableScan.h>
 #include <Storages/DeltaMerge/ColumnDefine_fwd.h>
 #include <TiDB/Schema/TiDB_fwd.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 namespace DB
 {

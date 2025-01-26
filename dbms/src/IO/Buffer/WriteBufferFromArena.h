@@ -16,7 +16,7 @@
 
 #include <Common/Arena.h>
 #include <IO/Buffer/WriteBuffer.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 
 namespace DB

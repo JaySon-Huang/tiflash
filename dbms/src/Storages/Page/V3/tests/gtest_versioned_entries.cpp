@@ -27,7 +27,7 @@
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 #include <iterator>

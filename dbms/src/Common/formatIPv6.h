@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 #define IPV4_BINARY_LENGTH 4
 #define IPV6_BINARY_LENGTH 16

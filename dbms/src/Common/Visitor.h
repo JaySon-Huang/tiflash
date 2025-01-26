@@ -16,7 +16,7 @@
 
 #include <Common/Exception.h>
 #include <Common/TypeList.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
 /* Generic utils which are intended for visitor pattern implementation.
  * The original purpose is to provide possibility to get concrete template specialisation for type in list.

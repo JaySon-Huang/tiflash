@@ -27,7 +27,7 @@
 #include <Storages/DeltaMerge/tests/gtest_segment_util.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <gtest/gtest.h>
 
 #include <future>

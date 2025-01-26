@@ -16,7 +16,7 @@
 
 #include <IO/BaseFile/RandomAccessFile.h>
 #include <IO/BaseFile/WritableFile.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 

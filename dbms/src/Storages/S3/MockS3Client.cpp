@@ -45,8 +45,8 @@
 #include <aws/s3/model/Object.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
+#include <base/types.h>
 #include <boost_wrapper/string_split.h>
-#include <common/types.h>
 #include <fiu.h>
 
 #include <boost/algorithm/string/classification.hpp>

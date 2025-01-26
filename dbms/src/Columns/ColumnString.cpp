@@ -18,7 +18,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <TiDB/Collation/Collator.h>
 #include <TiDB/Collation/CollatorUtils.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 #include <fmt/core.h>
 
 #include <ext/scope_guard.h>

@@ -17,7 +17,7 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/BaseFile/RateLimiter.h>
 #include <IO/BaseFile/WriteReadableFile.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace CurrentMetrics
 {

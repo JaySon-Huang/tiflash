@@ -14,9 +14,9 @@
 
 #include <Poco/NumberParser.h>
 #include <Poco/UTF8Encoding.h>
-#include <common/JSON.h>
-#include <common/find_symbols.h>
-#include <common/preciseExp10.h>
+#include <base/JSON.h>
+#include <base/find_symbols.h>
+#include <base/preciseExp10.h>
 #include <string.h>
 
 #include <string>

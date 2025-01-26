@@ -16,8 +16,8 @@
 
 #include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
-#include <common/likely.h>
-#include <common/shift10.h>
+#include <base/likely.h>
+#include <base/shift10.h>
 #include <double-conversion/double-conversion.h>
 
 #include <type_traits>

@@ -20,13 +20,13 @@ if (APPLE)
     endif ()
 endif ()
 
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/base/config_common.h)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/base/config_common.h.in ${CONFIG_COMMON})
 
 if (APPLE)
     add_library (apple_rt
         src/apple_rt.cpp
-        include/common/apple_rt.h
+        include/base/apple_rt.h
     )
     target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 endif ()
@@ -53,29 +53,29 @@ add_library (common ${SPLIT_SHARED}
     src/detect_features.cpp
     src/avx2_mem_utils_impl.cpp
 
-    include/common/types.h
-    include/common/DateLUT.h
-    include/common/DateLUTImpl.h
-    include/common/LocalDate.h
-    include/common/LocalDateTime.h
-    include/common/ErrorHandlers.h
-    include/common/preciseExp10.h
-    include/common/shift10.h
-    include/common/intExp.h
-    include/common/mremap.h
-    include/common/likely.h
-    include/common/strong_typedef.h
-    include/common/JSON.h
-    include/common/simd.h
-    include/common/getMemoryAmount.h
-    include/common/demangle.h
-    include/common/mem_utils.h
-    include/common/crc64_arch/crc64_aarch64.h
-    include/common/crc64_arch/crc64_x86.h
-    include/common/crc64_table.h
-    include/common/crc64_fast.h
-    include/common/crc64.h
-    include/common/detect_features.h
+    include/base/types.h
+    include/base/DateLUT.h
+    include/base/DateLUTImpl.h
+    include/base/LocalDate.h
+    include/base/LocalDateTime.h
+    include/base/ErrorHandlers.h
+    include/base/preciseExp10.h
+    include/base/shift10.h
+    include/base/intExp.h
+    include/base/mremap.h
+    include/base/likely.h
+    include/base/strong_typedef.h
+    include/base/JSON.h
+    include/base/simd.h
+    include/base/getMemoryAmount.h
+    include/base/demangle.h
+    include/base/mem_utils.h
+    include/base/crc64_arch/crc64_aarch64.h
+    include/base/crc64_arch/crc64_x86.h
+    include/base/crc64_table.h
+    include/base/crc64_fast.h
+    include/base/crc64.h
+    include/base/detect_features.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

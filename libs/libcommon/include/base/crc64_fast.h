@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #pragma once
-#include <common/crc64_table.h>
+#include <base/crc64_table.h>
 namespace crc64::_detail
 {
 #if defined(TIFLASH_ENABLE_ASIMD_SUPPORT) || __SSE2__

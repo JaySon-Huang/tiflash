@@ -14,7 +14,7 @@
 
 #include <Flash/LogSearch.h>
 #include <Poco/DeflatingStream.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 #include <ext/scope_guard.h>

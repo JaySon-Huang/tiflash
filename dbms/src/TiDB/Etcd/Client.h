@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Common/Logger.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <etcd/kv.pb.h>
 #include <etcd/v3election.pb.h>
 

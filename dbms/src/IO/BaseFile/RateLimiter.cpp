@@ -18,8 +18,8 @@
 #include <Common/logger_useful.h>
 #include <IO/BaseFile/RateLimiter.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <base/likely.h>
 #include <boost_wrapper/string.h>
-#include <common/likely.h>
 
 #include <fstream>
 

@@ -21,7 +21,7 @@
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/Remote/Serializer_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/container_hash/hash_fwd.hpp>
 

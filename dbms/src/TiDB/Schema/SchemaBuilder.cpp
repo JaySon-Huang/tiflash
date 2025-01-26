@@ -42,7 +42,7 @@
 #include <TiDB/Schema/SchemaBuilder.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/join.hpp>

@@ -17,7 +17,7 @@
 #include <AggregateFunctions/AggregateFunctionMinMaxAny.h> // SingleValueDataString used in embedded compiler
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 
 namespace DB

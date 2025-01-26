@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/DateLUTImpl.h>
-#include <common/ErrorHandlers.h>
+#include <base/DateLUTImpl.h>
+#include <base/ErrorHandlers.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -105,7 +105,7 @@ public:
     Int32 minutes() const;
     Int32 seconds() const;
     Int32 microSecond() const;
-    Int64 nanoSecond() const { return nanos; };
+    Int64 nanoSecond() const { return nanos; }
 
     String toString() const;
 };

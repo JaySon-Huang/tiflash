@@ -29,7 +29,7 @@
 #include <TiDB/Decode/DatumCodec.h>
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/tests/RowCodecTestUtils.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 using TableInfo = TiDB::TableInfo;
 

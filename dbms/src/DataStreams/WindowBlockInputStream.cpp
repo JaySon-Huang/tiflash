@@ -24,8 +24,8 @@
 #include <DataStreams/WindowBlockInputStream.h>
 #include <Interpreters/WindowDescription.h>
 #include <WindowFunctions/WindowUtils.h>
-#include <common/UInt128.h>
-#include <common/types.h>
+#include <base/UInt128.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 #include <magic_enum.hpp>

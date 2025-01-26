@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <base/memcpy.h>
 #include <benchmark/benchmark.h>
-#include <common/memcpy.h>
 #include <unistd.h>
 
 #include <cassert>

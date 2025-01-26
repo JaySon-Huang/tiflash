@@ -21,7 +21,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/expression.pb.h>
 #include <tipb/metadata.pb.h>
 

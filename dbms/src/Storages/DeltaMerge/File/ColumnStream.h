@@ -17,7 +17,7 @@
 #include <DataStreams/MarkInCompressedFile.h>
 #include <IO/FileProvider/CompressedReadBufferFromFileBuilder.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <map>
 #include <memory>

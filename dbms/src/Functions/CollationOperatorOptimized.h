@@ -18,9 +18,9 @@
 #include <Core/AccurateComparison.h>
 #include <Functions/StringUtil.h>
 #include <TiDB/Collation/CollatorUtils.h>
-#include <common/StringRef.h>
-#include <common/defines.h>
-#include <common/fixed_mem_eq.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
+#include <base/fixed_mem_eq.h>
 
 #include <cstddef>
 #include <string_view>

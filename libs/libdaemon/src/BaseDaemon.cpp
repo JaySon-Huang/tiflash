@@ -76,7 +76,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/MapConfiguration.h>
-#include <common/ErrorHandlers.h>
+#include <base/ErrorHandlers.h>
 #include <daemon/OwnPatternFormatter.h>
 #include <fmt/format.h>
 #include <sys/resource.h>

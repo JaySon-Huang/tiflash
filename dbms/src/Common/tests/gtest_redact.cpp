@@ -15,7 +15,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/RedactHelpers.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <sstream>
 

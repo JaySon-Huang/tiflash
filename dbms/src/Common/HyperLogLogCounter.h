@@ -22,7 +22,7 @@
 #include <IO/Buffer/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <bit>
 #include <cmath>

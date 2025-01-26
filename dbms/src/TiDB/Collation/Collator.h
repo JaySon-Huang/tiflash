@@ -18,7 +18,7 @@
 #include <Common/UTF8Helpers.h>
 #include <TiDB/Collation/CollatorCompare.h>
 #include <TiDB/Schema/TiDB_fwd.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <memory>
 

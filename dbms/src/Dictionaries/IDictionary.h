@@ -19,7 +19,7 @@
 #include <Core/Names.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <memory>
 

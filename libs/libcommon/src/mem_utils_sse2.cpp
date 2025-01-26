@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #if __SSE2__
-#include <common/mem_utils.h>
+#include <base/mem_utils.h>
 
 #include <cassert>
 #include <cstdint>

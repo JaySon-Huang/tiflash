@@ -18,7 +18,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ExpressionActions.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::FinalizeHelper
 {

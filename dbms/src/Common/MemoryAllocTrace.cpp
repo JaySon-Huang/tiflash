@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Common/MemoryAllocTrace.h>
-#include <common/config_common.h> // Included for `USE_JEMALLOC`
+#include <base/config_common.h> // Included for `USE_JEMALLOC`
 
 #include <fstream>
 

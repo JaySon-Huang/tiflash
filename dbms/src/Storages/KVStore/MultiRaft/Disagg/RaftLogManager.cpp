@@ -25,7 +25,7 @@
 #include <Storages/Page/V3/Universal/UniversalPageId.h>
 #include <Storages/Page/V3/Universal/UniversalPageStorage.h>
 #include <Storages/Page/V3/Universal/UniversalWriteBatchImpl.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <kvproto/raft_serverpb.pb.h>
 
 namespace DB

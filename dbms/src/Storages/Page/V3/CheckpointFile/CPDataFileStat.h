@@ -16,7 +16,7 @@
 
 #include <Common/Logger.h>
 #include <Storages/DeltaMerge/Remote/DataStore/DataStore_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 #include <mutex>

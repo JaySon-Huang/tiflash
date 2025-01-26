@@ -96,10 +96,10 @@
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <WindowFunctions/registerWindowFunctions.h>
+#include <base/ErrorHandlers.h>
+#include <base/config_common.h>
+#include <base/logger_useful.h>
 #include <boost_wrapper/string_split.h>
-#include <common/ErrorHandlers.h>
-#include <common/config_common.h>
-#include <common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 #include <magic_enum.hpp>

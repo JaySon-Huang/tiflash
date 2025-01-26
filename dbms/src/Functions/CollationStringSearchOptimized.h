@@ -16,7 +16,7 @@
 
 #include <Common/UTF8Helpers.h>
 #include <TiDB/Collation/CollatorUtils.h>
-#include <common/mem_utils_opt.h>
+#include <base/mem_utils_opt.h>
 
 #include <algorithm>
 #include <cassert>
@@ -220,7 +220,7 @@ struct BinStrPattern
             }
         }
         return true;
-    };
+    }
 
     // match from end exactly
     // - return true if meet %
@@ -265,7 +265,7 @@ struct BinStrPattern
             }
         }
         return true;
-    };
+    }
 
     // search by pattern `...%..%`
     // - return true if meet %
@@ -336,7 +336,7 @@ struct BinStrPattern
                 }
             }
         }
-    };
+    }
 
     ALWAYS_INLINE inline bool match(std::string_view src) const
     {

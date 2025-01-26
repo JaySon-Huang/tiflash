@@ -21,7 +21,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <atomic>
 #include <ext/range.h>

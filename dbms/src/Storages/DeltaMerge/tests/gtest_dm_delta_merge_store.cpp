@@ -37,7 +37,7 @@
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/InputStreamTestUtils.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>

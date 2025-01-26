@@ -27,7 +27,7 @@
 #include <Storages/PathCapacityMetrics.h>
 #include <Storages/PathPool.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
-#include <common/likely.h>
+#include <base/likely.h>
 #include <fmt/core.h>
 
 #include <mutex>

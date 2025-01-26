@@ -23,7 +23,7 @@
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <cassert>
 #include <set>

@@ -19,7 +19,7 @@
   * To use, include this file with -include compiler parameter.
   */
 
-#include <common/apple_rt.h>
+#include <base/apple_rt.h>
 
 #if APPLE_SIERRA_OR_NEWER == 0
 

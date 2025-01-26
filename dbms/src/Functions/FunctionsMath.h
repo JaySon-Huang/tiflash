@@ -24,7 +24,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsGeo.h>
 #include <Functions/IFunction.h>
-#include <common/preciseExp10.h>
+#include <base/preciseExp10.h>
 #include <fmt/core.h>
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.

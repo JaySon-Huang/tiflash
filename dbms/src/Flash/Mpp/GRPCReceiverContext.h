@@ -19,7 +19,7 @@
 #include <Flash/Mpp/LocalRequestHandler.h>
 #include <Flash/Mpp/MPPTaskManager.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <grpcpp/completion_queue.h>
 #include <kvproto/mpp.pb.h>
 #include <pingcap/kv/Cluster.h>
