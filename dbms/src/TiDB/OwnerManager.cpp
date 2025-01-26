@@ -16,12 +16,12 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/ThreadFactory.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <TiDB/Etcd/Client.h>
 #include <TiDB/MockOwnerManager.h>
 #include <TiDB/OwnerInfo.h>
 #include <TiDB/OwnerManager.h>
-#include <common/logger_useful.h>
 #include <etcd/v3election.grpc.pb.h>
 #include <fiu.h>
 

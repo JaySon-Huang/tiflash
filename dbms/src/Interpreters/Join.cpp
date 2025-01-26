@@ -16,6 +16,7 @@
 #include <Columns/countBytesInFilter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/AutoSpillTrigger.h>
 #include <Core/ColumnNumbers.h>
@@ -30,7 +31,6 @@
 #include <Interpreters/Join.h>
 #include <Interpreters/NullAwareSemiJoinHelper.h>
 #include <Interpreters/NullableUtils.h>
-#include <common/logger_useful.h>
 
 #include <exception>
 #include <magic_enum.hpp>

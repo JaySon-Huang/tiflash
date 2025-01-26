@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Debug/MockTiDB.h>
 #include <Debug/dbgFuncCoprocessorUtils.h>
 #include <Debug/dbgQueryCompiler.h>
@@ -31,7 +32,6 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
-#include <common/logger_useful.h>
 
 #include <regex>
 

@@ -16,6 +16,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Flash/Executor/QueryExecutor.h>
 #include <Flash/Mpp/MPPReceiverSet.h>
 #include <Flash/Mpp/MPPTaskId.h>
@@ -25,7 +26,6 @@
 #include <Flash/Mpp/MPPTunnelSet.h>
 #include <Flash/Mpp/TaskStatus.h>
 #include <Interpreters/Context_fwd.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 #include <kvproto/mpp.pb.h>
 

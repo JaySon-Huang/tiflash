@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Flash/Disaggregated/S3LockClient.h>
 #include <Flash/Mpp/MPPHandler.h>
 #include <Flash/Mpp/MPPTaskManager.h>
@@ -31,7 +32,6 @@
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <TiDB/Schema/TiDBSchemaSyncer.h>
-#include <common/logger_useful.h>
 #include <pingcap/pd/MockPDClient.h>
 
 #include <magic_enum.hpp>

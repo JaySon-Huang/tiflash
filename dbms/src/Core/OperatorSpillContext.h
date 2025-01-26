@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Core/SpillConfig.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <IO/BaseFile/PosixRandomAccessFile.h>
 #include <IO/BaseFile/PosixWritableFile.h>
 #include <Poco/Logger.h>
 #include <Storages/Page/PageUtil.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

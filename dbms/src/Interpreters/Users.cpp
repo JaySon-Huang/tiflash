@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/HexWriteBuffer.h>
 #include <IO/Buffer/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -28,7 +29,6 @@
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
 #include <openssl/sha.h>
 #include <string.h>
 

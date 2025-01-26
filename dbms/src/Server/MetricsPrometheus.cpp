@@ -19,6 +19,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/TiFlashSecurity.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
@@ -32,7 +33,6 @@
 #include <Server/CertificateReloader.h>
 #include <Server/MetricsPrometheus.h>
 #include <Storages/PathCapacityMetrics.h>
-#include <common/logger_useful.h>
 #include <daemon/BaseDaemon.h>
 #include <fmt/core.h>
 #include <prometheus/collectable.h>

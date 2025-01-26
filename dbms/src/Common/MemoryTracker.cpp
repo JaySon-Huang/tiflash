@@ -17,9 +17,9 @@
 #include <Common/MemoryTracker.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <common/likely.h>
-#include <common/logger_useful.h>
 
 #include <iomanip>
 

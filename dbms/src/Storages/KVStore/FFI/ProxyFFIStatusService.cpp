@@ -15,6 +15,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FmtUtils.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <RaftStoreProxyFFI/ProxyFFI.h>
@@ -27,7 +28,6 @@
 #include <TiDB/OwnerManager.h>
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <boost/algorithm/string.hpp>

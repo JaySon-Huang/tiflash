@@ -27,7 +27,6 @@
 #include <Interpreters/TimezoneInfo.h>
 #include <Server/ServerInfo.h>
 #include <Storages/DeltaMerge/LocalIndexerScheduler_fwd.h>
-#include <common/MultiVersion.h>
 
 #include <chrono>
 #include <condition_variable>

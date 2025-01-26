@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <IO/FileProvider/FileProvider.h>
 #include <Poco/DirectoryIterator.h>
@@ -24,7 +25,6 @@
 #include <Storages/S3/S3Filename.h>
 #include <aws/s3/model/CommonPrefix.h>
 #include <boost_wrapper/string_split.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <filesystem>

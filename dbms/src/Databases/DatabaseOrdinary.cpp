@@ -17,6 +17,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UniThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -30,7 +31,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 namespace DB

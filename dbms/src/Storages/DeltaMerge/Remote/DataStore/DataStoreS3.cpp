@@ -14,6 +14,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <IO/IOThreadPools.h>
 #include <Poco/File.h>
 #include <Storages/DeltaMerge/Remote/DataStore/DataStore.h>
@@ -22,7 +23,6 @@
 #include <Storages/S3/S3Common.h>
 #include <Storages/S3/S3Filename.h>
 #include <aws/core/utils/DateTime.h>
-#include <common/logger_useful.h>
 
 #include <future>
 #include <unordered_map>

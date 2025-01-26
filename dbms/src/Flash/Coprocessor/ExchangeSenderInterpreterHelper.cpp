@@ -13,12 +13,12 @@
 // limitations under the License.
 
 #include <Common/TiFlashException.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Flash/Coprocessor/DAGCodec.h>
 #include <Flash/Coprocessor/DAGUtils.h>
 #include <Flash/Coprocessor/ExchangeSenderInterpreterHelper.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB::ExchangeSenderInterpreterHelper

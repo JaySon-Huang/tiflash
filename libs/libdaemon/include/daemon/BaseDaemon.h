@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/logger_useful.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/NumberFormatter.h>
@@ -25,7 +26,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Version.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 #include <port/unistd.h>
 #include <sys/types.h>

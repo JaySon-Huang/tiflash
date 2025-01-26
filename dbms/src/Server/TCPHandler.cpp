@@ -17,6 +17,7 @@
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -37,7 +38,6 @@
 #include <Storages/KVStore/Read/LockException.h>
 #include <Storages/KVStore/Read/RegionException.h>
 #include <Storages/StorageMemory.h>
-#include <common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 

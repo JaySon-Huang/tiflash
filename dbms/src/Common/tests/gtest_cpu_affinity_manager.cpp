@@ -25,9 +25,9 @@
 #include <Common/CPUAffinityManager.h>
 #include <Common/Config/TOMLConfiguration.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <boost_wrapper/string.h>
-#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 

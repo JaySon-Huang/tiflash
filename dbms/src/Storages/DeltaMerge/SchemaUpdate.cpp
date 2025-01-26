@@ -13,13 +13,13 @@
 // limitations under the License.
 
 #include <Common/FieldVisitors.h>
+#include <Common/logger_useful.h>
 #include <Functions/FunctionsConversion.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/DeltaMerge/SchemaUpdate.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

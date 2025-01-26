@@ -22,6 +22,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadManager.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Flash/Coprocessor/WaitResult.h>
 #include <Flash/FlashService.h>
 #include <Flash/Mpp/LocalRequestHandler.h>
@@ -31,7 +32,6 @@
 #include <Flash/Statistics/ConnectionProfileInfo.h>
 #include <common/StringRef.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 
 #include <atomic>

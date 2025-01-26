@@ -14,6 +14,7 @@
 
 #include <Common/Logger.h>
 #include <Common/TiFlashException.h>
+#include <Common/logger_useful.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Coprocessor/DAGExpressionAnalyzer.h>
 #include <Flash/Coprocessor/JoinInterpreterHelper.h>
@@ -24,7 +25,6 @@
 #include <Flash/Planner/Plans/PhysicalJoinV2Build.h>
 #include <Flash/Planner/Plans/PhysicalJoinV2Probe.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB

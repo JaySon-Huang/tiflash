@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -25,7 +26,6 @@
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/logger_useful.h>
 
 #include <optional>
 

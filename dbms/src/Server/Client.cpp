@@ -61,12 +61,10 @@
 #include <algorithm>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <optional>
-#include <unordered_set>
 
 #include "InterruptListener.h"
 

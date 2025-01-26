@@ -15,6 +15,7 @@
 #include <Common/Logger.h>
 #include <Common/RedactHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <IO/FileProvider/ReadBufferFromRandomAccessFileBuilder.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/DirectoryIterator.h>
@@ -25,7 +26,6 @@
 #include <Storages/Page/V3/WAL/WALReader.h>
 #include <Storages/Page/V3/WAL/serialize.h>
 #include <Storages/PathPool.h>
-#include <common/logger_useful.h>
 
 namespace DB::PS::V3
 {

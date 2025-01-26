@@ -15,12 +15,12 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Interpreters/sortBlock.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/SkippableBlockInputStream.h>
-#include <common/logger_useful.h>
 
 #include <type_traits>
 

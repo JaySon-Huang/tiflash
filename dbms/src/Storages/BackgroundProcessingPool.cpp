@@ -15,6 +15,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <IO/WriteHelpers.h>
@@ -22,7 +23,6 @@
 #include <Poco/Timespan.h>
 #include <Storages/BackgroundProcessingPool.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
-#include <common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>

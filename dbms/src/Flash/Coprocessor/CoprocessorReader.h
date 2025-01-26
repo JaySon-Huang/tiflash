@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Common/MPMCQueue.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Flash/Coprocessor/ArrowChunkCodec.h>
 #include <Flash/Coprocessor/CHBlockChunkCodec.h>
@@ -22,7 +23,6 @@
 #include <Flash/Coprocessor/DecodeDetail.h>
 #include <Flash/Coprocessor/DefaultChunkCodec.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
-#include <common/logger_useful.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"

@@ -14,13 +14,13 @@
 
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <RaftStoreProxyFFI/ProxyFFI.h>
 #include <Storages/DeltaMerge/DeltaMergeInterfaces.h>
 #include <Storages/KVStore/Decode/DecodedTiKVKeyValue.h>
 #include <Storages/KVStore/MultiRaft/RegionData.h>
 #include <Storages/KVStore/MultiRaft/RegionMeta.h>
 #include <Storages/KVStore/MultiRaft/RegionSerde.h>
-#include <common/logger_useful.h>
 
 #include <shared_mutex>
 

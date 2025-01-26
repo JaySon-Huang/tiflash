@@ -14,6 +14,7 @@
 
 #include <Common/FailPoint.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -41,7 +42,6 @@
 #include <Poco/FileStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>
-#include <common/logger_useful.h>
 
 #include <boost/range/join.hpp>
 #include <memory>

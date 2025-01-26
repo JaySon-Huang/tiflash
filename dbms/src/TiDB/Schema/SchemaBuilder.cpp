@@ -17,6 +17,7 @@
 #include <Common/FmtUtils.h>
 #include <Common/TiFlashException.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,7 +43,6 @@
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/join.hpp>

@@ -14,6 +14,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeMyDateTime.h>
 #include <DataTypes/DataTypeMyDuration.h>
@@ -22,7 +23,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTiDBConversion.h>
 #include <TestUtils/FunctionTestUtils.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 #include <gtest/gtest.h>
 

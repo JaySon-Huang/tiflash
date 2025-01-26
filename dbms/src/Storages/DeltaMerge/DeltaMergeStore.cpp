@@ -21,6 +21,7 @@
 #include <Common/SyncPoint/SyncPoint.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <Core/SortDescription.h>
 #include <DataStreams/AddExtraTableIDColumnInputStream.h>
 #include <Flash/Coprocessor/DAGContext.h>
@@ -58,7 +59,6 @@
 #include <Storages/PathPool.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
 
 #include <atomic>
 #include <ext/scope_guard.h>

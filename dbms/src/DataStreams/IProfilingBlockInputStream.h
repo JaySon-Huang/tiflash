@@ -15,12 +15,12 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
 #include <Interpreters/SettingsCommon.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <atomic>
@@ -218,7 +218,7 @@ private:
     /// The successors must implement this function.
     virtual Block readImpl() = 0;
 
-    virtual Block readImpl(FilterPtr & /*res_filter*/, bool /*return_filter*/) { return readImpl(); };
+    virtual Block readImpl(FilterPtr & /*res_filter*/, bool /*return_filter*/) { return readImpl(); }
 
     /// Here you can do a preliminary initialization.
     virtual void readPrefixImpl() {}

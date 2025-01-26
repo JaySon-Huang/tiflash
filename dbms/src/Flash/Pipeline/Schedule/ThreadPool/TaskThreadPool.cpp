@@ -15,6 +15,7 @@
 #include <Common/CPUAffinityManager.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Flash/Pipeline/Schedule/TaskScheduler.h>
 #include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
@@ -23,7 +24,6 @@
 #include <Flash/Pipeline/Schedule/ThreadPool/TaskThreadPool.h>
 #include <Flash/Pipeline/Schedule/ThreadPool/TaskThreadPoolImpl.h>
 #include <common/likely.h>
-#include <common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 

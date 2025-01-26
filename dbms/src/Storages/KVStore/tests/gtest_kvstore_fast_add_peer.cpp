@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Debug/MockKVStore/MockRaftStoreProxy.h>
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Storages/DeltaMerge/Filter/PushDownExecutor.h>
@@ -30,7 +31,6 @@
 #include <TestUtils/InputStreamTestUtils.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <aws/s3/model/CreateBucketRequest.h>
-#include <common/logger_useful.h>
 
 #include <optional>
 

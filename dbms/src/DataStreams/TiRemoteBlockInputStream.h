@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Common/FmtUtils.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Flash/Coprocessor/CHBlockChunkCodec.h>
 #include <Flash/Coprocessor/ChunkDecodeAndSquash.h>
@@ -23,7 +24,6 @@
 #include <Flash/Coprocessor/RemoteExecutionSummary.h>
 #include <Flash/Mpp/ExchangeReceiver.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
-#include <common/logger_useful.h>
 
 #include <chrono>
 #include <mutex>

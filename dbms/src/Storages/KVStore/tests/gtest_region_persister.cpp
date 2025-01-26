@@ -16,6 +16,7 @@
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 #include <Common/SyncPoint/Ctl.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/ReadBufferFromFile.h>
 #include <IO/Buffer/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -30,7 +31,6 @@
 #include <Storages/PathPool.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 
 #include <ext/scope_guard.h>

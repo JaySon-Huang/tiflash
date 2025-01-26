@@ -14,11 +14,11 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Storages/KVStore/TiKVHelpers/PDTiKVClient.h>
 #include <TiDB/Schema/SchemaBuilder.h>
 #include <TiDB/Schema/SchemaGetter.h>
 #include <TiDB/Schema/TiDBSchemaSyncer.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 #include <fiu.h>
 

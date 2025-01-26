@@ -16,6 +16,7 @@
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
@@ -29,7 +30,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <common/logger_useful.h>
 
 #include <boost/noncopyable.hpp>
 #include <thread>

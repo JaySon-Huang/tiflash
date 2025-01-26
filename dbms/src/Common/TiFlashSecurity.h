@@ -17,6 +17,7 @@
 #include <Common/FileChangesTracker.h>
 #include <Common/RedactHelpers.h>
 #include <Common/grpcpp.h>
+#include <Common/logger_useful.h>
 #include <Core/Types.h>
 #include <IO/Buffer/ReadBufferFromFile.h>
 #include <Poco/Crypto/X509Certificate.h>
@@ -24,7 +25,6 @@
 #include <Poco/String.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/logger_useful.h>
 
 #include <memory>
 #include <mutex>

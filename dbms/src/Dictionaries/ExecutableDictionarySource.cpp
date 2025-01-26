@@ -13,13 +13,13 @@
 // limitations under the License.
 
 #include <Common/ShellCommand.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
 
 #include <future>
 #include <thread>
@@ -157,7 +157,7 @@ public:
         }
     }
 
-    Block getHeader() const override { return stream->getHeader(); };
+    Block getHeader() const override { return stream->getHeader(); }
 
 private:
     Block readImpl() override { return stream->read(); }

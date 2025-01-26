@@ -16,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/UniThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseTiFlash.h>
 #include <IO/FileProvider/FileProvider.h>
@@ -34,7 +35,6 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/KVStore/TMTStorages.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

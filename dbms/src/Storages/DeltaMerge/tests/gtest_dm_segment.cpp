@@ -14,6 +14,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/SyncPoint/SyncPoint.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -37,7 +38,6 @@
 #include <TestUtils/InputStreamTestUtils.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 
 #include <ctime>
 #include <future>

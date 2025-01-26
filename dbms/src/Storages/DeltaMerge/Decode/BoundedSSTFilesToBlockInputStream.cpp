@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Storages/DeltaMerge/DMVersionFilterBlockInputStream.h>
@@ -21,7 +22,6 @@
 #include <Storages/KVStore/Decode/PartitionStreams.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 #include <Storages/StorageDeltaMerge.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

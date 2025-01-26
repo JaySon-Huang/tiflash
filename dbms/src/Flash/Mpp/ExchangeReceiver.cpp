@@ -17,6 +17,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadFactory.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Flash/Coprocessor/CoprocessorReader.h>
 #include <Flash/Coprocessor/FineGrainedShuffle.h>
 #include <Flash/Mpp/ExchangeReceiver.h>
@@ -24,7 +25,6 @@
 #include <Flash/Mpp/GRPCReceiverContext.h>
 #include <Flash/Mpp/MPPTunnel.h>
 #include <Interpreters/Settings.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 #include <grpcpp/alarm.h>
 #include <grpcpp/completion_queue.h>

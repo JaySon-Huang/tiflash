@@ -17,6 +17,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeDecimal.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -24,7 +25,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Operators/AutoPassThroughHashAggHelper.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

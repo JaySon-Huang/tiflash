@@ -24,7 +24,6 @@
 #include <editline/history.h>
 #include <editline/readline.h>
 #else
-#include <cstring>
 #include <iostream>
 #include <string>
 inline char * readline(const char * prompt)
