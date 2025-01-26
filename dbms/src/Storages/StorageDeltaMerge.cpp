@@ -18,6 +18,7 @@
 #include <Common/Logger.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -59,7 +60,6 @@
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB

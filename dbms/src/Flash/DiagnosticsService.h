@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <Server/IServer.h>
 #include <Common/logger_useful.h>
+#include <Server/IServer.h>
 
 #include <boost/noncopyable.hpp>
 

@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <Poco/ErrorHandler.h>
 #include <Common/logger_useful.h>
+#include <Poco/ErrorHandler.h>
 
 
 /** ErrorHandler for Poco::Thread,

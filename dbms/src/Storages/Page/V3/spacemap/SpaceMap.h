@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #pragma once
-#include <Core/Types.h>
 #include <Common/logger_useful.h>
+#include <Core/Types.h>
 
 namespace DB::PS::V3
 {

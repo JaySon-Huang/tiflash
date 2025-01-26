@@ -13,11 +13,8 @@
 // limitations under the License.
 
 #include <Poco/Logger.h>
-#include <common/ThreadPool.h>
+#include <Common/LegacyThreadPool.h>
 #include <Common/logger_useful.h>
-
-#include <iostream>
-
 
 static Poco::Logger * getLogger()
 {

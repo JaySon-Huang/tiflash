@@ -13,12 +13,12 @@
 // limitations under the License.
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Server/BgStorageInit.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/KVStore/TMTContext.h>
-#include <Common/logger_useful.h>
 
 #include <thread>
 

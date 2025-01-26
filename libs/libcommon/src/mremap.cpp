@@ -13,15 +13,16 @@
 // limitations under the License.
 
 #include <common/mremap.h>
+#if defined(MREMAP_FIXED)
+// we already have implementation (linux)
+#else
+
 #include <errno.h>
 
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 
-#if defined(MREMAP_FIXED)
-// we already have implementation (linux)
-#else
 
 void * mremap(
     void * old_address,

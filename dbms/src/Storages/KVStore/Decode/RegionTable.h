@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <Common/nocopyable.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
@@ -25,7 +26,6 @@
 #include <Storages/KVStore/Read/RegionException.h>
 #include <Storages/KVStore/Read/RegionLockInfo.h>
 #include <Storages/KVStore/Region.h>
-#include <Common/logger_useful.h>
 
 #include <functional>
 #include <mutex>

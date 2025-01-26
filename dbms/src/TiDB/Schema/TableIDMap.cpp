@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <TiDB/Schema/TableIDMap.h>
 #include <Common/logger_useful.h>
+#include <TiDB/Schema/TableIDMap.h>
 
 #include <mutex>
 

@@ -15,11 +15,11 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
+#include <Common/LegacyThreadPool.h>
 #include <Common/MemoryTracker.h>
 #include <Common/wrapInvocable.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Poco/Event.h>
-#include <common/ThreadPool.h>
 
 namespace DB
 {

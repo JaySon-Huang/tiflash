@@ -14,6 +14,7 @@
 
 #include <Common/FailPoint.h>
 #include <Common/StringUtils/StringRefUtils.h>
+#include <Common/logger_useful.h>
 #include <Databases/DatabaseTiFlash.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -34,7 +35,6 @@
 #include <Storages/registerStorages.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

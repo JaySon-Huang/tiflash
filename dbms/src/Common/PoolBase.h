@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <Poco/Timespan.h>
 #include <Common/logger_useful.h>
+#include <Poco/Timespan.h>
 
 #include <boost/noncopyable.hpp>
 #include <condition_variable>

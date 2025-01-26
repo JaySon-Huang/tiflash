@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <DataStreams/BlockIO.h>
 #include <Common/logger_useful.h>
+#include <DataStreams/BlockIO.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #ifdef __clang__
