@@ -18,7 +18,7 @@
 #include <Storages/Page/Config.h>
 #include <Storages/Page/V3/PageDefines.h>
 #include <Storages/Page/V3/spacemap/SpaceMap.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB::PS::V3
 {

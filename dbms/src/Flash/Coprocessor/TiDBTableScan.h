@@ -16,7 +16,7 @@
 
 #include <Storages/KVStore/Types.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 namespace DB

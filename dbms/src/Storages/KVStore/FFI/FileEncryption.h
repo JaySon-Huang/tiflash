@@ -19,7 +19,7 @@
 #include <IO/FileProvider/EncryptionPath.h>
 #include <RaftStoreProxyFFI/EncryptionFFI.h>
 #include <Storages/KVStore/FFI/ProxyFFICommon.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 
 namespace DB

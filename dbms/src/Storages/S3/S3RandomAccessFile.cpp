@@ -23,7 +23,7 @@
 #include <Storages/S3/S3Filename.h>
 #include <Storages/S3/S3RandomAccessFile.h>
 #include <aws/s3/model/GetObjectRequest.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <optional>
 

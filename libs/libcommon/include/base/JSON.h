@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Poco/Exception.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/types.h>
 
 #include <typeinfo>
 

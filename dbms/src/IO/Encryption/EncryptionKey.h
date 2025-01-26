@@ -20,7 +20,7 @@
 #include <Poco/HMACEngine.h>
 #include <RaftStoreProxyFFI/EncryptionFFI.h>
 #include <Storages/KVStore/FFI/FileEncryption.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 

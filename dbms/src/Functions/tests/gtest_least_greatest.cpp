@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::tests
 {

@@ -17,7 +17,7 @@
 #include <Common/LRUCache.h>
 #include <Storages/DeltaMerge/Index/VectorIndexCache_fwd.h>
 #include <Storages/DeltaMerge/Index/VectorIndex_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <condition_variable>
 #include <mutex>

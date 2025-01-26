@@ -14,7 +14,7 @@
 
 #ifdef TIFLASH_ENABLE_ASIMD_SUPPORT
 #include <arm_neon.h>
-#include <common/mem_utils.h>
+#include <base/mem_utils.h>
 
 #include <cassert>
 #include <cstdint>

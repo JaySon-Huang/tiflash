@@ -16,7 +16,7 @@
 
 #include <Core/Types.h>
 #include <Storages/KVStore/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 namespace DB::DM::Remote

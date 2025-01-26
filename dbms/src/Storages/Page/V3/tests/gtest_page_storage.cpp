@@ -37,7 +37,7 @@
 #include <TestUtils/MockReadLimiter.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <ext/scope_guard.h>
 #include <future>

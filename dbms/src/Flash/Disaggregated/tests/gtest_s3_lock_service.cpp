@@ -28,7 +28,7 @@
 #include <aws/s3/model/CreateBucketResult.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/core.h>
 #include <gtest/gtest.h>
 

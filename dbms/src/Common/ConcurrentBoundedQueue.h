@@ -16,7 +16,7 @@
 
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <queue>
 #include <type_traits>

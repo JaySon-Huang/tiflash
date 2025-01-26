@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/config_common.h>
+#include <base/config_common.h>
 
 /// Different line editing libraries can be used depending on the environment.
 #if USE_READLINE

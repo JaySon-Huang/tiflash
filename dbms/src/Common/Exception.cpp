@@ -20,7 +20,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <cxxabi.h>
 #include <errno.h>
 #include <string.h>

@@ -22,7 +22,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <algorithm>
 #include <climits>

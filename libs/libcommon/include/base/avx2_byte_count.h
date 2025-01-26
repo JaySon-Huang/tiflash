@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/avx2_mem_utils.h>
+#include <base/avx2_mem_utils.h>
 
 #include <bit>
 

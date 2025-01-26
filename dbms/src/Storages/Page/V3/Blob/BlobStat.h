@@ -21,7 +21,7 @@
 #include <Storages/Page/V3/PageType.h>
 #include <Storages/Page/V3/spacemap/SpaceMap.h>
 #include <Storages/PathPool.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::PS::V3
 {

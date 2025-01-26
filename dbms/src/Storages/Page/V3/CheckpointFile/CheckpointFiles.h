@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::PS::V3
 {

@@ -26,7 +26,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Version.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <port/unistd.h>
 #include <sys/types.h>
 

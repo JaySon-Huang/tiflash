@@ -36,9 +36,9 @@
 #include <Functions/StringUtil.h>
 #include <Functions/re2Util.h>
 #include <Parsers/Lexer.h>
-#include <common/StringRef.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <cstring>
 #include <memory>
@@ -141,9 +141,9 @@ inline Regexps::Regexp createRegexpWithMatchType(
 template <typename T>
 inline constexpr bool check_int_type()
 {
-    return std::is_same_v<
-               T,
-               UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32> || std::is_same_v<T, UInt64> || std::is_same_v<T, Int8> || std::is_same_v<T, Int16> || std::is_same_v<T, Int32> || std::is_same_v<T, Int64>;
+    return std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32>
+        || std::is_same_v<T, UInt64> || std::is_same_v<T, Int8> || std::is_same_v<T, Int16> || std::is_same_v<T, Int32>
+        || std::is_same_v<T, Int64>;
 }
 
 inline Int64 getIntFromField(Field & field)

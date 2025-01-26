@@ -21,7 +21,7 @@
 #include <Common/memcpySmall.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 
 #if __SSE2__
 #include <emmintrin.h>

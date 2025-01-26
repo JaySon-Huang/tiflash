@@ -36,7 +36,7 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
-#include <common/intExp.h>
+#include <base/intExp.h>
 #include <fmt/core.h>
 
 #include <boost/integer/common_factor.hpp>

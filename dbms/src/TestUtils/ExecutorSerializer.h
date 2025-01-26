@@ -17,7 +17,7 @@
 #include <Common/FmtUtils.h>
 #include <Flash/Statistics/traverseExecutors.h>
 #include <TestUtils/TiFlashTestException.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

@@ -22,7 +22,7 @@
 #include <Server/StorageConfigParser.h>
 #include <Storages/PathCapacityMetrics.h>
 #include <Storages/S3/S3Filename.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <chrono>

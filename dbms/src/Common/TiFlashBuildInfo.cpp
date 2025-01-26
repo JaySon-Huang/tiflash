@@ -18,7 +18,7 @@
 #include <Common/logger_useful.h>
 #include <VectorSearch/DistanceSIMDFeatures.h>
 #include <VectorSearch/SIMDFeatures.h>
-#include <common/config_common.h>
+#include <base/config_common.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <openssl/opensslconf.h>

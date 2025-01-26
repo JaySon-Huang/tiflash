@@ -15,7 +15,7 @@
 #pragma once
 
 #include <IO/WriteHelpers.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::DM
 {

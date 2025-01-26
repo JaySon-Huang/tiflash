@@ -16,7 +16,7 @@
 #include <Common/ProcessCollector.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TiFlashMetrics.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB
 {

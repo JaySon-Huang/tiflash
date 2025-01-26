@@ -24,10 +24,10 @@
 #include <IO/Buffer/ReadBuffer.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
-#include <common/StringRef.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LocalDateTime.h>
+#include <base/StringRef.h>
 #include <double-conversion/double-conversion.h>
 
 #include <cstring>

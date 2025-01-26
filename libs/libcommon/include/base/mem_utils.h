@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #pragma once
-#include <common/simd.h>
-#include <common/unaligned.h>
+#include <base/simd.h>
+#include <base/unaligned.h>
 
 #include <cstddef>
 #include <cstdint>

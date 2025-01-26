@@ -51,8 +51,8 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <WindowFunctions/registerWindowFunctions.h>
-#include <common/find_symbols.h>
-#include <common/readline_use.h>
+#include <base/find_symbols.h>
+#include <base/readline_use.h>
 #include <fcntl.h>
 #include <port/unistd.h>
 #include <signal.h>

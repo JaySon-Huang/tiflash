@@ -24,7 +24,7 @@
 #include <Storages/KVStore/Types.h>
 #include <TiDB/Decode/Datum.h>
 #include <TiDB/Decode/DatumCodec.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 namespace DB::ErrorCodes
 {

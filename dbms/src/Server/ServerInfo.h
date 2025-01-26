@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #pragma once
-#include <common/getMemoryAmount.h>
-#include <common/types.h>
+#include <base/getMemoryAmount.h>
+#include <base/types.h>
 
 #include <thread>
 #include <vector>

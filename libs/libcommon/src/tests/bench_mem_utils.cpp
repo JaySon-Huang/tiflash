@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <base/defines.h>
+#include <base/mem_utils.h>
+#include <base/mem_utils_opt.h>
 #include <benchmark/benchmark.h>
-#include <common/defines.h>
-#include <common/mem_utils.h>
-#include <common/mem_utils_opt.h>
 
 #include <cassert>
 #include <cstddef>

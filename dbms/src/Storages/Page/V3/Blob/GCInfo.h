@@ -16,7 +16,7 @@
 
 #include <Poco/Message.h>
 #include <Storages/Page/V3/PageDefines.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::PS::V3
 {

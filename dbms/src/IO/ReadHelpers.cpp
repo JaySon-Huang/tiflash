@@ -20,7 +20,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <stdlib.h>
 
 namespace DB

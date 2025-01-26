@@ -18,7 +18,7 @@
 #include <Common/FmtUtils.h>
 #include <Core/Types.h>
 #include <Storages/KVStore/Types.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <magic_enum.hpp>
 #include <sstream>

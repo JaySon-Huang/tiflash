@@ -17,7 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <common/DateLUTImpl.h>
+#include <base/DateLUTImpl.h>
 
 
 namespace DB

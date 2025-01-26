@@ -17,7 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <condition_variable>

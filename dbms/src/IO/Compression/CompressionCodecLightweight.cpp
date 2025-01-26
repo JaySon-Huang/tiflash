@@ -14,7 +14,7 @@
 
 #include <Common/Exception.h>
 #include <IO/Compression/CompressionCodecLightweight.h>
-#include <common/likely.h>
+#include <base/likely.h>
 #include <lz4.h>
 
 #include <magic_enum.hpp>

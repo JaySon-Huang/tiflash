@@ -16,7 +16,7 @@
 
 #include <IO/Endian.h>
 #include <Storages/KVStore/Types.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB
 {

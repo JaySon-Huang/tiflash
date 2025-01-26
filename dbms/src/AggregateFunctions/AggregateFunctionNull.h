@@ -30,7 +30,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/sortBlock.h>
-#include <common/mem_utils.h>
+#include <base/mem_utils.h>
 
 #include <array>
 

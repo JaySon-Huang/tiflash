@@ -23,7 +23,7 @@
 #include <Core/BlockInfo.h>
 #include <Core/Field.h>
 #include <TiDB/Collation/Collator.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <fmt/core.h>
 
 namespace DB

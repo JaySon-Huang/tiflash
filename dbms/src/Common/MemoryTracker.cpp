@@ -19,7 +19,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <iomanip>
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "common/getMemoryAmount.h"
+#include <base/getMemoryAmount.h>
 
 // http://nadeausoftware.com/articles/2012/09/c_c_tip_how_get_physical_memory_size_system
 

@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Flash/Pipeline/Schedule/Tasks/TaskProfileInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

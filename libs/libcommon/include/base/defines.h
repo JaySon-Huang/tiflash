@@ -22,7 +22,7 @@
 /// NOTE:
 /// - __has_feature cannot be simply undefined,
 ///   since this will be broken if some C++ header will be included after
-///   including <common/defines.h>
+///   including <base/defines.h>
 /// - it should not have fallback to 0,
 ///   since this may create false-positive detection (common problem)
 // clang-format off

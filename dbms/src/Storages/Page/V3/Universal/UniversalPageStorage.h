@@ -32,7 +32,7 @@
 #include <Storages/Page/V3/PageType.h>
 #include <Storages/Page/V3/Universal/S3LockLocalManager.h>
 #include <Storages/Page/V3/Universal/S3PageReader.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB
 {

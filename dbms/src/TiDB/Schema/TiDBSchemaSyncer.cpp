@@ -19,7 +19,7 @@
 #include <TiDB/Schema/SchemaBuilder.h>
 #include <TiDB/Schema/SchemaGetter.h>
 #include <TiDB/Schema/TiDBSchemaSyncer.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fiu.h>
 
 #include <mutex>

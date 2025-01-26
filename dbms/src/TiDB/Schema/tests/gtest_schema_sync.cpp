@@ -36,7 +36,7 @@
 #include <TestUtils/TiFlashTestEnv.h>
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <gtest/gtest.h>
 
 #include <ext/scope_guard.h>

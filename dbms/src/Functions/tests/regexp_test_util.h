@@ -19,7 +19,7 @@
 #include <Functions/FunctionFactory.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TiDB/Collation/Collator.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"

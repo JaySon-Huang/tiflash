@@ -19,8 +19,8 @@
 #include <Flash/Mpp/MPPTaskId.h>
 #include <Flash/Mpp/TaskStatus.h>
 #include <Flash/Statistics/ExecutorStatisticsCollector.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 #include <tipb/select.pb.h>
 

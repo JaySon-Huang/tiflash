@@ -21,7 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 
 
 namespace DB

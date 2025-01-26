@@ -22,7 +22,7 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/StorageDeltaMerge.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/ranges.h>
 #include <gtest/gtest.h>
 

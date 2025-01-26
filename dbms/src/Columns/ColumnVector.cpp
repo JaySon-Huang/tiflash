@@ -22,7 +22,7 @@
 #include <Common/SipHash.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 
 #include <cstring>
 #include <ext/bit_cast.h>

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/types.h>
+#include <base/types.h>
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_type.h>
 

@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Storages/DeltaMerge/ScanContext_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <kvproto/resource_manager.pb.h>
 #include <tipb/select.pb.h>
 

@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #pragma once
-#include <common/defines.h>
-#include <common/simd.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/simd.h>
+#include <base/types.h>
 #ifdef __x86_64__
 #include <immintrin.h>
 #else
@@ -76,15 +76,18 @@ namespace DB::TargetSpecific
 struct SkipTarget
 {
 };
-#define TIFLASH_TARGET_SPECIFIC_DEFINE_SKIP_TARGET(RETURN, NAME, ARCH, ...)                     \
-    __VA_ARGS__                                                                                 \
-    struct _TiflashSkip_##ARCH##_Target_##NAME : public ::DB::TargetSpecific::SkipTarget        \
-    {                                                                                           \
-        using ReturnType = RETURN;                                                              \
-        struct Checker                                                                          \
-        {                                                                                       \
-            __attribute__((pure, always_inline)) static bool runtimeSupport() { return false; } \
-        };                                                                                      \
+#define TIFLASH_TARGET_SPECIFIC_DEFINE_SKIP_TARGET(RETURN, NAME, ARCH, ...)              \
+    __VA_ARGS__                                                                          \
+    struct _TiflashSkip_##ARCH##_Target_##NAME : public ::DB::TargetSpecific::SkipTarget \
+    {                                                                                    \
+        using ReturnType = RETURN;                                                       \
+        struct Checker                                                                   \
+        {                                                                                \
+            __attribute__((pure, always_inline)) static bool runtimeSupport()            \
+            {                                                                            \
+                return false;                                                            \
+            }                                                                            \
+        };                                                                               \
     };
 
 #define TIFLASH_DECLARE_GENERIC_FUNCTION(TPARMS, RETURN, NAME, ...)                           \
