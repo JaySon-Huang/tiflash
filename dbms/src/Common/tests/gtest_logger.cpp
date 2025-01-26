@@ -18,13 +18,14 @@
 #include <Common/logger_useful.h>
 #include <Common/tests/TestChannel.h>
 #include <Poco/AutoPtr.h>
+#include <Poco/Channel.h>
+#include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/Message.h>
+#include <Poco/PatternFormatter.h>
 #include <TestUtils/TiFlashTestBasic.h>
 
-namespace DB
-{
-namespace tests
+namespace DB::tests
 {
 
 class LogMacroTest : public testing::Test
@@ -218,6 +219,51 @@ TEST(LogFormatTest, JSONEncodeControlSeq)
         R"raw( [INFO] [gtest_logger.cpp:32] ["hello\u001aworld 中文测试"] [thread_id=1])raw");
 }
 
-} // namespace tests
+class LoggerUsefulTest : public ::testing::Test
+{
+public:
+    static constexpr auto * log_file_path = "/tmp/logger_test";
+    static void SetUpTestCase()
+    {
+        if (Poco::File f(log_file_path); f.exists())
+            f.remove();
+    }
 
-} // namespace DB
+    static Poco::Logger * getLogger()
+    {
+        Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cout);
+        // Poco::AutoPtr<Poco::FileChannel> channel(new Poco::FileChannel("/tmp/logger_test"));
+        Poco::AutoPtr<Poco::PatternFormatter> formatter(
+            new Poco::PatternFormatter("[%H:%M:%S.%i %Z] [%p] [%U(%u)]: %t"));
+        Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
+        Poco::Logger::root().setChannel(formatting_channel);
+        Poco::Logger::root().setLevel(Poco::Message::PRIO_TRACE);
+        return &Poco::Logger::get("LoggerUsefulTest");
+    }
+};
+
+TEST_F(LoggerUsefulTest, Log)
+{
+    auto * log = getLogger();
+    LOG_TRACE(log, "Trace log");
+    LOG_DEBUG(log, "Debug log");
+    LOG_INFO(log, "Info log");
+    LOG_WARNING(log, "Warning log");
+    LOG_ERROR(log, "Error log");
+
+    LOG_ERROR(log, "Error log, num: ", 1);
+
+    std::string msg_in_log;
+    msg_in_log = "hello tiflash";
+    LOG_DEBUG(log, msg_in_log);
+}
+
+TEST(FmtTest, StringRef)
+{
+    const char * str = "abcdefg\0\0\0\0";
+    ASSERT_EQ("abc", fmt::format("{}", StringRef(str, 3)));
+    ASSERT_EQ("abcdefg", fmt::format("{}", StringRef(str, 7)));
+    ASSERT_EQ(std::string_view("abcdefg\0", 8), fmt::format("{}", StringRef(str, 8)));
+}
+
+} // namespace DB::tests
