@@ -17,6 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/SyncPoint/SyncPoint.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <IO/IOThreadPool.h>
 #include <Storages/DeltaMerge/Remote/DataStore/DataStore.h>
 #include <Storages/Page/V3/Blob/BlobConfig.h>
@@ -31,7 +32,6 @@
 #include <Storages/Page/V3/WAL/WALConfig.h>
 #include <Storages/S3/S3Common.h>
 #include <Storages/S3/S3Filename.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 #include <mutex>

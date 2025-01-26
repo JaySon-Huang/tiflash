@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <IO/Encryption/MockKeyManager.h>
 #include <Poco/File.h>
@@ -24,7 +25,6 @@
 #include <Storages/Page/workload/PSRunnable.h>
 #include <Storages/Page/workload/PSStressEnv.h>
 #include <TestUtils/MockDiskDelegator.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <mutex>

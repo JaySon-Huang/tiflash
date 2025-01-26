@@ -28,6 +28,7 @@
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/AggSpillContext.h>
 #include <Interpreters/AggregateDescription.h>
@@ -35,7 +36,6 @@
 #include <Interpreters/CancellationHook.h>
 #include <TiDB/Collation/Collator.h>
 #include <common/StringRef.h>
-#include <common/logger_useful.h>
 
 #include <functional>
 #include <memory>

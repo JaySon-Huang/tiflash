@@ -20,6 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Logger.h>
 #include <Common/RandomData.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -37,7 +38,6 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <Flash/Mpp/BroadcastOrPassThroughWriter.cpp>

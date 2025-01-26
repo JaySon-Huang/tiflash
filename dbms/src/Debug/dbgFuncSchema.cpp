@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/FmtUtils.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseTiFlash.h>
 #include <Debug/dbgFuncSchema.h>
@@ -28,7 +29,6 @@
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <ext/singleton.h>

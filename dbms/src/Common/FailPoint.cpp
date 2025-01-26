@@ -14,10 +14,10 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <condition_variable>

@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Core/Types.h>
 #include <IO/FileProvider/FileProvider.h>
 #include <IO/WriteHelpers.h>
@@ -27,7 +28,6 @@
 #include <Storages/PathPool.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <common/likely.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <mutex>

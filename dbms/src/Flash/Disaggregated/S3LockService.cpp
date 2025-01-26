@@ -14,6 +14,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Flash/Disaggregated/S3LockService.h>
 #include <Flash/ServiceUtils.h>
 #include <Interpreters/Context.h>
@@ -26,7 +27,6 @@
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <ext/scope_guard.h>

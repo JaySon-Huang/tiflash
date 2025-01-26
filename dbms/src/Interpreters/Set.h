@@ -19,6 +19,7 @@
 #include <tipb/expression.pb.h>
 #pragma GCC diagnostic pop
 
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -26,7 +27,6 @@
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>
 #include <TiDB/Collation/Collator.h>
-#include <common/logger_useful.h>
 
 #include <shared_mutex>
 

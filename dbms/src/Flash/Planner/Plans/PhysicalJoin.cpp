@@ -15,6 +15,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/TiFlashException.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/HashJoinBuildBlockInputStream.h>
 #include <DataStreams/HashJoinProbeBlockInputStream.h>
@@ -30,7 +31,6 @@
 #include <Flash/Planner/Plans/PhysicalJoinBuild.h>
 #include <Flash/Planner/Plans/PhysicalJoinProbe.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB

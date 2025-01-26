@@ -15,12 +15,12 @@
 #include <Common/Logger.h>
 #include <Common/UnifiedLogFormatter.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/tests/TestChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/Message.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

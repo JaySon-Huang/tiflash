@@ -15,12 +15,12 @@
 #include <Common/Exception.h>
 #include <Common/FmtUtils.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
 #include <common/demangle.h>
-#include <common/logger_useful.h>
 #include <cxxabi.h>
 #include <errno.h>
 #include <string.h>

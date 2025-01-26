@@ -13,6 +13,7 @@
 // limitations under the License.
 
 
+#include <Common/logger_useful.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/ConsoleChannel.h>
@@ -22,7 +23,6 @@
 #include <Poco/Logger.h>
 #include <Poco/PatternFormatter.h>
 #include <common/StringRef.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 #include <gtest/gtest.h>
 

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Debug/MockExecutor/AstToPB.h>
 #include <Debug/MockExecutor/AstToPBUtils.h>
@@ -27,7 +28,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/KVStore/Types.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
 #include <common/types.h>
 #include <tipb/executor.pb.h>
 #include <tipb/select.pb.h>

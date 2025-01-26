@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/LegacyThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -30,7 +31,6 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/SchemaSyncer.h>
-#include <common/ThreadPool.h>
 
 #include <thread>
 

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Columns/countBytesInFilter.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Debug/dbgQueryCompiler.h>
 #include <Flash/Coprocessor/DAGQueryInfo.h>
@@ -26,7 +27,6 @@
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
 #include <tipb/executor.pb.h>
 
 #include <memory>

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/TiFlashException.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,7 +24,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Join.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <unordered_map>

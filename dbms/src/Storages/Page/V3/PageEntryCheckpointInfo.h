@@ -16,9 +16,9 @@
 
 #include <Common/Logger.h>
 #include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
 #include <Storages/Page/V3/CheckpointFile/Proto/manifest_file.pb.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB::PS::V3

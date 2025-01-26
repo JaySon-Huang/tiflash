@@ -18,6 +18,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/IDataType.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/File/ColumnCacheLongTerm.h>
@@ -25,7 +26,6 @@
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/DeltaMerge/convertColumnTypeHelpers.h>
 #include <Storages/KVStore/Types.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 

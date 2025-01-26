@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Databases/IDatabase.h>
 #include <Debug/MockTiDB.h>
 #include <Interpreters/Context.h>
@@ -36,7 +37,6 @@
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <ext/scope_guard.h>

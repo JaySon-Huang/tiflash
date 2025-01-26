@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Flash/Disaggregated/WNFetchPagesStreamWriter.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
 #include <Interpreters/Settings.h>
@@ -27,7 +28,6 @@
 #include <Storages/DeltaMerge/Remote/WNDisaggSnapshotManager.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/Page/PageUtil.h>
-#include <common/logger_useful.h>
 
 #include <memory>
 #include <tuple>

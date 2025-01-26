@@ -17,12 +17,12 @@
 #include <Columns/countBytesInFilter.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/SelectionByColumnIdTransformAction.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/ScanContext_fwd.h>
-#include <common/logger_useful.h>
 
 namespace DB::DM
 {

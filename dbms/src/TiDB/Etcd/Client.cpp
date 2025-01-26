@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Poco/URI.h>
 #include <TiDB/Etcd/Client.h>
 #include <TiDB/Etcd/EtcdConnClient.h>
-#include <common/logger_useful.h>
 #include <etcd/rpc.grpc.pb.h>
 #include <etcd/rpc.pb.h>
 #include <etcd/v3election.grpc.pb.h>

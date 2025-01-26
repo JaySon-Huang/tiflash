@@ -19,6 +19,7 @@
 #include <Common/TiFlashMetrics.h>
 #include <Common/VariantOp.h>
 #include <Common/getNumberOfCPUCores.h>
+#include <Common/logger_useful.h>
 #include <Debug/MockStorage.h>
 #include <Flash/BatchCoprocessorHandler.h>
 #include <Flash/Coprocessor/DAGContext.h>
@@ -47,7 +48,6 @@
 #include <Storages/KVStore/Read/RegionException.h>
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/S3/S3Common.h>
-#include <common/logger_useful.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/support/status.h>
 #include <grpcpp/support/status_code_enum.h>

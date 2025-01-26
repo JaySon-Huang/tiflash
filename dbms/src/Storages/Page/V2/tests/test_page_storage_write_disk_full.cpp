@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/File.h>
@@ -20,7 +21,6 @@
 #include <Poco/Runnable.h>
 #include <Poco/Timer.h>
 #include <Storages/Page/V2/PageStorage.h>
-#include <common/logger_useful.h>
 
 #include <atomic>
 #include <iostream>

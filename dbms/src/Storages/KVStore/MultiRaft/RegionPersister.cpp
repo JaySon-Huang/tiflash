@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/SyncPoint/SyncPoint.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/MemoryReadWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/StoragePool/StoragePool.h>
@@ -28,7 +29,6 @@
 #include <Storages/Page/WriteBatchImpl.h>
 #include <Storages/Page/WriteBatchWrapperImpl.h>
 #include <Storages/PathPool.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 #include <magic_enum.hpp>

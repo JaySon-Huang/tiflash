@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Storages/DeltaMerge/StoragePool/StoragePool.h>
@@ -24,7 +25,6 @@
 #include <TestUtils/MockDiskDelegator.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 #include <fmt/ranges.h>
 #include <gtest/gtest.h>
 

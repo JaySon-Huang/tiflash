@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Common/Throttler.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
@@ -28,7 +29,6 @@
 #include <Interpreters/Settings_fwd.h>
 #include <Interpreters/TablesStatus.h>
 #include <Poco/Net/StreamSocket.h>
-#include <common/logger_useful.h>
 
 #include <atomic>
 

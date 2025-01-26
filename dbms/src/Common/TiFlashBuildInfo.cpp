@@ -15,10 +15,10 @@
 #include <Common/TiFlashBuildInfo.h>
 #include <Common/config.h>
 #include <Common/config_version.h>
+#include <Common/logger_useful.h>
 #include <VectorSearch/DistanceSIMDFeatures.h>
 #include <VectorSearch/SIMDFeatures.h>
 #include <common/config_common.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <openssl/opensslconf.h>

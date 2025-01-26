@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -21,7 +22,6 @@
 #include <Storages/PathPool.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 

@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/DirectoryIterator.h>
@@ -21,7 +22,6 @@
 #include <Poco/Logger.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
 
 #include <string>
 #include <unordered_set>

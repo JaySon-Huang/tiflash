@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Flash/Planner/PhysicalPlanNode.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -48,7 +48,7 @@ public:
         return i == 0 ? left : right;
     }
 
-    size_t childrenSize() const override { return 2; };
+    size_t childrenSize() const override { return 2; }
 
 protected:
     PhysicalPlanNodePtr left;

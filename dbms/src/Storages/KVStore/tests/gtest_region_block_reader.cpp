@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/hex.h>
+#include <Common/logger_useful.h>
 #include <Core/Field.h>
 #include <RaftStoreProxyFFI/ColumnFamily.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
@@ -29,7 +30,6 @@
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/tests/RowCodecTestUtils.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
 
 using TableInfo = TiDB::TableInfo;
 

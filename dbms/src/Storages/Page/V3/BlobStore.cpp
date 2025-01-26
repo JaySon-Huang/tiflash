@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Poco/File.h>
 #include <Storages/Page/FileUsage.h>
 #include <Storages/Page/V3/Blob/GCInfo.h>
@@ -32,7 +33,6 @@
 #include <Storages/Page/WriteBatchImpl.h>
 #include <Storages/PathPool.h>
 #include <boost_wrapper/string_split.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 #include <ext/scope_guard.h>
