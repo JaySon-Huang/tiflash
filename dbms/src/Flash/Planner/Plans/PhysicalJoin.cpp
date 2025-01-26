@@ -30,7 +30,7 @@
 #include <Flash/Planner/Plans/PhysicalJoinBuild.h>
 #include <Flash/Planner/Plans/PhysicalJoinProbe.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB

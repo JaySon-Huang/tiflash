@@ -32,7 +32,7 @@
 #include <Storages/Page/WriteBatchImpl.h>
 #include <Storages/PathPool.h>
 #include <boost_wrapper/string_split.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fiu.h>
 
 #include <ext/scope_guard.h>

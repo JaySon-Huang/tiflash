@@ -34,7 +34,7 @@
 #include <Storages/registerStorages.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

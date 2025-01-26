@@ -16,7 +16,7 @@
 
 /// Macros for convenient usage of Poco logger.
 
-#include <common/MacroUtils.h>
+#include <Common/MacroUtils.h>
 #include <fmt/compile.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>

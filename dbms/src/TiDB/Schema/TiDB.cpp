@@ -32,7 +32,7 @@
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/Schema/VectorIndex.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <tipb/executor.pb.h>
 

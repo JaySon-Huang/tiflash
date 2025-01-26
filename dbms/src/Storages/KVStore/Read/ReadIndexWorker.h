@@ -18,7 +18,7 @@
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 #include <Storages/KVStore/Types.h>
 #include <Storages/KVStore/Utils.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <kvproto/kvrpcpb.pb.h>
 
 #include <algorithm>

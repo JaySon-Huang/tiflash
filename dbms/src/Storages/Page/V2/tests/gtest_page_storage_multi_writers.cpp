@@ -30,7 +30,7 @@
 #include <Storages/PathPool.h>
 #include <TestUtils/TiFlashStorageTestBasic.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <chrono>

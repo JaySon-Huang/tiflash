@@ -30,7 +30,7 @@
 #include <Storages/Page/V3/WAL/WALReader.h>
 #include <Storages/Page/V3/WALStore.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <sys/types.h>
 
 #include <cstring>

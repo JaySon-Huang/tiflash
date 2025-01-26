@@ -17,7 +17,7 @@
 #include <Dictionaries/LibraryDictionarySourceExternal.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <ext/bit_cast.h>
 #include <ext/range.h>

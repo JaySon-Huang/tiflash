@@ -24,7 +24,7 @@
 #include <Flash/Planner/Plans/PhysicalJoinV2Build.h>
 #include <Flash/Planner/Plans/PhysicalJoinV2Probe.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB

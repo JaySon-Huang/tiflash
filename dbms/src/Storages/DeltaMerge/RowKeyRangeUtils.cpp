@@ -15,7 +15,7 @@
 #include <Common/Logger.h>
 #include <Common/TiFlashException.h>
 #include <Storages/DeltaMerge/RowKeyRangeUtils.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

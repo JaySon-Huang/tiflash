@@ -19,7 +19,7 @@
 #include <TiDB/Etcd/Client.h>
 #include <TiDB/OwnerInfo.h>
 #include <TiDB/OwnerManager.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <gtest/gtest.h>
 #include <pingcap/Config.h>
 #include <pingcap/pd/IClient.h>

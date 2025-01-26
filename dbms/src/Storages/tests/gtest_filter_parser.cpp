@@ -31,7 +31,7 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <regex>
 

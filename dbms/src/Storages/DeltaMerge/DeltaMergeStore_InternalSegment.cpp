@@ -25,7 +25,7 @@
 #include <Storages/DeltaMerge/LocalIndexerScheduler.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/WriteBatchesImpl.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <magic_enum.hpp>
 

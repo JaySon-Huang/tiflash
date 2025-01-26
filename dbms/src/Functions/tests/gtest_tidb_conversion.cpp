@@ -22,7 +22,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTiDBConversion.h>
 #include <TestUtils/FunctionTestUtils.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/types.h>
 #include <gtest/gtest.h>
 

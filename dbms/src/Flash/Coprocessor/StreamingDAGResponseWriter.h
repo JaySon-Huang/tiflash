@@ -20,7 +20,7 @@
 #include <Flash/Coprocessor/ChunkCodec.h>
 #include <Flash/Coprocessor/DAGResponseWriter.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

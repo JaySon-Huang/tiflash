@@ -14,7 +14,7 @@
 
 #include <Common/Logger.h>
 #include <Storages/BackgroundProcessingPool.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <chrono>

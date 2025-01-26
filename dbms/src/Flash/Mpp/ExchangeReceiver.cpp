@@ -24,7 +24,7 @@
 #include <Flash/Mpp/GRPCReceiverContext.h>
 #include <Flash/Mpp/MPPTunnel.h>
 #include <Interpreters/Settings.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/core.h>
 #include <grpcpp/alarm.h>
 #include <grpcpp/completion_queue.h>

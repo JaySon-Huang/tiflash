@@ -18,7 +18,7 @@
 #include <TiDB/Schema/SchemaBuilder.h>
 #include <TiDB/Schema/SchemaGetter.h>
 #include <TiDB/Schema/TiDBSchemaSyncer.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/types.h>
 #include <fiu.h>
 

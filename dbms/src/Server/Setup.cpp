@@ -15,7 +15,7 @@
 #include <Common/Logger.h>
 #include <Server/Setup.h>
 #include <common/config_common.h> // Included for `USE_JEMALLOC`/`USE_MIMALLOC`
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/simd.h>
 
 #if USE_JEMALLOC

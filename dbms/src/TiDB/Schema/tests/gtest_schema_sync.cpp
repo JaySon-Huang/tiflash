@@ -36,7 +36,7 @@
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <ext/scope_guard.h>

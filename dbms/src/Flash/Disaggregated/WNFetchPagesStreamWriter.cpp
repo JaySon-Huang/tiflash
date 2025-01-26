@@ -27,7 +27,7 @@
 #include <Storages/DeltaMerge/Remote/WNDisaggSnapshotManager.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/Page/PageUtil.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <memory>
 #include <tuple>

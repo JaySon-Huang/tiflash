@@ -19,7 +19,7 @@
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <future>
 #include <thread>

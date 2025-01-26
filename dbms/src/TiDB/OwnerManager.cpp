@@ -21,7 +21,7 @@
 #include <TiDB/MockOwnerManager.h>
 #include <TiDB/OwnerInfo.h>
 #include <TiDB/OwnerManager.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <etcd/v3election.grpc.pb.h>
 #include <fiu.h>
 

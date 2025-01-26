@@ -59,7 +59,7 @@
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

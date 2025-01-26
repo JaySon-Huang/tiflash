@@ -26,7 +26,7 @@
 #include <Storages/S3/S3Filename.h>
 #include <Storages/S3/S3RandomAccessFile.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DTTool::Migrate
 {

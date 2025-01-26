@@ -19,7 +19,7 @@
 #include <Core/SortDescription.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <boost/intrusive_ptr.hpp>
 #include <queue>

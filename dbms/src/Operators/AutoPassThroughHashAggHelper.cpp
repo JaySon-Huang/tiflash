@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Operators/AutoPassThroughHashAggHelper.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

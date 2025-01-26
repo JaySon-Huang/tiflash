@@ -26,7 +26,7 @@
 #include <Dictionaries/LibraryDictionarySource.h>
 #include <IO/HTTPCommon.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <memory>
 #include <mutex>

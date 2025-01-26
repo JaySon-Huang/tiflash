@@ -16,7 +16,7 @@
 #include <Common/SyncPoint/SyncPoint.h>
 #include <Storages/DeltaMerge/StoragePool/GlobalPageIdAllocator.h>
 #include <Storages/Page/PageDefinesBase.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 

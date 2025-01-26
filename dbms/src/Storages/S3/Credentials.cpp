@@ -25,7 +25,7 @@
 #include <aws/core/platform/OSVersionInfo.h>
 #include <aws/core/utils/UUID.h>
 #include <aws/core/utils/json/JsonSerializer.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <fstream>
 

@@ -21,7 +21,7 @@
 #include <Storages/KVStore/Decode/PartitionStreams.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 #include <Storages/StorageDeltaMerge.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

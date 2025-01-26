@@ -19,7 +19,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost_wrapper/string.h>
 #include <common/likely.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <fstream>
 

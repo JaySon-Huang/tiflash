@@ -27,7 +27,7 @@
 #include <TiDB/OwnerManager.h>
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <boost/algorithm/string.hpp>

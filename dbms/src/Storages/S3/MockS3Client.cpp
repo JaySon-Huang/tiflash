@@ -45,7 +45,7 @@
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <boost_wrapper/string_split.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/types.h>
 #include <fiu.h>
 

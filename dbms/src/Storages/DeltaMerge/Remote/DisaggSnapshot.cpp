@@ -15,7 +15,7 @@
 #include <Storages/DeltaMerge/Remote/DisaggSnapshot.h>
 #include <Storages/DeltaMerge/Remote/Serializer.h>
 #include <Storages/DeltaMerge/Segment.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <kvproto/mpp.pb.h>
 
 #include <memory>

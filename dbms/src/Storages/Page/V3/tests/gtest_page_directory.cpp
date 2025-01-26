@@ -36,7 +36,7 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <common/UInt128.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/types.h>
 #include <fmt/format.h>
 

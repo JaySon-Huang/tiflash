@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <cpptoml.h>
 
 #include <sstream>

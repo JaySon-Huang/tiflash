@@ -31,7 +31,7 @@
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <TiDB/Schema/TiDBSchemaSyncer.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <pingcap/pd/MockPDClient.h>
 
 #include <magic_enum.hpp>

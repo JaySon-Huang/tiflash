@@ -27,7 +27,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/KVStore/Types.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <common/types.h>
 #include <tipb/executor.pb.h>
 #include <tipb/select.pb.h>

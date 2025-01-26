@@ -29,7 +29,7 @@
 #include <Storages/Page/V3/WAL/serialize.h>
 #include <Storages/Page/V3/WALStore.h>
 #include <Storages/Page/WriteBatchImpl.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <magic_enum.hpp>
 #include <memory>

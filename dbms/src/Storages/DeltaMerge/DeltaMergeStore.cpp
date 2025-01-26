@@ -58,7 +58,7 @@
 #include <Storages/PathPool.h>
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <ext/scope_guard.h>

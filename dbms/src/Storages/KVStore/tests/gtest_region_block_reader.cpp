@@ -29,7 +29,7 @@
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/tests/RowCodecTestUtils.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 using TableInfo = TiDB::TableInfo;
 

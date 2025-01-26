@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <DataStreams/SquashingTransform.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

@@ -26,7 +26,7 @@
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <tipb/executor.pb.h>
 
 #include <memory>

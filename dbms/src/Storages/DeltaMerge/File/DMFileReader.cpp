@@ -25,7 +25,7 @@
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/DeltaMerge/convertColumnTypeHelpers.h>
 #include <Storages/KVStore/Types.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 

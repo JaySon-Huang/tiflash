@@ -16,7 +16,7 @@
 
 #include <Common/Exception.h>
 #include <Flash/Planner/PhysicalPlanNode.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB

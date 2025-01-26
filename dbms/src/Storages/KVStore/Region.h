@@ -20,7 +20,7 @@
 #include <Storages/KVStore/MultiRaft/RegionData.h>
 #include <Storages/KVStore/MultiRaft/RegionMeta.h>
 #include <Storages/KVStore/MultiRaft/RegionSerde.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <shared_mutex>
 

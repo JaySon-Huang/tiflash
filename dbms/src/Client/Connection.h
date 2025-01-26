@@ -28,7 +28,7 @@
 #include <Interpreters/Settings_fwd.h>
 #include <Interpreters/TablesStatus.h>
 #include <Poco/Net/StreamSocket.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <atomic>
 

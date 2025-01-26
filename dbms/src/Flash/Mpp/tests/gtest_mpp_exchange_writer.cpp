@@ -37,7 +37,7 @@
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <Flash/Mpp/BroadcastOrPassThroughWriter.cpp>

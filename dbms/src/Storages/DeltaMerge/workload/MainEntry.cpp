@@ -36,7 +36,7 @@
 #include <Storages/PathPool.h>
 #include <Storages/S3/S3Common.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <cpptoml.h>
 #include <signal.h>
 #include <sys/wait.h>

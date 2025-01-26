@@ -17,7 +17,7 @@
 #include <Interpreters/Settings_fwd.h>
 #include <Storages/KVStore/Types.h>
 #include <common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #ifdef __clang__

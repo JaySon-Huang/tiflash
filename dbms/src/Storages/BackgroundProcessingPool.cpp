@@ -22,7 +22,7 @@
 #include <Poco/Timespan.h>
 #include <Storages/BackgroundProcessingPool.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>

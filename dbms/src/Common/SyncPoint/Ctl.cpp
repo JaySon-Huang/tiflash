@@ -16,7 +16,7 @@
 #include <Common/SyncPoint/Ctl.h>
 #include <Common/SyncPoint/ScopeGuard.h>
 #include <Common/SyncPoint/SyncChannel.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fiu-control.h>
 
 namespace DB

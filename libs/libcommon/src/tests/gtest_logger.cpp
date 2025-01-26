@@ -22,7 +22,7 @@
 #include <Poco/Logger.h>
 #include <Poco/PatternFormatter.h>
 #include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <gtest/gtest.h>
 

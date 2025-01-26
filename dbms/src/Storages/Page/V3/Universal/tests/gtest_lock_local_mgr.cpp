@@ -23,7 +23,7 @@
 #include <Storages/S3/S3Filename.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <gtest/gtest.h>
 
 

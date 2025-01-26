@@ -16,7 +16,7 @@
 
 #include <Storages/KVStore/TiKVHelpers/KeyspaceSnapshot.h>
 #include <TiDB/Schema/TiDB_fwd.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <optional>
 

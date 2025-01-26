@@ -30,7 +30,7 @@
 #include <TestUtils/InputStreamTestUtils.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <aws/s3/model/CreateBucketRequest.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <optional>
 

@@ -63,7 +63,7 @@
 #include <aws/sts/STSServiceClientModel.h>
 #include <aws/sts/model/GetCallerIdentityRequest.h>
 #include <aws/sts/model/GetCallerIdentityResult.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <kvproto/disaggregated.pb.h>
 #include <pingcap/kv/Cluster.h>
 #include <pingcap/kv/RegionCache.h>

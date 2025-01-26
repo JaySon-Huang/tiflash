@@ -28,7 +28,7 @@
 #include <Common/Logger.h>
 #include <Core/Types.h>
 #include <Storages/KVStore/Types.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fiu.h>
 
 #include <atomic>

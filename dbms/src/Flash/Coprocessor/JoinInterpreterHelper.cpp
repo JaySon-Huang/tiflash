@@ -23,7 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Join.h>
 #include <TiDB/Decode/TypeMapping.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <unordered_map>

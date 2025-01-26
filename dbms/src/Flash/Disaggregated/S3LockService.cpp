@@ -26,7 +26,7 @@
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <common/defines.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <ext/scope_guard.h>
