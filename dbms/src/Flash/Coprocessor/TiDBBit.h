@@ -22,7 +22,7 @@
 #include <Common/TiFlashException.h>
 #include <Core/Types.h>
 #include <IO/Endian.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 namespace DB
 {

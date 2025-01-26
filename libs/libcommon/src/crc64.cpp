@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/crc64.h>
-#include <common/crc64_fast.h>
-#include <common/crc64_table.h>
-#include <common/detect_features.h>
-#include <common/simd.h>
+#include <base/crc64.h>
+#include <base/crc64_fast.h>
+#include <base/crc64_table.h>
+#include <base/detect_features.h>
+#include <base/simd.h>
 namespace crc64
 {
 using namespace common;

@@ -16,7 +16,7 @@
 #include <Flash/Coprocessor/ExecutionSummary.h>
 #include <Flash/Statistics/BaseRuntimeStatistics.h>
 #include <Storages/DeltaMerge/ScanContext.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 namespace DB
 {

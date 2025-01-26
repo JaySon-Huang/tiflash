@@ -33,7 +33,7 @@
 #include <Functions/StringUtil.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/core.h>
 
 #include <memory>

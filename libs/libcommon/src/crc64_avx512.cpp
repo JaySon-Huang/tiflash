@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/crc64_fast.h>
+#include <base/crc64_fast.h>
 #if defined(TIFLASH_CRC64_HAS_SIMD_SUPPORT) && defined(TIFLASH_ENABLE_AVX512_SUPPORT) \
     && TIFLASH_COMPILER_VPCLMULQDQ_SUPPORT
-#include <common/crc64.h>
-#include <common/crc64_arch/crc64_x86.h>
-#include <common/crc64_table.h>
+#include <base/crc64.h>
+#include <base/crc64_arch/crc64_x86.h>
+#include <base/crc64_table.h>
 
 #include <array>
 namespace crc64::_detail

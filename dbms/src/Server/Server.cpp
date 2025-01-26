@@ -96,9 +96,9 @@
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <WindowFunctions/registerWindowFunctions.h>
+#include <base/ErrorHandlers.h>
+#include <base/config_common.h>
 #include <boost_wrapper/string_split.h>
-#include <common/ErrorHandlers.h>
-#include <common/config_common.h>
 #include <sys/resource.h>
 
 #include <boost/algorithm/string/classification.hpp>

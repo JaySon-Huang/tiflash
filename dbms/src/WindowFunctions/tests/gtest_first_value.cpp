@@ -20,7 +20,7 @@
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/WindowTestUtils.h>
 #include <TestUtils/mockExecutor.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 #include <memory>

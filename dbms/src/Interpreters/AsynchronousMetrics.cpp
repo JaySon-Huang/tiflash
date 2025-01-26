@@ -35,7 +35,7 @@
 #include <Storages/Page/PageStorageMemorySummary.h>
 #include <Storages/Page/V3/Universal/UniversalPageStorageService.h>
 #include <Storages/StorageDeltaMerge.h>
-#include <common/config_common.h>
+#include <base/config_common.h>
 
 #include <chrono>
 

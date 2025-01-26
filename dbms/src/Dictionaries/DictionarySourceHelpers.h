@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <vector>
 

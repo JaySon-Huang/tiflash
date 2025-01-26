@@ -26,7 +26,7 @@
 #include <aws/core/http/Scheme.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <magic_enum.hpp>
 

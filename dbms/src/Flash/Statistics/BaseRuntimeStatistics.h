@@ -16,7 +16,7 @@
 
 #include <Common/FmtUtils.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

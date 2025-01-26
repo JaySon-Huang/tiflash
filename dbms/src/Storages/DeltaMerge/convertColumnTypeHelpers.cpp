@@ -25,7 +25,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <Storages/DeltaMerge/convertColumnTypeHelpers.h>
-#include <common/types.h>
+#include <base/types.h>
 namespace DB
 {
 namespace ErrorCodes

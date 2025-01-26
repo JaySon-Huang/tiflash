@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/fixed_mem_eq.h>
+#include <base/fixed_mem_eq.h>
 #include <immintrin.h>
 
 #include <cassert>

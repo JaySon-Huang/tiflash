@@ -19,8 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerSetter.h>
 #include <Common/memcpySmall.h>
-#include <common/likely.h>
-#include <common/strong_typedef.h>
+#include <base/likely.h>
+#include <base/strong_typedef.h>
 #include <string.h>
 
 #include <algorithm>

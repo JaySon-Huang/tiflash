@@ -14,7 +14,7 @@
 
 #include <Common/ThreadMetricUtil.h>
 #include <Common/TiFlashMetrics.h>
-#include <common/types.h>
+#include <base/types.h>
 
 using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;

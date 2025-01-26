@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #pragma once
-#include <common/detect_features.h>
+#include <base/detect_features.h>
 namespace simd_option
 {
 #if defined(__x86_64__)

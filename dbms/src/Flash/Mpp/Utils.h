@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <kvproto/mpp.pb.h>

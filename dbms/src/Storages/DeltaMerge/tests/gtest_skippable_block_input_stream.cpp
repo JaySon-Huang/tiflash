@@ -20,8 +20,8 @@
 #include <Storages/DeltaMerge/tests/gtest_segment_util.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
+#include <base/defines.h>
 #include <boost_wrapper/string.h>
-#include <common/defines.h>
 #include <gtest/gtest.h>
 
 namespace DB::DM::tests

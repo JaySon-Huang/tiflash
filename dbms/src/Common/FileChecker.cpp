@@ -20,7 +20,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Path.h>
-#include <common/JSON.h>
+#include <base/JSON.h>
 
 
 namespace DB

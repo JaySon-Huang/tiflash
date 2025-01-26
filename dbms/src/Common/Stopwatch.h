@@ -14,14 +14,14 @@
 
 #pragma once
 
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 #include <time.h>
 
 #include <atomic>
 
 #ifdef __APPLE__
-#include <common/apple_rt.h>
+#include <base/apple_rt.h>
 #endif
 
 static constexpr UInt64 SECOND_TO_NANO = 1000000000ULL;

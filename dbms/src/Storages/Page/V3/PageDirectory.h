@@ -28,8 +28,8 @@
 #include <Storages/Page/V3/PageEntry.h>
 #include <Storages/Page/V3/WAL/serialize.h>
 #include <Storages/Page/V3/WALStore.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <magic_enum.hpp>
 #include <memory>

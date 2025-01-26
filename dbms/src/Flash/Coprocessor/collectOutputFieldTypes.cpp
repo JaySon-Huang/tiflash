@@ -16,7 +16,7 @@
 #include <Flash/Coprocessor/DAGUtils.h>
 #include <Flash/Coprocessor/collectOutputFieldTypes.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

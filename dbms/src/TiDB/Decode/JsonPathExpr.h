@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <common/StringRef.h>
-#include <common/memcpy.h>
+#include <base/StringRef.h>
+#include <base/memcpy.h>
 
 /**
  * From MySQL 5.7, JSON path expression grammar:

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Columns/ColumnUtil.h>
-#include <common/mem_utils_opt.h>
+#include <base/mem_utils_opt.h>
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>

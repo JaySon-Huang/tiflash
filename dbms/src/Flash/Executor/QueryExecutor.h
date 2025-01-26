@@ -20,7 +20,7 @@
 #include <Flash/Executor/ResultHandler.h>
 #include <Flash/Executor/toRU.h>
 #include <Flash/Statistics/BaseRuntimeStatistics.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 

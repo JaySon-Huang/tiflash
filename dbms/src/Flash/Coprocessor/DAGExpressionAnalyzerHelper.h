@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Interpreters/ExpressionActions.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 namespace DB

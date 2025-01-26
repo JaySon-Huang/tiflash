@@ -20,8 +20,8 @@
 #include <Storages/DeltaMerge/dtpb/dmfile.pb.h>
 #include <Storages/DeltaMerge/tests/gtest_dm_vector_index_utils.h>
 #include <TiDB/Schema/VectorIndex.h>
+#include <base/types.h>
 #include <benchmark/benchmark.h>
-#include <common/types.h>
 #include <tipb/executor.pb.h>
 
 #include <filesystem>

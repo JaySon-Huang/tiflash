@@ -16,7 +16,7 @@
 #include <Columns/ColumnUtil.h>
 #include <Columns/countBytesInFilter.h>
 #include <Columns/filterColumn.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 
 #include <bit>
 

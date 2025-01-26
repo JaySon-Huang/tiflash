@@ -28,7 +28,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <mutex>
 

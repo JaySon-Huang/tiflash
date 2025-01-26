@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 /// Remove the population of thread_local from Poco
 #ifdef thread_local

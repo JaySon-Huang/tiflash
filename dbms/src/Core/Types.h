@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Poco/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <limits>
 #include <string>

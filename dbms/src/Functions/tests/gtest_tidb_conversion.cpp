@@ -23,7 +23,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTiDBConversion.h>
 #include <TestUtils/FunctionTestUtils.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 namespace DB

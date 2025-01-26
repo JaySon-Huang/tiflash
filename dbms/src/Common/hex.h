@@ -31,7 +31,7 @@ inline char hexDigitLowercase(unsigned char c)
 }
 
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <cstddef>
 #include <cstring>

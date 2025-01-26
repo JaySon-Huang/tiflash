@@ -17,7 +17,7 @@
 #include <Common/MyDuration.h>
 #include <Core/Field.h>
 #include <Interpreters/TimezoneInfo.h>
-#include <common/DateLUTImpl.h>
+#include <base/DateLUTImpl.h>
 
 struct StringRef;
 namespace DB

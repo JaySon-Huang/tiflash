@@ -26,7 +26,7 @@
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <fmt/core.h>
 
 #include <ext/scope_guard.h>

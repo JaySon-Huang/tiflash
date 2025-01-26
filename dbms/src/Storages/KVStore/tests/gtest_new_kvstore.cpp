@@ -29,7 +29,7 @@
 #include <Storages/RegionQueryInfo.h>
 #include <TiDB/Schema/SchemaSyncService.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/config_common.h> // Included for `USE_JEMALLOC`
+#include <base/config_common.h> // Included for `USE_JEMALLOC`
 
 #include <limits>
 

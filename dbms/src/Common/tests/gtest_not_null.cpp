@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Common/NotNull.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <gtest/gtest.h>
 
 namespace DB::tests

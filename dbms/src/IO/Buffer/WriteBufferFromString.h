@@ -17,7 +17,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/nocopyable.h>
 #include <IO/Buffer/WriteBufferFromVector.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <string>
 

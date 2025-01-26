@@ -20,7 +20,7 @@
 #include <Flash/Mpp/MppVersion.h>
 #include <Flash/Mpp/ReceivedMessageQueue.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <grpcpp/alarm.h>
 #include <grpcpp/completion_queue.h>
 

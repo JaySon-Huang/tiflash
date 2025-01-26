@@ -16,7 +16,7 @@
 
 #include <IO/BaseFile/WriteReadableFile.h>
 #include <IO/Encryption/AESCTRCipherStream.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB

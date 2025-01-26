@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/UInt128.h>
-#include <common/strong_typedef.h>
+#include <base/UInt128.h>
+#include <base/strong_typedef.h>
 
 namespace DB
 {

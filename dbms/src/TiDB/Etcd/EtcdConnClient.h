@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <etcd/rpc.grpc.pb.h>
 #include <etcd/v3election.grpc.pb.h>
 #include <grpcpp/channel.h>

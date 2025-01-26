@@ -17,7 +17,7 @@
 #include <Common/NaNUtils.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <common/DecomposedFloat.h>
+#include <base/DecomposedFloat.h>
 
 #include <cmath>
 #include <limits>

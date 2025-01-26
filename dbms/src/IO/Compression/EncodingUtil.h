@@ -16,8 +16,8 @@
 
 #include <Common/BitpackingPrimitives.h>
 #include <Common/Exception.h>
-#include <common/types.h>
-#include <common/unaligned.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 
 #include <cstring>
 #include <vector>

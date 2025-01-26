@@ -21,7 +21,7 @@
 #include <Operators/Operator.h>
 #include <Storages/DeltaMerge/ColumnDefine_fwd.h>
 #include <TiDB/Schema/TiDB_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <memory>

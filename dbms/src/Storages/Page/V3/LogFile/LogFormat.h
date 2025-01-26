@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Common/Checksum.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <cstdint>
 

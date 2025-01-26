@@ -16,7 +16,7 @@
 #include <Common/RedactHelpers.h>
 #include <Common/hex.h>
 #include <IO/WriteHelpers.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <pingcap/RedactHelpers.h>
 
 #include <iomanip>

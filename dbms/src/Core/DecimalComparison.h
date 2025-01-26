@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB

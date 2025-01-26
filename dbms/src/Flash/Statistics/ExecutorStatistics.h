@@ -20,7 +20,7 @@
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Statistics/ExecutorStatisticsBase.h>
 #include <Flash/Statistics/transformProfiles.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 #include <memory>

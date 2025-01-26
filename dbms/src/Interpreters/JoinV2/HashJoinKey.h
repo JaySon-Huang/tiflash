@@ -21,7 +21,7 @@
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JoinV2/HashJoinRowLayout.h>
-#include <common/mem_utils_opt.h>
+#include <base/mem_utils_opt.h>
 
 namespace DB
 {

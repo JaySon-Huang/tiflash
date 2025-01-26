@@ -16,8 +16,8 @@
 
 #include <Storages/DeltaMerge/Remote/ObjectId.h>
 #include <Storages/KVStore/Types.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 #include <string_view>

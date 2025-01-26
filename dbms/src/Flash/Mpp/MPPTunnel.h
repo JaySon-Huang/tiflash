@@ -30,9 +30,9 @@
 #include <Flash/Mpp/TrackedMppDataPacket.h>
 #include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
-#include <common/StringRef.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <type_traits>

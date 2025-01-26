@@ -20,7 +20,7 @@
 #include <DataStreams/EmptyBlockInputStream.h>
 #include <DataStreams/SharedQueryBlockInputStream.h>
 #include <Poco/Util/Timer.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <mutex>
 

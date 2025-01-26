@@ -16,7 +16,7 @@
 #include <Core/Names.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
 #include <memory>

@@ -20,7 +20,7 @@
 #pragma GCC diagnostic pop
 
 #include <Core/Types.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 namespace DB
 {

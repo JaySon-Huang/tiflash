@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/arithmeticOverflow.h>
-#include <common/types.h>
+#include <base/arithmeticOverflow.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 TEST(OVERFLOW_Suite, SimpleTest)
 {

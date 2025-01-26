@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <common/DateLUT.h>
-#include <common/DateLUTImpl.h>
+#include <base/DateLUT.h>
+#include <base/DateLUTImpl.h>
 
 namespace DB
 {

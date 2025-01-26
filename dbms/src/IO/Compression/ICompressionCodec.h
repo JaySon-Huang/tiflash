@@ -15,7 +15,7 @@
 #pragma once
 
 #include <IO/Compression/CompressionInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
 #include <memory>

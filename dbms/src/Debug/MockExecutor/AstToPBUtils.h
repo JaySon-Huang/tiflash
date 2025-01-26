@@ -17,7 +17,7 @@
 #include <Common/Exception.h>
 #include <Poco/StringTokenizer.h>
 #include <TiDB/Schema/TiDB.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

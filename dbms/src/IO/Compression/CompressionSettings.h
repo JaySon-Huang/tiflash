@@ -17,7 +17,7 @@
 #include <DataTypes/IDataType.h>
 #include <IO/Compression/CompressionInfo.h>
 #include <IO/Compression/CompressionMethod.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <unordered_map>
 

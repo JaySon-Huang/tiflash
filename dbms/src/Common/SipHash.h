@@ -29,8 +29,8 @@
 
 #include <Common/Decimal.h>
 #include <Core/Defines.h>
-#include <common/types.h>
-#include <common/unaligned.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 
 #include <string>
 #include <type_traits>

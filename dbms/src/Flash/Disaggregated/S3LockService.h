@@ -17,7 +17,7 @@
 #include <Common/Logger.h>
 #include <Storages/S3/S3Common.h>
 #include <TiDB/OwnerManager.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 #include <mutex>

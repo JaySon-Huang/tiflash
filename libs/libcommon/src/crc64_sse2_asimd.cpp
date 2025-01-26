@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/crc64_fast.h>
-#include <common/crc64_table.h>
+#include <base/crc64_fast.h>
+#include <base/crc64_table.h>
 
 #ifdef TIFLASH_CRC64_HAS_SIMD_SUPPORT
 
-#include <common/crc64.h>
+#include <base/crc64.h>
 #if __SSE2__
-#include <common/crc64_arch/crc64_x86.h>
+#include <base/crc64_arch/crc64_x86.h>
 #else
-#include <common/crc64_arch/crc64_aarch64.h>
+#include <base/crc64_arch/crc64_aarch64.h>
 #endif
 
 namespace crc64::_detail

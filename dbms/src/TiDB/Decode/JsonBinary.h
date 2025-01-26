@@ -21,8 +21,8 @@
 #include <Common/VectorWriter.h>
 #include <Core/Types.h>
 #include <IO/Buffer/WriteBufferFromVector.h>
-#include <common/StringRef.h>
-#include <common/memcpy.h>
+#include <base/StringRef.h>
+#include <base/memcpy.h>
 #include <simdjson.h>
 
 #include <string_view>

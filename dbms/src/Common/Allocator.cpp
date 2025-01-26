@@ -22,7 +22,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteHelpers.h>
-#include <common/mremap.h>
+#include <base/mremap.h>
 #include <sys/mman.h>
 
 #include <cstdlib>

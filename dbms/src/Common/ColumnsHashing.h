@@ -25,8 +25,8 @@
 #include <Core/Defines.h>
 #include <Interpreters/AggregationCommon.h>
 #include <TiDB/Collation/Collator.h>
-#include <common/memcpy.h>
-#include <common/unaligned.h>
+#include <base/memcpy.h>
+#include <base/unaligned.h>
 
 
 namespace DB

@@ -31,7 +31,7 @@
 #include <Storages/PathPool.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <ext/scope_guard.h>
 #include <future>

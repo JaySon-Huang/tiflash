@@ -17,8 +17,8 @@
 #include <Common/ProfileEvents.h>
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
+#include <base/crc64.h>
 #include <city.h>
-#include <common/crc64.h>
 #ifdef __x86_64__
 #include <xxh_x86dispatch.h>
 #else

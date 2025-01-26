@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #ifdef TIFLASH_ENABLE_AVX_SUPPORT
-#include <common/mem_utils.h>
+#include <base/mem_utils.h>
 #include <immintrin.h>
 
 #include <cassert>
