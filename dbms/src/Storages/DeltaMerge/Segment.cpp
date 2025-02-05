@@ -39,6 +39,7 @@
 #include <Storages/DeltaMerge/File/DMFile.h>
 #include <Storages/DeltaMerge/File/DMFileBlockInputStream.h>
 #include <Storages/DeltaMerge/File/DMFileBlockOutputStream.h>
+#include <Storages/DeltaMerge/File/DMFilePackFilter_fwd.h>
 #include <Storages/DeltaMerge/Filter/FilterHelper.h>
 #include <Storages/DeltaMerge/Index/LocalIndexInfo.h>
 #include <Storages/DeltaMerge/LateMaterializationBlockInputStream.h>
@@ -71,7 +72,6 @@
 
 #include <ext/scope_guard.h>
 #include <memory>
-#include "Storages/DeltaMerge/File/DMFilePackFilter_fwd.h"
 
 
 namespace ProfileEvents
@@ -1726,22 +1726,16 @@ SegmentPair Segment::split(
     return segment_pair;
 }
 
-std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, const StableSnapshotPtr & stable_snap)
-    const
+struct SplitPointFileReadInfo
 {
-    // FIXME: this method does not consider invalid packs in stable dmfiles.
+    ssize_t file_index;
+    IdSetPtr read_pack;
+    size_t read_row_in_pack = 0;
+};
 
-    EventRecorder recorder(ProfileEvents::DMSegmentGetSplitPoint, ProfileEvents::DMSegmentGetSplitPointNS);
-    auto stable_rows = stable_snap->getRows();
-    if (unlikely(!stable_rows))
-        return {};
-
-    size_t split_row_index = stable_rows / 2;
-
-    const auto & dmfiles = stable_snap->getDMFiles();
-
-    DMFilePtr read_file;
-    size_t file_index = 0;
+SplitPointFileReadInfo getSplitPointFileReadInfo(const DMFiles & dmfiles, size_t split_row_index)
+{
+    ssize_t file_index = -1;
     auto read_pack = std::make_shared<IdSet>();
     size_t read_row_in_pack = 0;
 
@@ -1762,7 +1756,6 @@ std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, co
                 {
                     cur_rows -= pack_stats[pack_id].rows;
 
-                    read_file = file;
                     file_index = index;
                     read_pack->insert(pack_id);
                     read_row_in_pack = split_row_index - cur_rows;
@@ -1773,7 +1766,25 @@ std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, co
             break;
         }
     }
-    if (unlikely(!read_file))
+
+    return SplitPointFileReadInfo{file_index, read_pack, read_row_in_pack};
+}
+
+std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, const StableSnapshotPtr & stable_snap)
+    const
+{
+    // FIXME: this method does not consider invalid packs in stable dmfiles.
+
+    EventRecorder recorder(ProfileEvents::DMSegmentGetSplitPoint, ProfileEvents::DMSegmentGetSplitPointNS);
+    auto stable_rows = stable_snap->getRows();
+    if (unlikely(!stable_rows))
+        return {};
+
+    size_t split_row_index = stable_rows / 2;
+
+    const auto & dmfiles = stable_snap->getDMFiles();
+    const auto [file_index, read_pack, read_row_in_pack] = getSplitPointFileReadInfo(dmfiles, split_row_index);
+    if (unlikely(file_index < 0))
         throw Exception("Logical error: failed to find split point");
 
     DMFileBlockInputStreamBuilder builder(dm_context.global_context);
@@ -1781,7 +1792,7 @@ std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, co
                       .setReadPacks(read_pack)
                       .setTracingID(fmt::format("{}-getSplitPointFast", dm_context.tracing_id))
                       .build(
-                          read_file,
+                          dmfiles[file_index],
                           /*read_columns=*/{getExtraHandleColumnDefine(is_common_handle)},
                           /*rowkey_ranges=*/{RowKeyRange::newAll(is_common_handle, rowkey_column_size)},
                           dm_context.scan_context);
@@ -1802,11 +1813,10 @@ std::optional<RowKeyValue> Segment::getSplitPointFast(DMContext & dm_context, co
     {
         LOG_WARNING(
             log,
-            "Split - unexpected split_point: {}, should be in range {}, cur_rows: {}, read_row_in_pack: {}, "
+            "Split - unexpected split_point: {}, should be in range {}, read_row_in_pack: {}, "
             "file_index: {}",
             split_point.toRowKeyValueRef().toDebugString(),
             rowkey_range.toDebugString(),
-            cur_rows,
             read_row_in_pack,
             file_index);
         return {};
