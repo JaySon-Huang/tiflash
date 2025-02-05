@@ -52,6 +52,15 @@ public:
         bool set_cache_if_miss,
         const RowKeyRanges & rowkey_ranges);
 
+    static DMFilePackFilterResultPtr load(
+        const DMContext & dm_context,
+        const DMFilePtr & dmfile,
+        const RowKeyRanges & rowkey_ranges,
+        const IdSetPtr & read_packs)
+    {
+        return loadFrom(dm_context, dmfile, false, rowkey_ranges, nullptr, read_packs);
+    }
+
     // Empty `rowkey_ranges` means do not filter by rowkey_ranges
     static DMFilePackFilterResultPtr loadFrom(
         const DMContext & dm_context,

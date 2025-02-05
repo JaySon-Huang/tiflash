@@ -67,7 +67,7 @@ void StableValueSpace::setFiles(const DMFiles & files_, const RowKeyRange & rang
 void StableValueSpace::saveMeta(WriteBatchWrapper & meta_wb)
 {
     MemoryWriteBuffer buf(0, 8192);
-    // The method must call `buf.count()` to get the last seralized size before `buf.tryGetReadBuffer`
+    // The method must call `buf.count()` to get the last serialized size before `buf.tryGetReadBuffer`
     auto data_size = serializeMetaToBuf(buf);
     meta_wb.putPage(id, 0, buf.tryGetReadBuffer(), data_size);
 }

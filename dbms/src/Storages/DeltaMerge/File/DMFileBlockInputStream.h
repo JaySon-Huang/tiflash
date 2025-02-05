@@ -244,7 +244,7 @@ private:
     ANNQueryInfoPtr ann_query_info = nullptr;
 
     VectorIndexCachePtr vector_index_cache;
-    // Note: Currently thie field is assigned only for Stable streams, not available for ColumnFileBig
+    // Note: Currently this field is assigned only for Stable streams, not available for ColumnFileBig
     std::optional<BitmapFilterView> bitmap_filter;
 
     // Note: column_cache_long_term is currently only filled when performing Vector Search.

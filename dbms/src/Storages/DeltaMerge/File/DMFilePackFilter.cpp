@@ -56,6 +56,8 @@ DMFilePackFilterResultPtr DMFilePackFilter::load()
     SCOPE_EXIT({ scan_context->total_rs_pack_filter_check_time_ns += watch.elapsed(); });
     size_t pack_count = dmfile->getPacks();
     DMFilePackFilterResult result(index_cache, read_limiter, pack_count);
+
+    // Generate handle_res by `rowkey_ranges`
     auto read_all_packs = (rowkey_ranges.size() == 1 && rowkey_ranges[0].all()) || rowkey_ranges.empty();
     if (!read_all_packs)
     {
