@@ -680,7 +680,10 @@ RawCppPtr PreHandleSnapshot(
         CHECK_PARSE_PB_BUFF(region, region_buff.data, region_buff.len);
         auto & tmt = *server->tmt;
         auto & kvstore = tmt.getKVStore();
-        auto new_region = kvstore->genRegionPtr(std::move(region), peer_id, index, term, tmt, true);
+
+        auto region_meta = RegionMeta::genFromPb(std::move(region), peer_id, index, term);
+        auto region_tbl_ctx = tmt.getRegionTable().getTableContext(region_meta.getRange()->getKeyspaceTableID());
+        auto new_region = kvstore->genRegionPtr(std::move(region_meta), region_tbl_ctx);
 
 #ifndef NDEBUG
         {

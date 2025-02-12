@@ -129,7 +129,7 @@ public:
     };
 
 public: // Simple Read and Write
-    explicit Region(RegionMeta && meta_, const TiFlashRaftProxyHelper *);
+    explicit Region(RegionMeta && meta_, const TiFlashRaftProxyHelper *, RegionTableCtx tbl_ctx);
     Region(const Region &) = delete;
     Region() = delete;
     ~Region();
@@ -151,6 +151,8 @@ public: // Simple Read and Write
 
     // Directly drop all data in this Region object.
     void clearAllData();
+
+    RegionPtr cloneWithEmptyData() const;
 
     void mergeDataFrom(const Region & other);
 
@@ -198,7 +200,10 @@ public: // Stats
         const char * data,
         UInt32 size);
     std::tuple<size_t, UInt64> serialize(WriteBuffer & buf) const;
-    static RegionPtr deserialize(ReadBuffer & buf, const TiFlashRaftProxyHelper * proxy_helper = nullptr);
+    static RegionPtr deserialize(
+        ReadBuffer & buf,
+        RegionTableCtx tbl_ctx,
+        const TiFlashRaftProxyHelper * proxy_helper = nullptr);
     std::tuple<size_t, UInt64> serializeImpl(
         UInt32 binary_version,
         UInt32 expected_extension_count,
@@ -208,6 +213,7 @@ public: // Stats
         UInt32 current_version,
         std::function<bool(UInt32, ReadBuffer &, UInt32)> extra_handler,
         ReadBuffer & buf,
+        RegionTableCtx tbl_ctx,
         const TiFlashRaftProxyHelper * proxy_helper = nullptr);
 
     friend bool operator==(const Region & region1, const Region & region2)
@@ -242,11 +248,10 @@ public: // Stats
     RegionData::OrphanKeysInfo & orphanKeysInfo() { return data.orphan_keys_info; }
     const RegionData::OrphanKeysInfo & orphanKeysInfo() const { return data.orphan_keys_info; }
 
-    // Bind a region to a RegionTable. It could not be bound to another table any more.
-    // All memory changes to this region would relect to the binded table.
-    void setRegionTableCtx(RegionTableCtx size) const;
+    // // Bind a region to a RegionTable. It could not be bound to another table any more.
+    // // All memory changes to this region would relect to the binded table.
+    // void setRegionTableCtx(RegionTableCtx size) const;
     RegionTableCtx getRegionTableCtx() const { return data.getRegionTableCtx(); }
-    RegionTableCtx resetRegionTableCtx() const { return data.resetRegionTableCtx(); }
     size_t getRegionTableSize() const { return data.getRegionTableSize(); }
     bool getRegionTableWarned() const { return data.getRegionTableWarned(); }
     bool setRegionTableWarned(bool desired) const { return data.setRegionTableWarned(desired); }

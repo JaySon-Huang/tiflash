@@ -219,7 +219,7 @@ try
     ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
     ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-    auto new_region = Region::deserialize(read_buf);
+    auto new_region = Region::deserialize(read_buf, nullptr);
     ASSERT_REGION_EQ(*new_region, *region);
     {
         // For the region restored with binary_version == 1, the eager_truncated_index is equals to
@@ -251,7 +251,7 @@ try
     ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
     ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-    auto new_region = Region::deserialize(read_buf);
+    auto new_region = Region::deserialize(read_buf, nullptr);
     ASSERT_REGION_EQ(*new_region, *region);
     {
         const auto & [eager_truncated_index, applied_index] = new_region->getRaftLogEagerGCRange();
@@ -295,7 +295,7 @@ try
 
     ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
     ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-    auto new_region = Region::deserialize(read_buf);
+    auto new_region = Region::deserialize(read_buf, nullptr);
     ASSERT_EQ(*new_region, *region);
 }
 CATCH
@@ -319,7 +319,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        auto new_region = Region::deserializeImpl(2, mockDeserFactory(0, counter), read_buf);
+        auto new_region = Region::deserializeImpl(2, mockDeserFactory(0, counter), read_buf, nullptr);
         ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
         ASSERT_REGION_EQ(*new_region, *region);
         ASSERT_EQ(*counter, 0);
@@ -337,7 +337,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf);
+        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf, nullptr);
         ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
         ASSERT_REGION_EQ(*new_region, *region);
         ASSERT_EQ(*counter, 1);
@@ -356,7 +356,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf);
+        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf, nullptr);
         ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
         ASSERT_REGION_EQ(*new_region, *region);
         ASSERT_EQ(*counter, 1);
@@ -375,7 +375,7 @@ try
 
         {
             ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-            auto new_region = Region::deserializeImpl(2, mockDeserFactory(1, counter), read_buf);
+            auto new_region = Region::deserializeImpl(2, mockDeserFactory(1, counter), read_buf, nullptr);
             ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
             ASSERT_REGION_EQ(*new_region, *region);
             ASSERT_EQ(*counter, 1); // Only parsed ReservedForTest.
@@ -383,7 +383,7 @@ try
         {
             // Also test V4 load.
             ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-            auto new_region = Region::deserializeImpl(4, mockDeserFactory(1 | 2, counter), read_buf);
+            auto new_region = Region::deserializeImpl(4, mockDeserFactory(1 | 2, counter), read_buf, nullptr);
             ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
             ASSERT_REGION_EQ(*new_region, *region);
             ASSERT_EQ(*counter, 1 | 2);
@@ -402,7 +402,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf);
+        auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf, nullptr);
         ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
         ASSERT_REGION_EQ(*new_region, *region);
         ASSERT_EQ(*counter, 0);
@@ -421,7 +421,7 @@ try
             // 2 -> 3
             auto counter = std::make_shared<int>(0);
             ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-            auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf);
+            auto new_region = Region::deserializeImpl(3, mockDeserFactory(1, counter), read_buf, nullptr);
             ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
             ASSERT_REGION_EQ(*new_region, *region);
             WriteBufferFromFile write_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT);
@@ -433,7 +433,7 @@ try
             // 3 -> 4
             auto counter = std::make_shared<int>(0);
             ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-            auto new_region = Region::deserializeImpl(4, mockDeserFactory(1 | 2, counter), read_buf);
+            auto new_region = Region::deserializeImpl(4, mockDeserFactory(1 | 2, counter), read_buf, nullptr);
             ASSERT_EQ(*counter, 1);
             ASSERT_EQ(new_region->getRaftLogEagerGCRange().first, 5678);
             ASSERT_REGION_EQ(*new_region, *region);
@@ -446,7 +446,7 @@ try
             auto counter = std::make_shared<int>(0);
             ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
             region->serializeImpl(2, ext_cnt_2, mockSerFactory(0), write_buf);
-            EXPECT_THROW(Region::deserializeImpl(2, mockDeserFactory(0, counter), read_buf), Exception);
+            EXPECT_THROW(Region::deserializeImpl(2, mockDeserFactory(0, counter), read_buf, nullptr), Exception);
         }
     }
     {
@@ -462,7 +462,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        EXPECT_THROW(Region::deserializeImpl(1, mockDeserFactory(0, counter), read_buf), Exception);
+        EXPECT_THROW(Region::deserializeImpl(1, mockDeserFactory(0, counter), read_buf, nullptr), Exception);
     }
     {
         // Downgrade. V3 store. V1 load.
@@ -477,7 +477,7 @@ try
         ASSERT_EQ(region_ser_size, (size_t)Poco::File(path).getSize());
 
         ReadBufferFromFile read_buf(path, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY);
-        EXPECT_THROW(Region::deserializeImpl(1, mockDeserFactory(0, counter), read_buf), Exception);
+        EXPECT_THROW(Region::deserializeImpl(1, mockDeserFactory(0, counter), read_buf, nullptr), Exception);
     }
 }
 CATCH

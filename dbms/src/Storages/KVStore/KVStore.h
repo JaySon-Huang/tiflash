@@ -19,10 +19,12 @@
 #include <Storages/DeltaMerge/DeltaMergeInterfaces.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/KVStore/Decode/RegionDataRead.h>
+#include <Storages/KVStore/Decode/RegionTable_fwd.h>
 #include <Storages/KVStore/FFI/JointThreadAllocInfo.h>
 #include <Storages/KVStore/MultiRaft/Disagg/RaftLogManager.h>
 #include <Storages/KVStore/MultiRaft/PreHandlingTrace.h>
 #include <Storages/KVStore/MultiRaft/RegionManager.h>
+#include <Storages/KVStore/MultiRaft/RegionMeta.h>
 #include <Storages/KVStore/MultiRaft/RegionRangeKeys.h>
 #include <Storages/KVStore/StorageEngineType.h>
 
@@ -156,13 +158,9 @@ public: // Region Management
     RegionPtr getRegion(RegionID region_id) const;
     RegionMap getRegionsByRangeOverlap(const RegionRange & range) const;
     void traverseRegions(std::function<void(RegionID, const RegionPtr &)> && callback) const;
-    RegionPtr genRegionPtr(
-        metapb::Region && region,
-        UInt64 peer_id,
-        UInt64 index,
-        UInt64 term,
-        TMTContext & tmt,
-        bool register_to_table);
+
+    RegionPtr genRegionPtr(RegionMeta && meta, RegionTableCtx table_ctx);
+
     void handleDestroy(UInt64 region_id, TMTContext & tmt);
     void setKVStoreMemoryLimit(size_t s) { maximum_kvstore_memory = s; }
     size_t getKVStoreMemoryLimit() const { return maximum_kvstore_memory; }

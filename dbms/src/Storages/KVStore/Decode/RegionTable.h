@@ -79,9 +79,9 @@ public:
     {
         explicit Table(const TableID table_id_)
             : table_id(table_id_)
-        {
-            ctx = createRegionTableCtx();
-        }
+            , ctx(createRegionTableCtx())
+        {}
+
         TableID table_id;
         InternalRegions internal_regions;
         RegionTableCtx ctx;
@@ -95,9 +95,9 @@ public:
     // When a region is added to region table, happens when split ans restore.
     void addRegion(const Region & region);
 
-    void addPrehandlingRegion(const Region & region);
+    // void addPrehandlingRegion(const Region & region);
 
-    // When a reigon is removed out of TiFlash.
+    // When a region is removed out of TiFlash.
     void removeRegion(RegionID region_id, bool remove_data, const RegionTaskLock &);
 
     // Used by apply snapshot.
@@ -124,6 +124,8 @@ public:
 
     std::vector<RegionID> getRegionIdsByTable(KeyspaceID keyspace_id, TableID table_id) const;
     std::vector<std::pair<RegionID, RegionPtr>> getRegionsByTable(KeyspaceID keyspace_id, TableID table_id) const;
+
+    RegionTableCtx getTableContext(KeyspaceTableID keyspace_tbl_id);
 
     /// Write the data of the given region into the table with the given table ID, fill the data list for outer to remove.
     /// Will trigger schema sync on read error for only once,
@@ -165,7 +167,7 @@ private:
     Table & getOrCreateTable(KeyspaceID keyspace_id, TableID table_id);
     void removeTable(KeyspaceID keyspace_id, TableID table_id);
     InternalRegion & getOrInsertRegion(const Region & region);
-    InternalRegion & insertRegion(Table & table, const RegionRangeKeys & region_range_keys, const Region & region);
+    InternalRegion & insertRegion(Table & table, const RegionRangeKeys & region_range_keys, const RegionID & region_id);
     InternalRegion & insertRegion(Table & table, const Region & region);
     InternalRegion & doGetInternalRegion(KeyspaceTableID ks_table_id, RegionID region_id);
     void addTableToIndex(KeyspaceID keyspace_id, TableID table_id);

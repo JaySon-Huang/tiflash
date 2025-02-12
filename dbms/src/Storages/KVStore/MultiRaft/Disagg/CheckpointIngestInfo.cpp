@@ -68,7 +68,8 @@ CheckpointIngestInfoPtr CheckpointIngestInfo::restore(
         ReadBufferFromMemory buf(
             ingest_info_persisted.region_info().data(),
             ingest_info_persisted.region_info().size());
-        region = Region::deserialize(buf, proxy_helper);
+        // TODO: fix table_ctx being nullptr
+        region = Region::deserialize(buf, nullptr, proxy_helper);
     }
 
     StoreID remote_store_id = ingest_info_persisted.remote_store_id();

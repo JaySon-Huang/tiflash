@@ -392,7 +392,8 @@ RegionMap RegionPersister::restore(
         }
 
         ReadBufferFromMemory buf(page.data.begin(), page.data.size());
-        auto region = Region::deserialize(buf, proxy_helper);
+        // TODO: Fix table_ctx being nullptr
+        auto region = Region::deserialize(buf, nullptr, proxy_helper);
         RUNTIME_CHECK_MSG(
             page.page_id == region->id(),
             "region_id and page_id not match! region_id={} page_id={}",

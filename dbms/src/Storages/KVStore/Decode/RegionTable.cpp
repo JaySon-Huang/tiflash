@@ -63,16 +63,14 @@ RegionTable::Table & RegionTable::getOrCreateTable(const KeyspaceID keyspace_id,
 RegionTable::InternalRegion & RegionTable::insertRegion(Table & table, const Region & region)
 {
     const auto range = region.getRange();
-    return insertRegion(table, *range, region);
+    return insertRegion(table, *range, region.id());
 }
 
 RegionTable::InternalRegion & RegionTable::insertRegion(
     Table & table,
     const RegionRangeKeys & region_range_keys,
-    const Region & region)
+    const RegionID & region_id)
 {
-    auto region_id = region.id();
-    region.setRegionTableCtx(table.ctx);
     auto keyspace_id = region_range_keys.getKeyspaceID();
     auto & table_regions = table.internal_regions;
     // Insert table mapping.
@@ -161,7 +159,8 @@ void RegionTable::addRegion(const Region & region)
     getOrInsertRegion(region);
 }
 
-void RegionTable::addPrehandlingRegion(const Region & region)
+#if 0
+void RegionTable::addPrehandlingRegion(const Region &)
 {
     std::lock_guard lock(mutex);
     auto keyspace_id = region.getKeyspaceID();
@@ -169,6 +168,7 @@ void RegionTable::addPrehandlingRegion(const Region & region)
     auto & table = getOrCreateTable(keyspace_id, table_id);
     region.setRegionTableCtx(table.ctx);
 }
+#endif
 
 size_t RegionTable::getTableRegionSize(KeyspaceID keyspace_id, TableID table_id) const
 {
@@ -422,6 +422,12 @@ std::vector<std::pair<RegionID, RegionPtr>> RegionTable::getRegionsByTable(
     return regions;
 }
 
+RegionTableCtx RegionTable::getTableContext(KeyspaceTableID keyspace_tbl_id)
+{
+    auto & tbl = getOrCreateTable(keyspace_tbl_id.first, keyspace_tbl_id.second);
+    return tbl.ctx;
+}
+
 void RegionTable::shrinkRegionRange(const Region & region)
 {
     std::lock_guard lock(mutex);
@@ -439,12 +445,12 @@ void RegionTable::replaceRegion(const RegionPtr & old_region, const RegionPtr & 
         // `old_region` will no longer contribute to the memory of the table.
         auto keyspace_id = region_range_keys->getKeyspaceID();
         auto table_id = region_range_keys->getMappedTableID();
-        auto & table = getOrCreateTable(keyspace_id, table_id);
-        old_region->resetRegionTableCtx();
+        getOrCreateTable(keyspace_id, table_id);
+        old_region->clearAllData();
         if unlikely (!new_region->getRegionTableCtx())
         {
             // For most of the cases, the region is prehandled, so the ctx is set at that moment.
-            new_region->setRegionTableCtx(table.ctx);
+            // new_region->setRegionTableCtx(table.ctx);
         }
     }
 }
@@ -496,7 +502,7 @@ void RegionTable::extendRegionRange(const Region & region, const RegionRangeKeys
     else
     {
         auto & table = getOrCreateTable(keyspace_id, table_id);
-        insertRegion(table, region_range_keys, region);
+        insertRegion(table, region_range_keys, region_id);
         LOG_INFO(log, "insert internal region, keyspace={} table_id={} region_id={}", keyspace_id, table_id, region_id);
     }
 }

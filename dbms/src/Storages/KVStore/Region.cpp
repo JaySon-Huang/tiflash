@@ -110,6 +110,11 @@ void Region::clearAllData()
     data.assignRegionData(RegionData());
 }
 
+RegionPtr Region::cloneWithEmptyData() const
+{
+    return std::make_shared<Region>(meta.clone(), proxy_helper, data.getRegionTableCtx());
+}
+
 UInt64 Region::appliedIndex() const
 {
     return meta.appliedIndex();
@@ -128,7 +133,7 @@ void Region::setApplied(UInt64 index, UInt64 term)
 
 RegionPtr Region::splitInto(RegionMeta && meta)
 {
-    RegionPtr new_region = std::make_shared<Region>(std::move(meta), proxy_helper);
+    RegionPtr new_region = std::make_shared<Region>(std::move(meta), proxy_helper, data.getRegionTableCtx());
 
     const auto range = new_region->getRange();
     data.splitInto(range->comparableKeys(), new_region->data);
@@ -318,8 +323,9 @@ RegionMetaSnapshot Region::dumpRegionMetaSnapshot() const
     return meta.dumpRegionMetaSnapshot();
 }
 
-Region::Region(DB::RegionMeta && meta_, const TiFlashRaftProxyHelper * proxy_helper_)
-    : meta(std::move(meta_))
+Region::Region(DB::RegionMeta && meta_, const TiFlashRaftProxyHelper * proxy_helper_, RegionTableCtx tbl_ctx)
+    : data(tbl_ctx)
+    , meta(std::move(meta_))
     , eager_truncated_index(meta.truncateIndex())
     , log(Logger::get())
     , keyspace_id(meta.getRange()->getKeyspaceID())
@@ -401,10 +407,10 @@ Timestamp Region::getLastObservedReadTso() const
     return last_observed_read_tso.load();
 }
 
-void Region::setRegionTableCtx(RegionTableCtx size) const
-{
-    data.setRegionTableCtx(size);
-}
+// void Region::setRegionTableCtx(RegionTableCtx size) const
+// {
+//     data.setRegionTableCtx(size);
+// }
 
 void Region::maybeWarnMemoryLimitByTable(TMTContext & tmt, const char * from)
 {

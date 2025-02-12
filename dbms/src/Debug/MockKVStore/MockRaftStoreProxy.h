@@ -237,7 +237,7 @@ struct MockRaftStoreProxy : MutexLockWrap
         TMTContext & tmt,
         UInt64 region_id,
         std::vector<MockSSTGenerator> && cfs,
-        metapb::Region && region_meta,
+        metapb::Region && region_pb,
         UInt64 peer_id,
         uint64_t index,
         uint64_t term,

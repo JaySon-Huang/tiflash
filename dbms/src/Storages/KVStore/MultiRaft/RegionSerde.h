@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <common/types.h>
 namespace DB
 {
 using MaybeRegionPersistExtension = UInt32;

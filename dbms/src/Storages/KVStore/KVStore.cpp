@@ -85,6 +85,7 @@ void KVStore::restore(PathPool & path_pool, const TiFlashRaftProxyHelper * proxy
 
     this->proxy_helper = proxy_helper;
     manage_lock.regions = region_persister->restore(path_pool, proxy_helper);
+    // FIXME: the regions restored from disk does not contain table_ctx pointer
 
     LOG_INFO(log, "Restored {} regions", manage_lock.regions.size());
 
@@ -270,8 +271,8 @@ void KVStore::removeRegion(
     {
         auto manage_lock = genRegionMgrWriteLock(task_lock);
         auto it = manage_lock.regions.find(region_id);
-        // Disregister from region table size.
-        it->second->resetRegionTableCtx();
+        // unregister from region table size.
+        it->second->clearAllData();
         manage_lock.index.remove(
             it->second->makeRaftCommandDelegate(task_lock).getRange().comparableKeys(),
             region_id); // remove index
@@ -466,50 +467,10 @@ size_t KVStore::getOngoingPrehandleSubtaskCount() const
     return std::max(0, prehandling_trace.ongoing_prehandle_subtask_count.load());
 }
 
-static const metapb::Peer & findPeer(const metapb::Region & region, UInt64 peer_id)
-{
-    for (const auto & peer : region.peers())
-    {
-        if (peer.id() == peer_id)
-        {
-            return peer;
-        }
-    }
-
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "{}: peer not found in region, peer_id={} region_id={}",
-        __PRETTY_FUNCTION__,
-        peer_id,
-        region.id());
-}
-
 // The only way that to create a region associated to a piece of data, even if it is not going to be inserted in to KVStore.
-RegionPtr KVStore::genRegionPtr(
-    metapb::Region && region,
-    UInt64 peer_id,
-    UInt64 index,
-    UInt64 term,
-    TMTContext & tmt,
-    bool register_to_table)
+RegionPtr KVStore::genRegionPtr(RegionMeta && meta, RegionTableCtx table_ctx)
 {
-    auto meta = ({
-        auto peer = findPeer(region, peer_id);
-        raft_serverpb::RaftApplyState apply_state;
-        {
-            apply_state.set_applied_index(index);
-            apply_state.mutable_truncated_state()->set_index(index);
-            apply_state.mutable_truncated_state()->set_term(term);
-        }
-        RegionMeta(std::move(peer), std::move(region), std::move(apply_state));
-    });
-    auto new_region = std::make_shared<Region>(std::move(meta), proxy_helper);
-    if (register_to_table)
-    {
-        auto & region_table = tmt.getRegionTable();
-        region_table.addPrehandlingRegion(*new_region);
-    }
-    return new_region;
+    return std::make_shared<Region>(std::move(meta), proxy_helper, table_ctx);
 }
 
 RegionTaskLock KVStore::genRegionTaskLock(UInt64 region_id) const

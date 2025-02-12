@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/KVStore/FFI/ColumnFamily.h>
+#include <Storages/KVStore/MultiRaft/RegionCFDataBase.h>
 #include <Storages/KVStore/MultiRaft/RegionData.h>
 #include <Storages/KVStore/Read/RegionLockInfo.h>
 #include <Storages/KVStore/TiKVHelpers/DecodedLockCFValue.h>
@@ -259,8 +260,8 @@ void RegionData::splitInto(const RegionRange & range, RegionData & new_region_da
     RegionDataMemDiff size_changed;
     size_changed.add(default_cf.splitInto(range, new_region_data.default_cf));
     size_changed.add(write_cf.splitInto(range, new_region_data.write_cf));
-    // recordMemChange: Remember to track memory here if we have a region-wise metrics later.
     size_changed.add(lock_cf.splitInto(range, new_region_data.lock_cf));
+    // recordMemChange: Remember to track memory here if we have a region-wise metrics later.
     updateMemoryUsage(size_changed);
     new_region_data.updateMemoryUsage(size_changed.negative());
 }
@@ -270,8 +271,8 @@ void RegionData::mergeFrom(const RegionData & ori_region_data)
     RegionDataMemDiff size_changed;
     size_changed.add(default_cf.mergeFrom(ori_region_data.default_cf));
     size_changed.add(write_cf.mergeFrom(ori_region_data.write_cf));
-    // recordMemChange: Remember to track memory here if we have a region-wise metrics later.
     size_changed.add(lock_cf.mergeFrom(ori_region_data.lock_cf));
+    // recordMemChange: Remember to track memory here if we have a region-wise metrics later.
     updateMemoryUsage(size_changed);
     // `mergeFrom` won't delete from source region. So we don't update it here.
 }
@@ -288,17 +289,20 @@ size_t RegionData::totalSize() const
 
 void RegionData::assignRegionData(RegionData && rhs)
 {
-    auto size = rhs.resetRegionTableCtx();
+    const auto delta_from_rhs = RegionDataMemDiff{rhs.cf_data_size.load(), rhs.decoded_data_size.load()};
+
     recordMemChange(RegionDataMemDiff{-cf_data_size.load(), -decoded_data_size.load()});
     resetMemoryUsage();
-
     default_cf = std::move(rhs.default_cf);
     write_cf = std::move(rhs.write_cf);
     lock_cf = std::move(rhs.lock_cf);
     orphan_keys_info = std::move(rhs.orphan_keys_info);
 
-    updateMemoryUsage(RegionDataMemDiff{rhs.cf_data_size.load(), rhs.decoded_data_size.load()});
-    setRegionTableCtx(size);
+    // region_table_ctx is explicitly not set by `rhs.region_table_ctx`
+    recordMemChange(delta_from_rhs);
+    updateMemoryUsage(delta_from_rhs);
+
+    // finally, reset rhs
     rhs.resetMemoryUsage();
 }
 
@@ -411,6 +415,7 @@ size_t RegionData::tryCompactionFilter(Timestamp safe_point)
     return del_write;
 }
 
+#if 0
 void RegionData::setRegionTableCtx(RegionTableCtx ctx) const
 {
     region_table_ctx = ctx;
@@ -419,12 +424,14 @@ void RegionData::setRegionTableCtx(RegionTableCtx ctx) const
         region_table_ctx->table_size.fetch_add(dataSize());
     }
 }
+#endif
 
 RegionTableCtx RegionData::getRegionTableCtx() const
 {
     return region_table_ctx;
 }
 
+#if 0
 RegionTableCtx RegionData::resetRegionTableCtx() const
 {
     if (region_table_ctx)
@@ -436,6 +443,7 @@ RegionTableCtx RegionData::resetRegionTableCtx() const
     region_table_ctx = nullptr;
     return prev;
 }
+#endif
 
 size_t RegionData::getRegionTableSize() const
 {
