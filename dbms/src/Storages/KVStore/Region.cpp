@@ -401,9 +401,9 @@ Timestamp Region::getLastObservedReadTso() const
     return last_observed_read_tso.load();
 }
 
-void Region::setRegionTableCtx(RegionTableCtx size) const
+void Region::setRegionTableCtx(RegionTableCtxPtr ctx) const
 {
-    data.setRegionTableCtx(size);
+    data.setRegionTableCtx(ctx);
 }
 
 void Region::maybeWarnMemoryLimitByTable(TMTContext & tmt, const char * from)
@@ -428,7 +428,7 @@ void Region::maybeWarnMemoryLimitByTable(TMTContext & tmt, const char * from)
 #endif
                 LOG_INFO(
                     log,
-                    "Memory limit exeeded, current={} limit={} table_id={} keyspace_id={} region_id={} from={}",
+                    "Memory limit exceeded, current={} limit={} table_id={} keyspace_id={} region_id={} from={}",
                     current,
                     limit,
                     mapped_table_id,

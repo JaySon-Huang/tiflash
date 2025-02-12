@@ -79,12 +79,11 @@ public:
     {
         explicit Table(const TableID table_id_)
             : table_id(table_id_)
-        {
-            ctx = createRegionTableCtx();
-        }
+            , ctx(createRegionTableCtx())
+        {}
         TableID table_id;
         InternalRegions internal_regions;
-        RegionTableCtx ctx;
+        RegionTableCtxPtr ctx;
     };
 
     explicit RegionTable(Context & context_);
@@ -92,9 +91,10 @@ public:
     // Iterate over all regions in KVStore, and add them to RegionTable.
     void restore();
 
-    // When a region is added to region table, happens when split ans restore.
+    // When a region is added to region table, happens when split and restore.
     void addRegion(const Region & region);
 
+    // Most of the regions are scheduled to TiFlash by a raft snapshot.
     void addPrehandlingRegion(const Region & region);
 
     // When a reigon is removed out of TiFlash.
@@ -166,7 +166,6 @@ private:
     void removeTable(KeyspaceID keyspace_id, TableID table_id);
     InternalRegion & getOrInsertRegion(const Region & region);
     InternalRegion & insertRegion(Table & table, const RegionRangeKeys & region_range_keys, const Region & region);
-    InternalRegion & insertRegion(Table & table, const Region & region);
     InternalRegion & doGetInternalRegion(KeyspaceTableID ks_table_id, RegionID region_id);
     void addTableToIndex(KeyspaceID keyspace_id, TableID table_id);
     void removeTableFromIndex(KeyspaceID keyspace_id, TableID table_id);
