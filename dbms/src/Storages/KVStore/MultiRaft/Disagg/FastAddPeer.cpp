@@ -140,8 +140,7 @@ std::optional<CheckpointRegionInfoAndData> tryParseRegionInfoFromCheckpointData(
         if (page.isValid())
         {
             ReadBufferFromMemory buf(page.data.begin(), page.data.size());
-            // TODO: fix table_ctx being nullptr
-            region = Region::deserialize(buf, nullptr, proxy_helper);
+            region = Region::deserialize(buf, proxy_helper);
         }
         else
         {

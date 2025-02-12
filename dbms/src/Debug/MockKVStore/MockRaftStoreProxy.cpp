@@ -623,7 +623,7 @@ std::tuple<RegionPtr, PrehandleResult> MockRaftStoreProxy::snapshot(
     TMTContext & tmt,
     UInt64 region_id,
     std::vector<MockSSTGenerator> && cfs,
-    metapb::Region && region_pb,
+    metapb::Region && region_meta,
     UInt64 peer_id,
     uint64_t index,
     uint64_t term,
@@ -643,9 +643,7 @@ std::tuple<RegionPtr, PrehandleResult> MockRaftStoreProxy::snapshot(
     // The new entry is committed on Proxy's side.
     region->updateCommitIndex(index);
     // Would set `appleid_index` in genRegionPtr.
-    auto region_meta = RegionMeta::genFromPb(std::move(region_pb), peer_id, index, term);
-    auto table_ctx = tmt.getRegionTable().getTableContext(region_meta.getRange()->getKeyspaceTableID());
-    auto new_kv_region = kvs.genRegionPtr(std::move(region_meta), table_ctx);
+    auto new_kv_region = kvs.genRegionPtr(std::move(region_meta), peer_id, index, term, tmt, true);
 
     std::vector<SSTView> ssts;
     for (auto & cf : cfs)

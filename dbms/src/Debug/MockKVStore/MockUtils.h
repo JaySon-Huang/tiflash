@@ -88,13 +88,12 @@ inline RegionPtr makeRegion(
             createPeer(2, true),
             createRegionInfo(id, std::move(start_key), std::move(end_key)),
             initialApplyState()),
-        proxy_helper,
-        nullptr);
+        proxy_helper);
 }
 
 inline RegionPtr makeRegion(RegionMeta && meta)
 {
-    return std::make_shared<Region>(std::move(meta), nullptr, nullptr);
+    return std::make_shared<Region>(std::move(meta), nullptr);
 }
 
 // Generates a lock value which fills all fields, only for test use.

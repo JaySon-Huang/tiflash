@@ -90,13 +90,12 @@ std::tuple<size_t, UInt64> Region::serializeImpl(
     return {total_size, applied_index};
 }
 
-RegionPtr Region::deserialize(ReadBuffer & buf, RegionTableCtx tbl_ctx, const TiFlashRaftProxyHelper * proxy_helper)
+RegionPtr Region::deserialize(ReadBuffer & buf, const TiFlashRaftProxyHelper * proxy_helper)
 {
     return Region::deserializeImpl(
         Region::CURRENT_VERSION,
         [](UInt32, ReadBuffer &, UInt32) { return false; },
         buf,
-        tbl_ctx,
         proxy_helper);
 }
 
@@ -108,7 +107,6 @@ RegionPtr Region::deserializeImpl(
     UInt32 current_version,
     std::function<bool(UInt32, ReadBuffer &, UInt32)> extra_handler,
     ReadBuffer & buf,
-    RegionTableCtx tbl_ctx,
     const TiFlashRaftProxyHelper * proxy_helper)
 {
     const auto binary_version = readBinary2<UInt32>(buf);
@@ -130,7 +128,7 @@ RegionPtr Region::deserializeImpl(
     }
 
     // Deserialize meta
-    RegionPtr region = std::make_shared<Region>(RegionMeta::deserialize(buf), proxy_helper, tbl_ctx);
+    RegionPtr region = std::make_shared<Region>(RegionMeta::deserialize(buf), proxy_helper);
 
     // Try deserialize flag
     if (binary_version >= 2)

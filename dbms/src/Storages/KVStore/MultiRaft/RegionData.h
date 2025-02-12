@@ -35,10 +35,6 @@ class Region;
 class RegionData
 {
 public:
-    explicit RegionData(RegionTableCtx tbl_ctx)
-        : region_table_ctx(tbl_ctx)
-    {}
-
     using WriteCFIter = RegionWriteCFData::Map::iterator;
     using ConstWriteCFIter = RegionWriteCFData::Map::const_iterator;
     using LockInfoPtr = std::unique_ptr<kvrpcpb::LockInfo>;
@@ -89,9 +85,9 @@ public:
     String summary() const;
     size_t tryCompactionFilter(Timestamp safe_point);
 
-    // void setRegionTableCtx(RegionTableCtx) const;
+    void setRegionTableCtx(RegionTableCtx) const;
     RegionTableCtx getRegionTableCtx() const;
-    // RegionTableCtx resetRegionTableCtx() const;
+    RegionTableCtx resetRegionTableCtx() const;
     size_t getRegionTableSize() const;
     bool getRegionTableWarned() const;
     bool setRegionTableWarned(bool) const;

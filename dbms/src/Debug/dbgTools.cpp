@@ -784,10 +784,7 @@ void handleApplySnapshot(
     std::optional<uint64_t> deadline_index,
     TMTContext & tmt)
 {
-    auto region_meta = RegionMeta::genFromPb(std::move(region), peer_id, index, term);
-    auto region_tbl_ctx = tmt.getRegionTable().getTableContext(region_meta.getRange()->getKeyspaceTableID());
-    auto new_region = kvstore.genRegionPtr(std::move(region_meta), region_tbl_ctx);
-
+    auto new_region = kvstore.genRegionPtr(std::move(region), peer_id, index, term, tmt, true);
     auto prehandle_result = kvstore.preHandleSnapshotToFiles(new_region, snaps, index, term, deadline_index, tmt);
     kvstore.applyPreHandledSnapshot(
         RegionPtrWithSnapshotFiles{new_region, std::move(prehandle_result.ingest_ids)},
