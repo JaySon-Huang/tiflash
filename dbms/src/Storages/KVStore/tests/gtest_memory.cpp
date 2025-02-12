@@ -25,6 +25,10 @@
 extern std::shared_ptr<MemoryTracker> root_of_kvstore_mem_trackers;
 extern std::atomic<Int64> real_rss;
 
+namespace DB::FailPoints
+{
+extern const char force_set_region_warn_limit[];
+} // namespace DB::FailPoints
 
 namespace DB::tests
 {
@@ -59,8 +63,11 @@ try
         return RecordKVFormat::encodeLockCfValue(RecordKVFormat::CFModifyFlag::PutFlag, "PK", region_id + number, 999)
             .toString();
     };
-    real_rss.store(1);
-    kvs.setKVStoreMemoryLimit(1);
+
+    real_rss.store(10);
+    FailPointHelper::enableFailPoint(FailPoints::force_set_region_warn_limit, static_cast<UInt64>(10));
+    SCOPE_EXIT({ FailPointHelper::disableFailPoint(FailPoints::force_set_region_warn_limit); });
+
     {
         // default
         RegionID region_id = 4100;

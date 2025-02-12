@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/FailPoint.h>
 #include <Common/FmtUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
+#include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/DeltaMergeInterfaces.h>
 #include <Storages/KVStore/Decode/TiKVRange.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
@@ -29,6 +31,11 @@
 #include <memory>
 
 extern std::atomic<Int64> real_rss;
+
+namespace DB::FailPoints
+{
+extern const char force_set_region_warn_limit[];
+} // namespace DB::FailPoints
 
 namespace DB
 {
@@ -408,34 +415,63 @@ void Region::setRegionTableCtx(RegionTableCtxPtr ctx) const
 
 void Region::maybeWarnMemoryLimitByTable(TMTContext & tmt, const char * from)
 {
-    // If there are data flow in, we will check if the memory is exhaused.
-    auto limit = tmt.getKVStore()->getKVStoreMemoryLimit();
-    auto current = real_rss.load();
+    // If there are data flow in, we will check if the memory is exhausted.
+    auto limit = [&tmt]() -> std::optional<UInt64> {
+        fiu_do_on(FailPoints::force_set_region_warn_limit, {
+            if (auto v = FailPointHelper::getFailPointVal(FailPoints::force_set_region_warn_limit); v)
+            {
+                return std::any_cast<UInt64>(v.value());
+            }
+        });
+
+        auto & global_ctx = tmt.getContext();
+        const auto & server_info = global_ctx.getServerInfo();
+        if (!server_info)
+            return std::nullopt; // not inited yet
+
+        // If the memory limit is explicitly set to 0, we will use the server's
+        // memory capacity * 80% as the default limit.
+        auto limit = global_ctx.getSettingsRef().max_memory_usage_for_all_queries.getActualBytes(
+            server_info->memory_info.capacity);
+        limit = limit > 0 ? limit : static_cast<UInt64>(server_info->memory_info.capacity * 0.8);
+        return limit;
+    }();
+
+    // server info is not set
+    if (!limit)
+        return;
+
+    const UInt64 current = real_rss.load();
     /// Region management such as split/merge doesn't change the memory consumed by a table in KVStore.
-    /// The only cases memory is reduced in a table is removing regions, applying snaps and commiting txns.
+    /// The only cases memory is reduced in a table is removing regions, applying snaps and committing txns.
     /// The only cases memory is increased in a table is inserting kv pairs and applying snaps.
     /// So, we only print once for a table, until one memory reduce event will happen.
-    if unlikely (limit > 0 && current > 0 && static_cast<size_t>(current) >= limit)
+    if (unlikely(current > 0 && current >= limit))
     {
-        auto table_size = getRegionTableSize();
-        if (table_size > 0.5 * current)
+        // Log down if it is the first time for this table and the memory of this table consumes
+        // lots of memory (20% or 10GB)
+        const size_t table_level_threshold = std::min(0.2 * current, 10 * 1024 * 1024 * 1024UL);
+        const auto table_memory = getRegionTableSize();
+        if (table_memory < table_level_threshold)
         {
-            if (!setRegionTableWarned(true))
-            {
-                // If it is the first time.
+            return;
+        }
+        if (!setRegionTableWarned(true))
+        {
 #ifdef DBMS_PUBLIC_GTEST
-                tmt.getKVStore()->debug_memory_limit_warning_count++;
+            tmt.getKVStore()->debug_memory_limit_warning_count++;
 #endif
-                LOG_INFO(
-                    log,
-                    "Memory limit exceeded, current={} limit={} table_id={} keyspace_id={} region_id={} from={}",
-                    current,
-                    limit,
-                    mapped_table_id,
-                    keyspace_id,
-                    id(),
-                    from);
-            }
+            LOG_INFO(
+                log,
+                "Memory limit exceeded, current={} limit={} keyspace={} table_id={} region_id={}"
+                " table_memory={} from={}",
+                current,
+                limit,
+                keyspace_id,
+                mapped_table_id,
+                id(),
+                table_memory,
+                from);
         }
     }
 }
