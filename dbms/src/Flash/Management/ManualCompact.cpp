@@ -172,12 +172,8 @@ grpc::Status ManualCompactManager::doWork(
 
     Stopwatch timer;
 
-    auto ks_log = log->getChild(fmt::format("keyspace={}", keyspace_id));
-    LOG_INFO(
-        ks_log,
-        "Manual compaction begin for table {}, start_key = {}",
-        request->physical_table_id(),
-        start_key.toDebugString());
+    auto ks_log = log->getChild(fmt::format("keyspace={} table_id={}", keyspace_id, request->physical_table_id()));
+    LOG_INFO(ks_log, "Manual compaction begin, start_key={}", start_key.toDebugString());
 
     // Repeatedly merge multiple segments as much as possible.
     while (true)
@@ -222,9 +218,8 @@ grpc::Status ManualCompactManager::doWork(
 
     LOG_INFO(
         ks_log,
-        "Manual compaction finished for table {}, compacted_start_key = {}, compacted_end_key = {}, has_remaining = "
-        "{}, compacted_segments = {}, elapsed_ms = {}",
-        request->physical_table_id(),
+        "Manual compaction finished, compacted_start_key={} compacted_end_key={} has_remaining={}"
+        " compacted_segments={} elapsed_ms={}",
         compacted_start_key ? compacted_start_key->toDebugString() : "(null)",
         compacted_end_key ? compacted_end_key->toDebugString() : "(null)",
         has_remaining,

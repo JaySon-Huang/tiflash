@@ -28,6 +28,7 @@
 #include <Debug/DBGInvoker.h>
 #include <Debug/MockStorage.h>
 #include <Flash/Coprocessor/DAGContext.h>
+#include <Flash/Management/ManualCompact.h>
 #include <IO/BaseFile/fwd.h>
 #include <IO/Buffer/ReadBufferFromFile.h>
 #include <IO/FileProvider/FileProvider.h>
@@ -171,6 +172,8 @@ struct ContextShared
     DM::GlobalStoragePoolPtr global_storage_pool;
     DM::LocalIndexerSchedulerPtr global_local_indexer_scheduler;
 
+    std::shared_ptr<Management::ManualCompactManager> manual_compact_manager;
+
     /// The PS instance available on Write Node.
     UniversalPageStorageServicePtr ps_write;
 
@@ -270,6 +273,11 @@ struct ContextShared
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        if (manual_compact_manager)
+        {
+            manual_compact_manager.reset();
+        }
 
         // The local index scheduler must be shutdown to stop all
         // running tasks before shutting down `global_storage_pool`.
@@ -1957,6 +1965,18 @@ SharedContextDisaggPtr Context::getSharedContextDisagg() const
 {
     RUNTIME_CHECK(shared->ctx_disagg != nullptr); // We always initialize the shared context in createGlobal()
     return shared->ctx_disagg;
+}
+
+void Context::initializeManualCompactManager()
+{
+    auto lock = getLock();
+    shared->manual_compact_manager = std::make_shared<Management::ManualCompactManager>(*this, this->getSettingsRef());
+}
+
+std::shared_ptr<Management::ManualCompactManager> Context::getCompactManager()
+{
+    auto lock = getLock();
+    return shared->manual_compact_manager;
 }
 
 UInt16 Context::getTCPPort() const

@@ -15,8 +15,10 @@
 #include <Common/FailPoint.h>
 #include <Common/FmtUtils.h>
 #include <Common/TiFlashMetrics.h>
+#include <Flash/Management/ManualCompact.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
+#include <Poco/JSON/Array.h>
 #include <RaftStoreProxyFFI/ProxyFFI.h>
 #include <Storages/KVStore/Decode/RegionTable.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
@@ -29,6 +31,7 @@
 #include <TiDB/Schema/TiDBSchemaManager.h>
 #include <common/logger_useful.h>
 #include <fmt/core.h>
+#include <kvproto/kvrpcpb.pb.h>
 
 #include <boost/algorithm/string.hpp>
 #include <magic_enum.hpp>
@@ -39,6 +42,141 @@ namespace FailPoints
 {
 extern const char sync_schema_request_failure[];
 } // namespace FailPoints
+
+
+HttpRequestRes HandleHttpRequestCompact(
+    EngineStoreServerWrap * server,
+    std::string_view path,
+    const std::string & api_name,
+    std::string_view,
+    std::string_view)
+{
+    HttpRequestStatus status = HttpRequestStatus::Ok;
+    pingcap::pd::KeyspaceID keyspace_id = NullspaceID;
+    auto log = Logger::get("HandleHttpRequestCompact");
+    {
+        LOG_TRACE(log, "handling compact request, path: {}, api_name: {}", path, api_name);
+
+        // schema: /keyspace/{keyspace_id}
+        auto query = path.substr(api_name.size());
+        std::vector<std::string> query_parts;
+        boost::split(query_parts, query, boost::is_any_of("/"));
+        if (query_parts.size() != 2 || query_parts[0] != "keyspace")
+        {
+            LOG_ERROR(log, "invalid SyncRegion request: {}", query);
+            status = HttpRequestStatus::ErrorParam;
+            return HttpRequestRes{
+                .status = status,
+                .res = CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{nullptr, 0}},
+            };
+        }
+
+
+        try
+        {
+            keyspace_id = std::stoll(query_parts[1]);
+        }
+        catch (...)
+        {
+            status = HttpRequestStatus::ErrorParam;
+        }
+
+        if (status != HttpRequestStatus::Ok)
+            return HttpRequestRes{
+                .status = status,
+                .res = CppStrWithView{.inner = GenRawCppPtr(), .view = BaseBuffView{nullptr, 0}},
+            };
+    }
+
+    auto & tmt = *server->tmt;
+    auto global_context = tmt.getContext();
+
+    std::stringstream ss;
+    Poco::JSON::Array::Ptr list = new Poco::JSON::Array();
+
+    size_t n_tbl_done = 0;
+    auto tbls = tmt.getRegionTable().getTableIDsByKeyspace(keyspace_id);
+    size_t n_total = tbls.size();
+    LOG_INFO(log, "Manual compaction for keyspace begin, keyspace={} n_total={}", keyspace_id, n_total);
+    for (const auto [ks, tbl] : tbls)
+    {
+        String start_key;
+        while (true)
+        {
+            kvrpcpb::CompactRequest req;
+            req.set_api_version(::kvrpcpb::APIVersion::V2);
+            req.set_keyspace_id(ks);
+            req.set_start_key(start_key);
+            req.set_physical_table_id(tbl);
+            kvrpcpb::CompactResponse resp;
+            // get manual compact manager
+            auto manager = global_context.getCompactManager();
+            // maybe shutting down?
+            if (!manager)
+            {
+                LOG_INFO(log, "compact manager is not exist, shutting down?");
+                break;
+            }
+            auto status = manager->handleRequest(&req, &resp);
+            if (!status.ok())
+            {
+                LOG_INFO(log, "status not ok, {}", status.error_message());
+                break;
+            }
+            if (resp.has_error())
+            {
+                LOG_INFO(
+                    log,
+                    "Manual compaction for table meet error, error={} keyspace={} table_id={}",
+                    resp.error().DebugString(),
+                    ks,
+                    tbl);
+                break;
+            }
+            if (!resp.has_remaining())
+            {
+                LOG_INFO(log, "Manual compaction for table is done, keyspace={} table_id={}", ks, tbl);
+                break;
+            }
+            else
+            {
+                start_key = resp.compacted_end_key(); // set next start_key
+                LOG_INFO(
+                    log,
+                    "Manual compaction for table in progress, keyspace={} table_id={} next_start_key={}",
+                    ks,
+                    tbl,
+                    resp.compacted_start_key());
+            }
+        }
+        list->add(tbl);
+        n_tbl_done += 1;
+        LOG_INFO(
+            log,
+            "Manual compaction for table done, keyspace={} table_id={} n_tbl_done={} n_total={}",
+            ks,
+            tbl,
+            n_tbl_done,
+            n_total);
+    }
+    LOG_INFO(
+        log,
+        "Manual compaction for keyspace done, keyspace={} n_tbl_done={} n_total={}",
+        keyspace_id,
+        n_tbl_done,
+        n_total);
+
+    list->stringify(ss);
+
+    auto * s = RawCppString::New(ss.str());
+    return HttpRequestRes{
+        .status = status,
+        .res = CppStrWithView{
+            .inner = GenRawCppPtr(s, RawCppPtrTypeImpl::String),
+            .view = BaseBuffView{s->data(), s->size()},
+        },
+    };
+}
 
 HttpRequestRes HandleHttpRequestSyncStatus(
     EngineStoreServerWrap * server,
@@ -463,6 +601,7 @@ using HANDLE_HTTP_URI_METHOD = HttpRequestRes (*)(
     std::string_view);
 
 static const std::map<std::string, HANDLE_HTTP_URI_METHOD> AVAILABLE_HTTP_URI = {
+    {"/tiflash/compact/", HandleHttpRequestCompact},
     {"/tiflash/sync-status/", HandleHttpRequestSyncStatus},
     {"/tiflash/sync-region/", HandleHttpRequestSyncRegion},
     {"/tiflash/sync-schema/", HandleHttpRequestSyncSchema},

@@ -1221,6 +1221,7 @@ try
             GRPCCompletionQueuePool::global_instance = std::make_unique<GRPCCompletionQueuePool>(size);
         }
 
+        global_context->initializeManualCompactManager();
         /// startup grpc server to serve raft and/or flash services.
         FlashGrpcServerHolder flash_grpc_server_holder(this->context(), this->config(), raft_config, log);
 

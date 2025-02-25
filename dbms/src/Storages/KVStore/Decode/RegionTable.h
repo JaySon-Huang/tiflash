@@ -125,6 +125,8 @@ public:
     std::vector<RegionID> getRegionIdsByTable(KeyspaceID keyspace_id, TableID table_id) const;
     std::vector<std::pair<RegionID, RegionPtr>> getRegionsByTable(KeyspaceID keyspace_id, TableID table_id) const;
 
+    std::vector<KeyspaceTableID> getTableIDsByKeyspace(KeyspaceID keyspace_id) const;
+
     /// Write the data of the given region into the table with the given table ID, fill the data list for outer to remove.
     /// Will trigger schema sync on read error for only once,
     /// assuming that newer schema can always apply to older data by setting force_decode to true in RegionBlockReader::read.

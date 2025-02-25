@@ -31,6 +31,7 @@
 #include <fiu.h>
 
 #include <any>
+#include <vector>
 
 namespace DB
 {
@@ -412,6 +413,22 @@ std::vector<std::pair<RegionID, RegionPtr>> RegionTable::getRegionsByTable(
         }
     });
     return regions;
+}
+
+std::vector<KeyspaceTableID> RegionTable::getTableIDsByKeyspace(KeyspaceID keyspace_id) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<KeyspaceTableID> ret;
+    auto ks_iter = keyspace_index.find(keyspace_id);
+    if (ks_iter != keyspace_index.end())
+    {
+        ret.reserve(ks_iter->second.size());
+        for (const auto & tbl : ks_iter->second)
+        {
+            ret.emplace_back(KeyspaceTableID{keyspace_id, tbl});
+        }
+    }
+    return ret;
 }
 
 void RegionTable::shrinkRegionRange(const Region & region)

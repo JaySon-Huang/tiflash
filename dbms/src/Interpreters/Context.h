@@ -120,6 +120,11 @@ class GlobalPageIdAllocator;
 using GlobalPageIdAllocatorPtr = std::shared_ptr<GlobalPageIdAllocator>;
 } // namespace DM
 
+namespace Management
+{
+class ManualCompactManager;
+}
+
 /// (database name, table name)
 using DatabaseAndTableName = std::pair<String, String>;
 
@@ -498,6 +503,9 @@ public:
     JointThreadInfoJeallocMapPtr getJointThreadInfoJeallocMap(std::unique_lock<std::recursive_mutex> &) const;
 
     SharedContextDisaggPtr getSharedContextDisagg() const;
+
+    void initializeManualCompactManager();
+    std::shared_ptr<Management::ManualCompactManager> getCompactManager();
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
