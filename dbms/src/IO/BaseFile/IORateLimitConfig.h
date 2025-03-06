@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/logger_useful.h>
-#include <common/types.h>
+#include <Common/logger_useful.h>
+#include <base/types.h>
 
 namespace DB
 {

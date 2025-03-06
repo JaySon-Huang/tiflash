@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/avx2_mem_utils.h>
-#include <common/defines.h>
+#include <base/avx2_mem_utils.h>
+#include <base/defines.h>
 #include <immintrin.h>
 
 #include <cassert>

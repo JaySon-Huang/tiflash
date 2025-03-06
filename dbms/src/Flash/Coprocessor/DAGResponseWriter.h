@@ -16,7 +16,7 @@
 
 #include <Core/Block.h>
 #include <Flash/Coprocessor/WaitResult.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/select.pb.h>
 
 namespace DB

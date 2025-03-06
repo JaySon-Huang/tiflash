@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -24,7 +25,6 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

@@ -17,7 +17,7 @@
 #include <Core/Types.h>
 #include <IO/Buffer/ReadBuffer.h>
 #include <IO/Buffer/WriteBuffer.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <iostream>
 

@@ -18,7 +18,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/DeltaMerge/ReadMode.h>
 #include <Storages/DeltaMerge/ScanContext_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 #include <sys/types.h>
 #include <tipb/executor.pb.h>

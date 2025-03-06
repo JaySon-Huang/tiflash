@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <Poco/Ext/ThreadNumber.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 #include <atomic>
 

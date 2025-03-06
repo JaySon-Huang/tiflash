@@ -21,7 +21,7 @@
 #include <Storages/DeltaMerge/Remote/Serializer_fwd.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
 #include <Storages/KVStore/Types.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <tipb/expression.pb.h>
 
 #include <mutex>

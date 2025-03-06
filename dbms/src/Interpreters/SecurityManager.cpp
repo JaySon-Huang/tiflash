@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/Buffer/HexWriteBuffer.h>
 #include <IO/Buffer/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -20,7 +21,6 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
 #include <openssl/sha.h>
 
 namespace DB

@@ -17,8 +17,8 @@
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <TiDB/Decode/JsonPathExpr.h>
-#include <common/StringRef.h>
-#include <common/memcpy.h>
+#include <base/StringRef.h>
+#include <base/memcpy.h>
 
 namespace DB
 {

@@ -16,6 +16,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MyTime.h>
 #include <Common/SyncPoint/SyncPoint.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMyDateTime.h>
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
@@ -30,8 +31,7 @@
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/InputStreamTestUtils.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/logger_useful.h>
-#include <common/types.h>
+#include <base/types.h>
 
 using namespace std::chrono_literals;
 

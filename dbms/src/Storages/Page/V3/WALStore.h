@@ -23,7 +23,7 @@
 #include <Storages/Page/V3/LogFile/LogWriter.h>
 #include <Storages/Page/V3/PageEntriesEdit.h>
 #include <Storages/Page/V3/WAL/WALConfig.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 

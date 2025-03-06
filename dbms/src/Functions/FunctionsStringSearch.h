@@ -26,7 +26,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/StringUtil.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <cstring>
 #include <string_view>

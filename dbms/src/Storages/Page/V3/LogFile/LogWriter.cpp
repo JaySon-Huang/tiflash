@@ -15,6 +15,7 @@
 #include <Common/Checksum.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <IO/BaseFile/WritableFile.h>
 #include <IO/Buffer/ReadBuffer.h>
 #include <IO/Buffer/WriteBufferFromFile.h>
@@ -22,7 +23,6 @@
 #include <Storages/Page/PageUtil.h>
 #include <Storages/Page/V3/LogFile/LogFormat.h>
 #include <Storages/Page/V3/LogFile/LogWriter.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB::PS::V3

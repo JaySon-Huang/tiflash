@@ -14,9 +14,9 @@
 
 #pragma once
 
-#include <common/StringRef.h>
-#include <common/defines.h>
-#include <common/mem_utils_opt.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
+#include <base/mem_utils_opt.h>
 
 #include <cstring>
 #include <memory>

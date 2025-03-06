@@ -14,9 +14,9 @@
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <IO/Encryption/MockKeyManager.h>
 #include <Storages/KVStore/FFI/FileEncryption.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 

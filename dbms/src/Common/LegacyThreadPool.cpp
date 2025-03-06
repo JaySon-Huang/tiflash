@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/LegacyThreadPool.h>
+#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
-#include <common/ThreadPool.h>
-#include <common/logger_useful.h>
-
-#include <iostream>
-
 
 static Poco::Logger * getLogger()
 {

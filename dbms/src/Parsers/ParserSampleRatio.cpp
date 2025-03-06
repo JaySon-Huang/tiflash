@@ -16,7 +16,7 @@
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSampleRatio.h>
-#include <common/intExp.h>
+#include <base/intExp.h>
 
 
 namespace DB

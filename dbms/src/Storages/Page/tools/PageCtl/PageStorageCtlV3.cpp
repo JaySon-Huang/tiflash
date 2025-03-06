@@ -32,7 +32,7 @@
 #include <Storages/PathPool.h>
 #include <TestUtils/MockDiskDelegator.h>
 #include <TestUtils/TiFlashTestEnv.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/program_options.hpp>
 #include <cstdint>

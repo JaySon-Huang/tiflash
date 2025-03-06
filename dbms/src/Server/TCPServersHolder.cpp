@@ -14,6 +14,7 @@
 
 #include <Common/Logger.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Settings.h>
 #include <Poco/Net/HTTPServerParams.h>
@@ -21,7 +22,6 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Server/TCPHandler.h>
 #include <Server/TCPServersHolder.h>
-#include <common/logger_useful.h>
 
 #if Poco_NetSSL_FOUND
 #include <Common/grpcpp.h>

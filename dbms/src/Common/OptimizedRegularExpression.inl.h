@@ -16,9 +16,9 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <common/StringRef.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <cstring>
 #include <iostream>

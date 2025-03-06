@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Storages/BackgroundProcessingPool.h>
-#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 
 #include <chrono>

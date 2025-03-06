@@ -15,6 +15,7 @@
 #include <Common/Decimal.h>
 #include <Common/Exception.h>
 #include <Common/MyTime.h>
+#include <Common/logger_useful.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDecimal.h>
 #include <DataTypes/FieldToDataType.h>
@@ -32,7 +33,6 @@
 #include <TiDB/Schema/SchemaNameMapper.h>
 #include <TiDB/Schema/TiDB.h>
 #include <TiDB/Schema/VectorIndex.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 #include <tipb/executor.pb.h>
 

@@ -18,7 +18,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

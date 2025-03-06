@@ -15,11 +15,11 @@
 #pragma once
 
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/LegacyThreadPool.h>
 #include <Common/Logger.h>
 #include <Common/ThreadManager.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Interpreters/Aggregator.h>
-#include <common/ThreadPool.h>
 
 #include <condition_variable>
 

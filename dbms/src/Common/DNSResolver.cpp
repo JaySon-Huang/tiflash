@@ -26,7 +26,7 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/NumberParser.h>
 #include <arpa/inet.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/core.h>
 
 #include <atomic>

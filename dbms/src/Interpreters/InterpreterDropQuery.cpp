@@ -14,6 +14,7 @@
 
 #include <Common/FailPoint.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <IO/FileProvider/FileProvider.h>
@@ -23,7 +24,6 @@
 #include <Poco/File.h>
 #include <Storages/IManageableStorage.h>
 #include <Storages/IStorage.h>
-#include <common/logger_useful.h>
 
 #include <ext/scope_guard.h>
 

@@ -16,8 +16,8 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
-#include <common/DateLUT.h>
-#include <common/demangle.h>
+#include <base/DateLUT.h>
+#include <base/demangle.h>
 
 
 class SipHash;

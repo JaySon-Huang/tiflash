@@ -25,7 +25,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <common/likely.h>
+#include <base/likely.h>
 #include <math.h>
 #include <string.h>
 

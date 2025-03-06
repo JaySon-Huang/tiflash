@@ -19,7 +19,7 @@
 #include <Storages/Page/V3/PageDefines.h>
 #include <Storages/Page/V3/PageEntry.h>
 #include <Storages/Page/V3/Universal/UniversalPageId.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/format.h>
 
 #include <magic_enum.hpp>

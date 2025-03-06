@@ -15,9 +15,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Storages/Page/V2/VersionSet/PageEntriesVersionSetWithDelta.h>
-#include <common/logger_useful.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <magic_enum.hpp>
 #include <stack>

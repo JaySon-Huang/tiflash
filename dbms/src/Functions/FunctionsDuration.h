@@ -28,7 +28,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 
 #include <type_traits>
 
@@ -43,7 +43,7 @@ class FunctionConvertDurationFromNanos : public IFunction
 {
 public:
     static constexpr auto name = "FunctionConvertDurationFromNanos";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertDurationFromNanos>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertDurationFromNanos>(); }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -58,7 +58,7 @@ class FunctionDurationSplit : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDurationSplit>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDurationSplit>(); }
 
     String getName() const override { return name; }
 
@@ -76,7 +76,7 @@ class FunctionMyDurationToSec : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMyDurationToSec>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMyDurationToSec>(); }
 
     String getName() const override { return name; }
 
@@ -94,7 +94,7 @@ class FunctionExtractMyDuration : public IFunction
 public:
     static constexpr auto name = "extractMyDuration";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractMyDuration>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractMyDuration>(); }
 
     String getName() const override { return name; }
 

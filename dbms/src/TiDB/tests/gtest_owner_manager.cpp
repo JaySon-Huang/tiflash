@@ -13,13 +13,13 @@
 // limitations under the License.
 
 #include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TestUtils/TiFlashTestEnv.h>
 #include <TiDB/Etcd/Client.h>
 #include <TiDB/OwnerInfo.h>
 #include <TiDB/OwnerManager.h>
-#include <common/logger_useful.h>
 #include <gtest/gtest.h>
 #include <pingcap/Config.h>
 #include <pingcap/pd/IClient.h>

@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/likely.h>
-#include <common/types.h>
+#include <base/likely.h>
+#include <base/types.h>
 
 #include <cmath>
 

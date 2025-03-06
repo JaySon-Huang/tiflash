@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Storages/S3/Credentials.h>
 #include <aws/core/Version.h>
 #include <aws/core/auth/AWSCredentials.h>
@@ -25,7 +26,6 @@
 #include <aws/core/platform/OSVersionInfo.h>
 #include <aws/core/utils/UUID.h>
 #include <aws/core/utils/json/JsonSerializer.h>
-#include <common/logger_useful.h>
 
 #include <fstream>
 

@@ -14,8 +14,8 @@
 
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <Storages/DeltaMerge/DeltaIndex.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {

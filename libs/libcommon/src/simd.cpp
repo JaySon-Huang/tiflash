@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/simd.h>
+#include <base/simd.h>
 
 namespace simd_option
 {

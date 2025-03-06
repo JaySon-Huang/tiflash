@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <common/crc64.h>
-#include <common/simd.h>
+#include <base/crc64.h>
+#include <base/simd.h>
 #include <gtest/gtest.h>
 
 #include <cstring>
@@ -22,9 +22,9 @@
 #include <random>
 #include <vector>
 #if defined(__x86_64__)
-#include <common/crc64_arch/crc64_x86.h>
+#include <base/crc64_arch/crc64_x86.h>
 #elif defined(__aarch64__) || defined(__arm64__)
-#include <common/crc64_arch/crc64_aarch64.h>
+#include <base/crc64_arch/crc64_aarch64.h>
 #endif
 
 using namespace crc64::_detail;

@@ -14,7 +14,7 @@
 
 #pragma once
 #include <Common/PODArray.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

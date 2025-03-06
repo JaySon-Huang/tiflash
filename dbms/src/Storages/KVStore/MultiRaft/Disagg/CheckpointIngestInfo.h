@@ -17,7 +17,7 @@
 #include <Common/Logger.h>
 #include <Storages/DeltaMerge/Segment_fwd.h>
 #include <Storages/KVStore/MultiRaft/Disagg/fast_add_peer.pb.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 

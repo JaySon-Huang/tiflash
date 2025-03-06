@@ -17,6 +17,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <IO/BaseFile/RandomAccessFile.h>
 #include <IO/BaseFile/WritableFile.h>
 #include <IO/Buffer/WriteBufferFromFile.h>
@@ -26,7 +27,6 @@
 #include <Storages/Page/V2/PageFile.h>
 #include <Storages/Page/WriteBatchImpl.h>
 #include <boost_wrapper/string_split.h>
-#include <common/logger_useful.h>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <ext/scope_guard.h>

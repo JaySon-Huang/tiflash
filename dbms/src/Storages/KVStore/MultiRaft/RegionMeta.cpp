@@ -16,7 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/KVStore/MultiRaft/RegionExecutionResult.h>
 #include <Storages/KVStore/MultiRaft/RegionMeta.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fmt/core.h>
 
 #include <mutex>

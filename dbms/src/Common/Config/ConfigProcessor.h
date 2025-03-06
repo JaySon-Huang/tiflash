@@ -21,7 +21,6 @@
 #include <Poco/Logger.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
 
 #include <string>
 #include <unordered_set>

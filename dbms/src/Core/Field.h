@@ -19,7 +19,7 @@
 #include <Common/TiFlashException.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <common/strong_typedef.h>
+#include <base/strong_typedef.h>
 
 #include <algorithm>
 #include <functional>
@@ -398,7 +398,7 @@ public:
         using TWithoutRef = std::remove_reference_t<T>;
         auto * MAY_ALIAS ptr = reinterpret_cast<TWithoutRef *>(&storage);
         return *ptr;
-    };
+    }
 
     template <typename T>
     const T & get() const
@@ -406,7 +406,7 @@ public:
         using TWithoutRef = std::remove_reference_t<T>;
         const auto * MAY_ALIAS ptr = reinterpret_cast<const TWithoutRef *>(&storage);
         return *ptr;
-    };
+    }
 
     template <typename T>
     bool tryGet(T & result)

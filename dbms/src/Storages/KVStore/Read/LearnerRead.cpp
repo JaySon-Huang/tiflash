@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
@@ -25,7 +26,6 @@
 #include <Storages/KVStore/Read/RegionException.h>
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/RegionQueryInfo.h>
-#include <common/logger_useful.h>
 #include <fmt/chrono.h>
 
 

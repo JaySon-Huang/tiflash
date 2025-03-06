@@ -19,7 +19,7 @@
 #include <Poco/Net/TCPServer.h>
 #include <Poco/ThreadPool.h>
 #include <Server/IServer.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

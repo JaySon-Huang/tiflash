@@ -15,8 +15,8 @@
 #pragma once
 
 #include <IO/Buffer/WriteBuffer.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+#include <base/StringRef.h>
+#include <base/types.h>
 
 #include <compare>
 

@@ -21,7 +21,7 @@
 #include <TestUtils/ColumnGenerator.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 namespace DB::tests

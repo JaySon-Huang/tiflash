@@ -17,6 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/SyncPoint/SyncPoint.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/EmptyBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -64,8 +65,7 @@
 #include <Storages/Page/V3/Universal/UniversalPageStorage.h>
 #include <Storages/PathPool.h>
 #include <Storages/S3/S3Filename.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
+#include <base/defines.h>
 #include <fiu.h>
 #include <fmt/core.h>
 

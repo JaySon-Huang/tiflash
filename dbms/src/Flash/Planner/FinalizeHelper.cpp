@@ -19,7 +19,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Flash/Planner/FinalizeHelper.h>
 #include <Interpreters/ExpressionActions.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <unordered_map>
 

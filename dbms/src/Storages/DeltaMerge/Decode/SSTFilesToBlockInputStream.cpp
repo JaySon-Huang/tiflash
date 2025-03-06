@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <RaftStoreProxyFFI/ColumnFamily.h>
@@ -24,7 +25,6 @@
 #include <Storages/KVStore/Region.h>
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/StorageDeltaMerge.h>
-#include <common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {

@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Common/StringUtils/StringUtils.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 inline bool startsWith(const StringRef & view, const StringRef & prefix)
 {

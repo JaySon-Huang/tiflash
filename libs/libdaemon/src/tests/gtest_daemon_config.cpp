@@ -21,7 +21,7 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/Logger.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/config_common.h>
+#include <base/config_common.h>
 #include <cpptoml.h>
 #include <daemon/BaseDaemon.h>
 #include <fmt/format.h>

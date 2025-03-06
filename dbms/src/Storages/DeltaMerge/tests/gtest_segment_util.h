@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 namespace DB::DM::tests

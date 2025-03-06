@@ -16,7 +16,7 @@
 
 #include <IO/Encryption/AESCTRCipher.h>
 #include <IO/Encryption/BlockAccessCipherStream.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

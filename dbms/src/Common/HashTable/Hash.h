@@ -16,10 +16,10 @@
 
 #include <Common/Decimal.h>
 #include <Core/Types.h>
+#include <base/StringRef.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 #include <city.h>
-#include <common/StringRef.h>
-#include <common/types.h>
-#include <common/unaligned.h>
 
 #include <boost/functional/hash/hash.hpp>
 #include <type_traits>

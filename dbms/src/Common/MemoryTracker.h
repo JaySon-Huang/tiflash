@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <boost/noncopyable.hpp>

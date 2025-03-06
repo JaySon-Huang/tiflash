@@ -22,7 +22,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <atomic>
 #include <chrono>
@@ -49,7 +49,7 @@ public:
 
     ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other);
 
-    std::string getKeyDescription() const { return key_description; };
+    std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return {}; }
 
@@ -260,7 +260,7 @@ private:
         DISPATCH(Float64)
 #undef DISPATCH
         else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-    };
+    }
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
@@ -329,7 +329,7 @@ private:
                 for (const auto row : outdated_keys[key])
                     out[row] = get_default(row);
             });
-    };
+    }
 
     template <typename DefaultGetter>
     void getItemsString(
@@ -463,7 +463,7 @@ private:
             const auto string_ref = it != std::end(map) ? it->getMapped() : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
-    };
+    }
 
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(
@@ -605,7 +605,7 @@ private:
             /// inform caller that the cell has not been found
             on_key_not_found(key, cell_idx);
         }
-    };
+    }
 
     UInt64 getCellIdx(const StringRef key) const;
 
@@ -644,7 +644,7 @@ private:
     {
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
-    };
+    }
 
     bool isEmptyCell(const UInt64 idx) const;
 

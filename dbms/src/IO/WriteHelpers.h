@@ -25,11 +25,11 @@
 #include <IO/DoubleConverter.h>
 #include <IO/VarInt.h>
 #include <IO/WriteIntText.h>
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
-#include <common/StringRef.h>
-#include <common/find_symbols.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LocalDateTime.h>
+#include <base/StringRef.h>
+#include <base/find_symbols.h>
 
 #include <cstdio>
 #include <cstring>

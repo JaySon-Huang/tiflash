@@ -16,7 +16,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/KVStore/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <mutex>
 #include <unordered_map>

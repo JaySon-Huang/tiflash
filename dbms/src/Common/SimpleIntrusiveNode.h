@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <boost/noncopyable.hpp>
 #include <cassert>

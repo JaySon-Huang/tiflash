@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <string_view>
 
@@ -25,9 +25,9 @@
 constexpr bool tiflash_use_avx2_compile_flag = true;
 
 // if cpp source file is compiled with flag `-mavx2`, it's recommended to use inline function for better performance.
-#include <common/avx2_byte_count.h>
-#include <common/avx2_mem_utils.h>
-#include <common/avx2_strstr.h>
+#include <base/avx2_byte_count.h>
+#include <base/avx2_mem_utils.h>
+#include <base/avx2_strstr.h>
 
 #else
 constexpr bool tiflash_use_avx2_compile_flag = false;

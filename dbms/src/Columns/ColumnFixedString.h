@@ -16,7 +16,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#include <common/memcpy.h>
+#include <base/memcpy.h>
 #include <string.h> // memcpy
 
 

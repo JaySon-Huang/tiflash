@@ -14,7 +14,7 @@
 
 #include <Common/Exception.h>
 #include <IO/Compression/ICompressionCodec.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <cassert>
 

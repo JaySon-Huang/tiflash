@@ -15,9 +15,9 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 #include <bitpackinghelpers.h>
-#include <common/types.h>
-#include <common/unaligned.h>
 
 namespace DB
 {

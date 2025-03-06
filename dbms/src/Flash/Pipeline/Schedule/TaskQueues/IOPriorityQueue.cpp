@@ -14,7 +14,7 @@
 
 #include <Flash/Pipeline/Schedule/TaskQueues/IOPriorityQueue.h>
 #include <Flash/Pipeline/Schedule/Tasks/TaskHelper.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 namespace DB
 {

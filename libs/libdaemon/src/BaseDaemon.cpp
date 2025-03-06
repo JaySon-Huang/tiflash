@@ -46,6 +46,7 @@
 #include <Common/TiFlashBuildInfo.h>
 #include <Common/UnifiedLogFormatter.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <IO/Buffer/ReadBufferFromFileDescriptor.h>
 #include <IO/Buffer/WriteBufferFromFileDescriptor.h>
@@ -75,8 +76,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/MapConfiguration.h>
-#include <common/ErrorHandlers.h>
-#include <common/logger_useful.h>
+#include <base/ErrorHandlers.h>
 #include <daemon/OwnPatternFormatter.h>
 #include <fmt/format.h>
 #include <sys/resource.h>

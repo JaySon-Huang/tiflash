@@ -17,13 +17,13 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Flash/Executor/toRU.h>
 #include <Flash/Mpp/MPPTaskManager.h>
 #include <Flash/Pipeline/Schedule/Tasks/Task.h>
 #include <Flash/ResourceControl/MockLocalAdmissionController.h>
 #include <Flash/ResourceControl/TokenBucket.h>
 #include <TiDB/Etcd/Client.h>
-#include <common/logger_useful.h>
 #include <kvproto/resource_manager.pb.h>
 #include <pingcap/kv/Cluster.h>
 

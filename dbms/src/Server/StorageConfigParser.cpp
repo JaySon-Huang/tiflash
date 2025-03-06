@@ -29,6 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Path.h>
@@ -36,7 +37,6 @@
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/StorageConfigParser.h>
-#include <common/logger_useful.h>
 #include <fmt/core.h>
 
 #include <set>

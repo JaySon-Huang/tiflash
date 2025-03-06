@@ -19,7 +19,7 @@
 #include <Interpreters/SharedContexts/Disagg_fwd.h>
 #include <Storages/DeltaMerge/File/DMFileV3IncrementWriter_fwd.h>
 #include <Storages/DeltaMerge/Remote/ObjectId.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <unordered_set>
 

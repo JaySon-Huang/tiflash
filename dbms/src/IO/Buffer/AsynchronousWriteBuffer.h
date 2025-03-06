@@ -14,8 +14,8 @@
 
 #pragma once
 
+#include <Common/LegacyThreadPool.h>
 #include <IO/Buffer/WriteBuffer.h>
-#include <common/ThreadPool.h>
 #include <math.h>
 
 #include <vector>

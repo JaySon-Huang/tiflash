@@ -25,7 +25,7 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/KVStore/Types.h>
 #include <Storages/StorageDeltaMergeHelpers.h>
-#include <common/likely.h>
+#include <base/likely.h>
 
 namespace DB
 {

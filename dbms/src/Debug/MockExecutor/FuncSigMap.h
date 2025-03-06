@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/expression.pb.h>
 
 namespace DB::tests

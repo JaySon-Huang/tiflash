@@ -16,7 +16,7 @@
 
 #include <Storages/BackgroundProcessingPool.h>
 #include <TiDB/OwnerInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <condition_variable>
 #include <string_view>

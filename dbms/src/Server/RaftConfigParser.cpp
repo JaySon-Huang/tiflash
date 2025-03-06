@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/FmtUtils.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
 #include <Poco/StringTokenizer.h>
@@ -20,7 +21,6 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/RaftConfigParser.h>
 #include <Storages/MutableSupport.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

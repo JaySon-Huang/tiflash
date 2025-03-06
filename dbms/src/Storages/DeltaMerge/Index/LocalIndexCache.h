@@ -17,7 +17,7 @@
 #include <Common/LRUCache.h>
 #include <Storages/DeltaMerge/Index/ICacheableLocalIndexReader.h>
 #include <Storages/DeltaMerge/Index/LocalIndexCache_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <condition_variable>
 #include <mutex>

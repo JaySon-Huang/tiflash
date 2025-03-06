@@ -14,8 +14,8 @@
 
 #include <Common/Logger.h>
 #include <Common/getNumberOfCPUCores.h>
-#include <common/logger_useful.h>
-#include <common/types.h>
+#include <Common/logger_useful.h>
+#include <base/types.h>
 
 namespace CPUCores
 {

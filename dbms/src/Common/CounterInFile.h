@@ -21,7 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Exception.h>
 #include <Poco/File.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <fcntl.h>
 #include <sys/file.h>
 

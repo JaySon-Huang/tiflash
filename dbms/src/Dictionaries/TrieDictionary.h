@@ -17,11 +17,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/logger_useful.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <base/StringRef.h>
 
 #include <atomic>
 #include <ext/range.h>
@@ -47,7 +47,7 @@ public:
 
     ~TrieDictionary();
 
-    std::string getKeyDescription() const { return key_description; };
+    std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
 

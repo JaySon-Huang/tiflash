@@ -15,7 +15,7 @@
 #pragma once
 
 #include <TiDB/Collation/Collator.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <tipb/executor.pb.h>
 
 namespace DB::ExchangeSenderInterpreterHelper

@@ -15,7 +15,7 @@
 #include <Flash/Mpp/MppVersion.h>
 #include <Flash/Mpp/Utils.h>
 #include <Poco/String.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <fiu.h>
 #include <fmt/format.h>
 

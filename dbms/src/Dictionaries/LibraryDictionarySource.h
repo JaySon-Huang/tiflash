@@ -18,7 +18,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <common/LocalDateTime.h>
+#include <base/LocalDateTime.h>
 
 
 namespace Poco

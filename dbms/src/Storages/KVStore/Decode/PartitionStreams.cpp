@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
@@ -32,7 +33,6 @@
 #include <Storages/StorageDeltaMerge.h>
 #include <TiDB/Schema/SchemaSyncer.h>
 #include <TiDB/Schema/TiDBSchemaManager.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 namespace DB

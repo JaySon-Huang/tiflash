@@ -18,8 +18,8 @@
 #include <Common/Exception.h>
 #include <Common/SimpleIntrusiveNode.h>
 #include <Common/nocopyable.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <chrono>

@@ -18,7 +18,7 @@
 #include <Interpreters/sortBlock.h>
 #include <TiDB/Collation/Collator.h>
 #include <TiDB/Collation/CollatorUtils.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 #if defined(APPLY_FOR_TYPE) || defined(M) || defined(CONCAT)
 static_assert(false);

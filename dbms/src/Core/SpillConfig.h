@@ -16,7 +16,7 @@
 
 #include <Core/Defines.h>
 #include <IO/FileProvider/FileProvider_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

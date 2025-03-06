@@ -14,7 +14,7 @@
 
 #include <Common/LRUCache.h>
 #include <Common/Logger.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <gtest/gtest.h>
 
 namespace DB

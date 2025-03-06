@@ -14,7 +14,7 @@
 
 #include <Core/DecimalComparison.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {

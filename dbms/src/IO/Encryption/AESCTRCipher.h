@@ -15,7 +15,7 @@
 #pragma once
 
 #include <Common/config.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <openssl/aes.h>
 #include <openssl/conf.h>
 #if USE_GM_SSL

@@ -15,8 +15,8 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Flash/Planner/PhysicalPlanNode.h>
-#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -46,7 +46,7 @@ public:
         return child;
     }
 
-    size_t childrenSize() const override { return 1; };
+    size_t childrenSize() const override { return 1; }
 
 protected:
     PhysicalPlanNodePtr child;

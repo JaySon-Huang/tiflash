@@ -18,8 +18,8 @@
 #include <Storages/KVStore/TMTContext.h>
 #include <Storages/KVStore/Types.h>
 #include <TiDB/OwnerInfo.h>
-#include <common/defines.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/support/status_code_enum.h>
 #include <kvproto/disaggregated.pb.h>

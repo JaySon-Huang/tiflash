@@ -16,7 +16,7 @@
 
 #include <Storages/KVStore/Types.h>
 #include <TiDB/OwnerManager.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <kvproto/disaggregated.pb.h>
 #include <pingcap/kv/Cluster.h>
 

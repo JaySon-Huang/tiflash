@@ -15,6 +15,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/Message.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
@@ -22,7 +23,6 @@
 #include <Storages/KVStore/Read/ReadIndexWorkerImpl.h>
 #include <Storages/KVStore/Region.h>
 #include <Storages/KVStore/TMTContext.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 namespace ProfileEvents

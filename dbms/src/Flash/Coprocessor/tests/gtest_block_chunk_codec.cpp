@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Flash/Coprocessor/CHBlockChunkCodecV1.h>
@@ -22,7 +23,6 @@
 #include <TestUtils/ColumnGenerator.h>
 #include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
-#include <common/logger_useful.h>
 
 #include <random>
 

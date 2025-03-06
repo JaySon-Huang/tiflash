@@ -16,7 +16,7 @@
 
 #include <Common/Exception.h>
 #include <Interpreters/SettingsCommon.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB::PS::V3
 {

@@ -14,9 +14,9 @@
 
 #include <Common/Exception.h>
 #include <Common/TiFlashMetrics.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/DeltaMerge/LocalIndexerScheduler.h>
-#include <common/logger_useful.h>
 #include <fiu.h>
 
 namespace DB::FailPoints
