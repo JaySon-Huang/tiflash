@@ -18,9 +18,7 @@
 #include <TiDB/Decode/TypeMapping.h>
 #include <TiDB/Schema/TiDB.h>
 
-namespace DB
-{
-namespace tests
+namespace DB::tests
 {
 
 TEST(TypeMappingTest, DataTypeToColumnInfo)
@@ -93,9 +91,23 @@ try
         ASSERT_EQ(data_type->getName(), DataTypeString::getDefaultName());
     }
 
+    {
+        auto float_type = typeFromString("Float32");
+        column_info = reverseGetColumnInfo(NameAndTypePair{name, float_type}, 1, default_field, true);
+        ASSERT_EQ(column_info.tp, TiDB::TypeFloat);
+        auto data_type = getDataTypeByColumnInfo(column_info);
+        ASSERT_EQ(data_type->getName(), "Float32");
+    }
+    {
+        auto float_type = typeFromString("Float64");
+        column_info = reverseGetColumnInfo(NameAndTypePair{name, float_type}, 1, default_field, true);
+        ASSERT_EQ(column_info.tp, TiDB::TypeDouble);
+        auto data_type = getDataTypeByColumnInfo(column_info);
+        ASSERT_EQ(data_type->getName(), "Float64");
+    }
+
     // TODO: test decimal, datetime, enum
 }
 CATCH
 
-} // namespace tests
-} // namespace DB
+} // namespace DB::tests

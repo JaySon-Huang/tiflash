@@ -88,88 +88,53 @@ struct SignedType<DataTypeInt64> : public std::true_type
 template <typename T>
 inline constexpr bool IsSignedType = SignedType<T>::value;
 
-template <typename T>
-struct DecimalType : public std::false_type
-{
-};
-template <typename T>
-struct DecimalType<DataTypeDecimal<T>> : public std::true_type
-{
-};
-template <typename T>
-inline constexpr bool IsDecimalType = DecimalType<T>::value;
+// template <typename T>
+// struct DecimalType : public std::false_type
+// {
+// };
+// template <typename T>
+// struct DecimalType<DataTypeDecimal<T>> : public std::true_type
+// {
+// };
+// template <typename T>
+// inline constexpr bool IsDecimalType = DecimalType<T>::value;
 
 template <typename T>
-struct EnumType : public std::false_type
+DataTypePtr getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
 {
-};
-template <>
-struct EnumType<DataTypeEnum16> : public std::true_type
-{
-};
-template <typename T>
-inline constexpr bool IsEnumType = EnumType<T>::value;
-
-template <typename T>
-struct ArrayType : public std::false_type
-{
-};
-template <>
-struct ArrayType<DataTypeArray> : public std::true_type
-{
-};
-template <typename T>
-inline constexpr bool IsArrayType = ArrayType<T>::value;
-
-template <typename T>
-std::enable_if_t<
-    !IsSignedType<T> && !IsDecimalType<T> && !IsEnumType<T> && !std::is_same_v<T, DataTypeMyDateTime>
-        && !IsArrayType<T>,
-    DataTypePtr> //
-getDataTypeByColumnInfoBase(const ColumnInfo &, const T *)
-{
-    return std::make_shared<T>();
-}
-
-template <typename T>
-std::enable_if_t<IsSignedType<T>, DataTypePtr> getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
-{
-    DataTypePtr t = nullptr;
-
-    if (column_info.hasUnsignedFlag())
-        t = std::make_shared<typename SignedType<T>::UnsignedType>();
+    if constexpr (IsSignedType<T>)
+    {
+        if (column_info.hasUnsignedFlag())
+            return std::make_shared<typename SignedType<T>::UnsignedType>();
+        else
+            return std::make_shared<T>();
+    }
+    // else if constexpr (IsDecimalType<T>)
+    else if constexpr (
+        std::is_same_v<T, DataTypeDecimal<Decimal32>> || std::is_same_v<T, DataTypeDecimal<Decimal64>>
+        || std::is_same_v<T, DataTypeDecimal<Decimal128>> || std::is_same_v<T, DataTypeDecimal<Decimal256>>)
+    {
+        return createDecimal(column_info.flen, column_info.decimal);
+    }
+    else if constexpr (std::is_same_v<T, DataTypeArray>)
+    {
+        RUNTIME_CHECK(column_info.tp == TiDB::TypeTiDBVectorFloat32, magic_enum::enum_name(column_info.tp));
+        const auto nested_type = std::make_shared<DataTypeFloat32>();
+        return std::make_shared<DataTypeArray>(nested_type);
+    }
+    else if constexpr (std::is_same_v<T, DataTypeMyDateTime>)
+    {
+        // In some cases, TiDB will set the decimal to -1, change -1 to 6 to avoid error
+        return std::make_shared<T>(column_info.decimal == -1 ? 6 : column_info.decimal);
+    }
+    else if constexpr (std::is_same_v<T, DataTypeEnum16>)
+    {
+        return std::make_shared<T>(column_info.elems);
+    }
     else
-        t = std::make_shared<T>();
-
-    return t;
-}
-
-template <typename T>
-std::enable_if_t<IsDecimalType<T>, DataTypePtr> getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
-{
-    return createDecimal(column_info.flen, column_info.decimal);
-}
-
-template <typename T>
-std::enable_if_t<IsArrayType<T>, DataTypePtr> getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
-{
-    RUNTIME_CHECK(column_info.tp == TiDB::TypeTiDBVectorFloat32, magic_enum::enum_name(column_info.tp));
-    const auto nested_type = std::make_shared<DataTypeFloat32>();
-    return std::make_shared<DataTypeArray>(nested_type);
-}
-
-template <typename T>
-std::enable_if_t<std::is_same_v<T, DataTypeMyDateTime>, DataTypePtr> //
-getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
-{
-    // In some cases, TiDB will set the decimal to -1, change -1 to 6 to avoid error
-    return std::make_shared<T>(column_info.decimal == -1 ? 6 : column_info.decimal);
-}
-
-template <typename T>
-std::enable_if_t<IsEnumType<T>, DataTypePtr> getDataTypeByColumnInfoBase(const ColumnInfo & column_info, const T *)
-{
-    return std::make_shared<T>(column_info.elems);
+    {
+        return std::make_shared<T>();
+    }
 }
 
 TypeMapping::TypeMapping()
