@@ -122,21 +122,6 @@ raft_serverpb::MergeState & RegionState::getMutMergeState()
     return *base.mutable_merge_state();
 }
 
-bool computeMappedTableID(const DecodedTiKVKey & key, TableID & table_id)
-{
-    auto k = key.getUserKey();
-    // t table_id _r
-    if (k.size() >= (1 + 8 + 2) && k[0] == RecordKVFormat::TABLE_PREFIX
-        && memcmp(k.data() + 9, RecordKVFormat::RECORD_PREFIX_SEP, 2) == 0)
-    {
-        table_id = RecordKVFormat::getTableId(k);
-        return true;
-    }
-
-    return false;
-}
-
-
 HandleRange<HandleID> getHandleRangeByTable(
     const std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> & rawKeys,
     TableID table_id)

@@ -433,7 +433,7 @@ void RegionTable::replaceRegion(const RegionPtr & old_region, const RegionPtr & 
         std::scoped_lock lock(mutex);
         // `old_region` will no longer contribute to the memory of the table.
         auto keyspace_id = region_range_keys->getKeyspaceID();
-        auto table_id = region_range_keys->getMappedTableID();
+        auto table_id = region_range_keys->getTableID();
         auto & table = getOrCreateTable(keyspace_id, table_id);
         old_region->resetRegionTableCtx();
         if unlikely (!new_region->getRegionTableCtx())
@@ -449,7 +449,7 @@ void RegionTable::extendRegionRange(const Region & region, const RegionRangeKeys
     std::lock_guard lock(mutex);
     const RegionID region_id = region.id();
     auto keyspace_id = region_range_keys.getKeyspaceID();
-    auto table_id = region_range_keys.getMappedTableID();
+    auto table_id = region_range_keys.getTableID();
     auto new_handle_range = region_range_keys.rawKeys();
 
     if (auto it = region_infos.find(region_id); it != region_infos.end())

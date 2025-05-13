@@ -288,13 +288,13 @@ std::variant<LockInfoPtr, RegionException::RegionReadStatus> RegionTable::checkR
         if (meta_snap.ver != region_version)
             return RegionException::RegionReadStatus::EPOCH_NOT_MATCH;
 
-        // todo check table id
-        TableID mapped_table_id;
-        if (!computeMappedTableID(*meta_snap.range->rawKeys().first, mapped_table_id) || mapped_table_id != table_id)
+        // check table id
+        TableID parsed_table_id;
+        if (!parseTableID(*meta_snap.range->rawKeys().first, parsed_table_id) || parsed_table_id != table_id)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Should not happen, region not belong to table, table_id={} expect_table_id={}",
-                mapped_table_id,
+                parsed_table_id,
                 table_id);
     }
 

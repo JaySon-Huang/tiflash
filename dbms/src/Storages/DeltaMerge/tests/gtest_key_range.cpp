@@ -16,6 +16,7 @@
 #include <Storages/DeltaMerge/Range.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/KVStore/MultiRaft/RegionRangeKeys.h>
+#include <Storages/KVStore/TiKVHelpers/TiKVRecordFormat.h>
 #include <Storages/KVStore/Types.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Schema/TiDB.h>
@@ -117,6 +118,37 @@ TEST(HandleRangeTest, RedactRangeFromCommonHandle)
 
 TEST(RowKey, ToNextKeyIntHandle)
 {
+    {
+        TableID table_id = 471;
+        auto key_end = RecordKVFormat::genTableRecordStartKey(table_id);
+        key_end.push_back('\x20');
+        key_end.push_back('\x30');
+        auto tikv_key = RecordKVFormat::encodeAsTiKVKey(key_end);
+        LOG_INFO(
+            Logger::get(),
+            "split with table_id={}, suffix='\\x20\\x30' key={}",
+            table_id,
+            Redact::keyToHexString(tikv_key.data(), tikv_key.length()));
+    }
+    {
+        TableID table_id = 471;
+        auto key_end = RecordKVFormat::genTableRecordStartKey(table_id);
+        key_end.push_back('_');
+        key_end.push_back('r');
+        key_end.push_back('\x00');
+        key_end.push_back('\x00');
+        key_end.push_back('\x00');
+        key_end.push_back('\x00');
+        key_end.push_back('\x00');
+        key_end.push_back('\x00');
+        key_end.push_back('\x01');
+        auto tikv_key = RecordKVFormat::encodeAsTiKVKey(key_end);
+        LOG_INFO(
+            Logger::get(),
+            "split with table_id={}, suffix='_r\\x30' key={}",
+            table_id,
+            Redact::keyToHexString(tikv_key.data(), tikv_key.length()));
+    }
     const TableID table_id = 1;
     const auto key = RowKeyValue::fromIntHandle(20);
     const auto next = key.toNext();

@@ -225,6 +225,7 @@ void RegionRaftCommandDelegate::handleAdminRaftCmd(
     const KVStore & kvstore,
     RegionTable & region_table,
     RaftCommandResult & result)
+try
 {
     result.type = RaftCommandResult::Type::Default;
     if (index <= appliedIndex())
@@ -296,6 +297,16 @@ void RegionRaftCommandDelegate::handleAdminRaftCmd(
     }
 
     meta.notifyAll();
+}
+catch (Exception & e)
+{
+    e.addMessage(fmt::format(
+        "while handling admin region={} cmd_type={} term={} index={}",
+        this->toString(),
+        static_cast<Int64>(request.cmd_type()),
+        term,
+        index));
+    throw;
 }
 
 

@@ -65,8 +65,8 @@ public:
     const std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> & rawKeys() const { return raw; }
     const RegionRange & comparableKeys() const { return ori; }
 
-    KeyspaceTableID getKeyspaceTableID() const { return KeyspaceTableID(keyspace_id, mapped_table_id); }
-    TableID getMappedTableID() const { return mapped_table_id; }
+    KeyspaceTableID getKeyspaceTableID() const { return KeyspaceTableID(keyspace_id, table_id); }
+    TableID getTableID() const { return table_id; }
     KeyspaceID getKeyspaceID() const { return keyspace_id; }
     std::string toDebugString() const;
 
@@ -90,10 +90,10 @@ public:
 private:
     RegionRange ori;
     std::pair<DecodedTiKVKeyPtr, DecodedTiKVKeyPtr> raw;
-    TableID mapped_table_id = InvalidTableID;
+    TableID table_id = InvalidTableID;
     KeyspaceID keyspace_id = NullspaceID;
 };
 
-bool computeMappedTableID(const DecodedTiKVKey & key, TableID & table_id);
+bool parseTableID(const DecodedTiKVKey & key, TableID & table_id);
 
 } // namespace DB

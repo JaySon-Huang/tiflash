@@ -28,7 +28,7 @@ RowKeyRange RowKeyRange::fromRegionRange(
 {
     return fromRegionRange(
         region_range->rawKeys(),
-        region_range->getMappedTableID(),
+        region_range->getTableID(),
         table_id,
         is_common_handle,
         rowkey_column_size,
@@ -68,6 +68,11 @@ RowKeyRange RowKeyRange::fromRegionRange(
     {
         // keep the ptr to handle because `extra_suffix_holder` rely on this instance lifetime
         auto start_handle = std::make_shared<std::string>(RecordKVFormat::getRawTiDBPKView(start_key));
+        if (start_handle->empty())
+        {
+            return newNone(is_common_handle, rowkey_column_size);
+        }
+
         std::tie(start_value, extra_suffix_holder) = RowKeyValue::fromHandleWithSuffix(is_common_handle, start_handle);
         if (unlikely(!extra_suffix_holder.empty()))
         {
@@ -89,6 +94,11 @@ RowKeyRange RowKeyRange::fromRegionRange(
     {
         // keep the ptr to handle because `extra_suffix_holder` rely on this instance lifetime
         auto end_handle = std::make_shared<std::string>(RecordKVFormat::getRawTiDBPKView(end_key));
+        if (end_handle->empty())
+        {
+            return newNone(is_common_handle, rowkey_column_size);
+        }
+
         std::tie(end_value, extra_suffix_holder) = RowKeyValue::fromHandleWithSuffix(is_common_handle, end_handle);
         if (unlikely(!extra_suffix_holder.empty()))
         {

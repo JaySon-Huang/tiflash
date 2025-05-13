@@ -324,7 +324,7 @@ Region::Region(DB::RegionMeta && meta_, const TiFlashRaftProxyHelper * proxy_hel
     , eager_truncated_index(meta.truncateIndex())
     , log(Logger::get())
     , keyspace_id(meta.getRange()->getKeyspaceID())
-    , mapped_table_id(meta.getRange()->getMappedTableID())
+    , mapped_table_id(meta.getRange()->getTableID())
     , proxy_helper(proxy_helper_)
 {
     GET_METRIC(tiflash_raft_classes_count, type_region).Increment(1);

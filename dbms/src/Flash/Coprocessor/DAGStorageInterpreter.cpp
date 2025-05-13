@@ -151,7 +151,7 @@ std::tuple<std::optional<RegionRetryList>, RegionException::RegionReadStatus> Ma
                 for (const auto & p : r.key_ranges)
                 {
                     TableID table_id_in_range = -1;
-                    if (!computeMappedTableID(*p.first, table_id_in_range) || table_id_in_range != physical_table_id)
+                    if (!parseTableID(*p.first, table_id_in_range) || table_id_in_range != physical_table_id)
                     {
                         throw TiFlashException(
                             Errors::Coprocessor::BadRequest,
