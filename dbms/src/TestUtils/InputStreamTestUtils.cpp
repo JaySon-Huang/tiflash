@@ -15,6 +15,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Debug/BlockUtils.h>
 #include <Storages/DeltaMerge/DeltaMergeDefines.h>
 #include <Storages/DeltaMerge/DeltaMergeHelpers.h>
 #include <TestUtils/FunctionTestUtils.h>

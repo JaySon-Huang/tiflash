@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/DMContext.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
+#include <Debug/BlockUtils.h>
 
 #include <magic_enum.hpp>
 
@@ -239,6 +240,11 @@ bool SegmentReadTaskPool::readOneBlock(BlockInputStreamPtr & stream, const Segme
     auto block = stream->read();
     if (block)
     {
+        LOG_INFO(
+            Logger::get("jayson-debug"),
+            "readOneBlock: read block, segment={} block={}",
+            seg,
+            DB::tests::getColumnsContent(block.getColumnsWithTypeAndName()));
         pushBlock(std::move(block));
         return true;
     }

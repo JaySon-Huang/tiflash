@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Debug/BlockUtils.h>
 #include <Operators/FilterTransformOp.h>
 
 namespace DB
@@ -25,9 +26,15 @@ OperatorStatus FilterTransformOp::transformImpl(Block & block)
     }
 
     if (likely(block))
+    {
+        LOG_INFO(
+            Logger::get("jayson-debug"),
+            "FilterTransformOp::transformImpl read block, block={}",
+            DB::tests::getColumnsContent(block.getColumnsWithTypeAndName()));
         return filter_transform_action.transform(block, /*res_filter=*/filter_ignored, /*return_filter=*/false)
             ? OperatorStatus::HAS_OUTPUT
             : OperatorStatus::NEED_INPUT;
+    }
 
     return OperatorStatus::HAS_OUTPUT;
 }

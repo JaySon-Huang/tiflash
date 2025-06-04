@@ -15,6 +15,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/FmtUtils.h>
 #include <Common/Stopwatch.h>
+#include <Debug/BlockUtils.h>
 #include <Debug/MockComputeServerManager.h>
 #include <Debug/MockStorage.h>
 #include <Flash/Pipeline/Pipeline.h>

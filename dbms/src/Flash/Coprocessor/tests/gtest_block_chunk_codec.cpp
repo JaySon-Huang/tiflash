@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Debug/BlockUtils.h>
 #include <Flash/Coprocessor/CHBlockChunkCodecV1.h>
 #include <Flash/Coprocessor/ChunkDecodeAndSquash.h>
 #include <IO/Buffer/ReadBufferFromString.h>

@@ -18,6 +18,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataStreams/FilterTransformAction.h>
+#include <Debug/BlockUtils.h>
 
 
 namespace DB
@@ -85,7 +86,15 @@ bool FilterTransformAction::transform(Block & block, FilterPtr & res_filter, boo
         return true;
     }
 
+    LOG_INFO(
+        Logger::get("jayson-debug"),
+        "FilterTransformAction::transform before expression->execute, block={}",
+        DB::tests::getColumnsContent(block.getColumnsWithTypeAndName()));
     expression->execute(block);
+    LOG_INFO(
+        Logger::get("jayson-debug"),
+        "FilterTransformAction::transform after expression->execute, block={}",
+        DB::tests::getColumnsContent(block.getColumnsWithTypeAndName()));
 
     if (constant_filter_description.always_true)
     {
