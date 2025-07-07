@@ -434,7 +434,7 @@ void MemTableSet::removeColumnFilesInFlushTask(const ColumnFileFlushTask & flush
     }
     column_files.swap(new_column_files);
     stat.resetTo( //
-        new_column_files.size(),
+        column_files.size(),
         new_rows,
         new_bytes,
         new_alloc_bytes,
