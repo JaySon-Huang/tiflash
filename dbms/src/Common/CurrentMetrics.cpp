@@ -65,10 +65,10 @@
     M(DT_SnapshotOfReplayVersionChain)          \
     M(DT_SnapshotOfBitmapFilter)                \
     M(DT_SnapshotOfDisaggReadNodeRead)          \
-    M(DT_NumKeyspace)                           \
-    M(DT_NumIStorages)                          \
-    M(DT_NumStorageDeltaMerges)                 \
-    M(DT_NumSegments)                           \
+    M(NumKeyspace)                              \
+    M(NumIStorage)                              \
+    M(DT_NumStorageDeltaMerge)                  \
+    M(DT_NumSegment)                            \
     M(DT_NumMemTable)                           \
     M(DT_BytesMemTable)                         \
     M(DT_BytesMemTableAllocated)                \

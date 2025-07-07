@@ -64,7 +64,7 @@
 
 namespace CurrentMetrics
 {
-extern const Metric DT_NumStorageDeltaMerges;
+extern const Metric DT_NumStorageDeltaMerge;
 } // namespace CurrentMetrics
 
 namespace DB
@@ -92,7 +92,7 @@ StorageDeltaMerge::StorageDeltaMerge(
     Timestamp tombstone,
     Context & global_context_)
     : IManageableStorage{columns_, tombstone}
-    , holder_counter(CurrentMetrics::DT_NumStorageDeltaMerges, 1)
+    , holder_counter(CurrentMetrics::DT_NumStorageDeltaMerge, 1)
     , store_inited(false)
     , max_column_id_used(0)
     , data_path_contains_database_name(db_engine != "TiFlash")

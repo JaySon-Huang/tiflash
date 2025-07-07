@@ -16,7 +16,7 @@
 
 namespace CurrentMetrics
 {
-extern const Metric DT_NumIStorages;
+extern const Metric NumIStorage;
 } // namespace CurrentMetrics
 
 namespace DB
@@ -29,12 +29,12 @@ extern const int TABLE_IS_DROPPED;
 } // namespace ErrorCodes
 
 IStorage::IStorage()
-    : holder_counter(CurrentMetrics::DT_NumIStorages, 1)
+    : holder_counter(CurrentMetrics::NumIStorage, 1)
 {}
 
 IStorage::IStorage(ColumnsDescription columns_)
     : ITableDeclaration(std::move(columns_))
-    , holder_counter(CurrentMetrics::DT_NumIStorages, 1)
+    , holder_counter(CurrentMetrics::NumIStorage, 1)
 {}
 
 RWLock::LockHolder IStorage::tryLockTimed(
