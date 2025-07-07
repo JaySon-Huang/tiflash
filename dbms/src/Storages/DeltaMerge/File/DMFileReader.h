@@ -137,7 +137,13 @@ private:
         size_t start_pack_id,
         size_t pack_count,
         ColumnPtr & col);
-    ColumnPtr getColumnFromCache(
+    struct ColumnReadResult
+    {
+        ColumnPtr column;
+        size_t from_cache_rows; // rows read from cache, used for cache statistics
+        size_t from_disk_rows; // rows read from disk, used for cache statistics
+    };
+    ColumnReadResult getColumnFromCache(
         const ColumnCachePtr & data_cache,
         const ColumnDefine & cd,
         const DataTypePtr & type_on_disk,
