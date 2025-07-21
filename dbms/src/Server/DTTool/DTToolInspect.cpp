@@ -232,7 +232,7 @@ int inspectServiceMain(DB::Context & context, const InspectArgs & args)
 
         for (const auto & col : cols_to_dump)
         {
-            LOG_INFO(logger, "dump column: column_id={}, name={}", col.id, col.name);
+            LOG_INFO(logger, "dump column: column_id={} name={} type={}", col.id, col.name, col.type->getName());
         }
 
         auto stream = DB::DM::createSimpleBlockInputStream(context, dmfile, cols_to_dump);

@@ -37,21 +37,31 @@ public:
             .scan_context = reader.scan_context,
         });
 
-        if (likely(reader.dmfile->useMetaV2()))
+        try
         {
-            // the col_mark is merged into metav2
-            return loadColMarkFromMetav2To(res, size);
+            if (likely(reader.dmfile->useMetaV2()))
+            {
+                // the col_mark is merged into metav2
+                return loadColMarkFromMetav2To(res, size);
+            }
+            else if (unlikely(!reader.dmfile->getConfiguration()))
+            {
+                // without checksum, simply load the raw bytes from file
+                return loadRawColMarkTo(res, size);
+            }
+            else
+            {
+                // checksum is enabled but not merged into meta v2
+                return loadColMarkWithChecksumTo(res, size);
+            }
         }
-        else if (unlikely(!reader.dmfile->getConfiguration()))
+        catch (DB::Exception & e)
         {
-            // without checksum, simply load the raw bytes from file
-            return loadRawColMarkTo(res, size);
+            e.addMessage(
+                fmt::format("while loading column mark for col_id={} file_name_base={}", col_id, file_name_base));
+            e.rethrow();
         }
-        else
-        {
-            // checksum is enabled but not merged into meta v2
-            return loadColMarkWithChecksumTo(res, size);
-        }
+        return res;
     }
 
 public:
@@ -129,7 +139,7 @@ private:
         // Then read from the buffer based on the raw data
         auto buf = ChecksumReadBufferBuilder::build(
             std::move(raw_data),
-            reader.dmfile->colDataPath(file_name_base),
+            reader.dmfile->colMarkPath(file_name_base), // just for debug
             reader.dmfile->getConfiguration()->getChecksumFrameLength(),
             reader.dmfile->getConfiguration()->getChecksumAlgorithm(),
             reader.dmfile->getConfiguration()->getChecksumFrameLength());
@@ -291,6 +301,17 @@ ColumnReadStream::ColumnReadStream(
             MarkLoader(reader, col_id, file_name_base, read_limiter));
     else
         marks = MarkLoader(reader, col_id, file_name_base, read_limiter)();
+
+    for (size_t idx = 0; idx < marks->size(); ++idx)
+    {
+        const auto & mark = (*marks)[idx];
+        LOG_ERROR(
+            Logger::get("ffff"),
+            "loaded mark filename_base={} index={} mark={}",
+            file_name_base,
+            idx,
+            mark.toString());
+    }
 
     // skip empty dmfile
     size_t packs = reader.dmfile->getPacks();
