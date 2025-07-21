@@ -302,14 +302,8 @@ public:
                 digest.update(buffer, frame.bytes);
                 if (unlikely(frame.checksum != digest.checksum()))
                 {
-                    // throw TiFlashException(
-                    //     Errors::Checksum::DataCorruption,
-                    //     "checksum mismatch, file={} expect={:x} actual={:x}",
-                    //     in->getFileName(),
-                    //     frame.checksum,
-                    //     digest.checksum());
-                    LOG_ERROR(
-                        Logger::get("fffffff"),
+                    throw TiFlashException(
+                        Errors::Checksum::DataCorruption,
                         "checksum mismatch, file={} expect={:x} actual={:x}",
                         in->getFileName(),
                         frame.checksum,
@@ -385,14 +379,8 @@ private:
             digest.update(frame.data, frame.bytes);
             if (unlikely(frame.checksum != digest.checksum()))
             {
-                // throw TiFlashException(
-                //     Errors::Checksum::DataCorruption,
-                //     "checksum mismatch, file={} expect={:x} actual={:x}",
-                //     in->getFileName(),
-                //     frame.checksum,
-                //     digest.checksum());
-                LOG_ERROR(
-                    Logger::get("fffffff"),
+                throw TiFlashException(
+                    Errors::Checksum::DataCorruption,
                     "checksum mismatch, file={} expect={:x} actual={:x}",
                     in->getFileName(),
                     frame.checksum,

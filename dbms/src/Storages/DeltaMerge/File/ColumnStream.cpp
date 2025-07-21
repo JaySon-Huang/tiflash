@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/Exception.h>
 #include <IO/FileProvider/ChecksumReadBufferBuilder.h>
 #include <Storages/DeltaMerge/File/ColumnStream.h>
 #include <Storages/DeltaMerge/File/DMFileReader.h>
@@ -37,29 +38,20 @@ public:
             .scan_context = reader.scan_context,
         });
 
-        try
+        if (likely(reader.dmfile->useMetaV2()))
         {
-            if (likely(reader.dmfile->useMetaV2()))
-            {
-                // the col_mark is merged into metav2
-                return loadColMarkFromMetav2To(res, size);
-            }
-            else if (unlikely(!reader.dmfile->getConfiguration()))
-            {
-                // without checksum, simply load the raw bytes from file
-                return loadRawColMarkTo(res, size);
-            }
-            else
-            {
-                // checksum is enabled but not merged into meta v2
-                return loadColMarkWithChecksumTo(res, size);
-            }
+            // the col_mark is merged into metav2
+            return loadColMarkFromMetav2To(res, size);
         }
-        catch (DB::Exception & e)
+        else if (unlikely(!reader.dmfile->getConfiguration()))
         {
-            e.addMessage(
-                fmt::format("while loading column mark for col_id={} file_name_base={}", col_id, file_name_base));
-            e.rethrow();
+            // without checksum, simply load the raw bytes from file
+            return loadRawColMarkTo(res, size);
+        }
+        else
+        {
+            // checksum is enabled but not merged into meta v2
+            return loadColMarkWithChecksumTo(res, size);
         }
         return res;
     }
@@ -107,43 +99,61 @@ private:
     {
         const auto * dmfile_meta = typeid_cast<const DMFileMetaV2 *>(reader.dmfile->meta.get());
         assert(dmfile_meta != nullptr);
-        const auto & info = dmfile_meta->merged_sub_file_infos.find(colMarkFileName(file_name_base));
-        if (info == dmfile_meta->merged_sub_file_infos.end())
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown mark file {}", colMarkFileName(file_name_base));
-        }
+        const auto col_mark_fname = colMarkFileName(file_name_base);
+        const auto & info_iter = dmfile_meta->merged_sub_file_infos.find(col_mark_fname);
+        RUNTIME_CHECK_MSG(
+            info_iter != dmfile_meta->merged_sub_file_infos.end(),
+            "Unknown mark file, dmfile={} mark_fname={}",
+            reader.dmfile->parentPath(),
+            col_mark_fname);
 
-        auto file_path = dmfile_meta->mergedPath(info->second.number);
-        auto encryp_path = dmfile_meta->encryptionMergedPath(info->second.number);
-        auto offset = info->second.offset;
-        auto data_size = info->second.size;
+        const auto & merged_file_info = info_iter->second;
+        auto file_path = dmfile_meta->mergedPath(merged_file_info.number);
+        auto encrypt_path = dmfile_meta->encryptionMergedPath(merged_file_info.number);
+        auto offset = merged_file_info.offset;
+        auto data_size = merged_file_info.size;
 
         if (data_size == 0)
             return res;
 
-        // First, read from merged file to get the raw data(contains the header)
-        auto buffer = ReadBufferFromRandomAccessFileBuilder::build(
-            reader.file_provider,
-            file_path,
-            encryp_path,
-            reader.dmfile->getConfiguration()->getChecksumFrameLength(),
-            read_limiter);
-        buffer.seek(offset);
+        try
+        {
+            // First, read from merged file to get the raw data(contains the header)
+            auto buffer = ReadBufferFromRandomAccessFileBuilder::build(
+                reader.file_provider,
+                file_path,
+                encrypt_path,
+                reader.dmfile->getConfiguration()->getChecksumFrameLength(),
+                read_limiter);
+            buffer.seek(offset);
 
-        // Read the raw data into memory. It is OK because the mark merged into
-        // merged_file is small enough.
-        String raw_data;
-        raw_data.resize(data_size);
-        buffer.read(reinterpret_cast<char *>(raw_data.data()), data_size);
+            // Read the raw data into memory. It is OK because the mark merged into
+            // merged_file is small enough.
+            String raw_data;
+            raw_data.resize(data_size);
+            buffer.read(reinterpret_cast<char *>(raw_data.data()), data_size);
 
-        // Then read from the buffer based on the raw data
-        auto buf = ChecksumReadBufferBuilder::build(
-            std::move(raw_data),
-            reader.dmfile->colMarkPath(file_name_base), // just for debug
-            reader.dmfile->getConfiguration()->getChecksumFrameLength(),
-            reader.dmfile->getConfiguration()->getChecksumAlgorithm(),
-            reader.dmfile->getConfiguration()->getChecksumFrameLength());
-        buf->readBig(reinterpret_cast<char *>(res->data()), bytes_size);
+            // Then read from the buffer based on the raw data
+            auto buf = ChecksumReadBufferBuilder::build(
+                std::move(raw_data),
+                file_path, // just for debug
+                reader.dmfile->getConfiguration()->getChecksumFrameLength(),
+                reader.dmfile->getConfiguration()->getChecksumAlgorithm(),
+                reader.dmfile->getConfiguration()->getChecksumFrameLength());
+            buf->readBig(reinterpret_cast<char *>(res->data()), bytes_size);
+        }
+        catch (DB::Exception & e)
+        {
+            e.addMessage(fmt::format(
+                "loading column mark, merged_file={} col_id={} mark_name={} offset={} size={}",
+                file_path,
+                col_id,
+                col_mark_fname,
+                offset,
+                data_size));
+            e.rethrow();
+        }
+
         return res;
     }
 };
@@ -256,7 +266,7 @@ std::unique_ptr<CompressedSeekableReaderBuffer> ColumnReadStream::buildColDataRe
 
     assert(info != dmfile_meta->merged_sub_file_infos.end());
     auto file_path = dmfile_meta->mergedPath(info->second.number);
-    auto encryp_path = dmfile_meta->encryptionMergedPath(info->second.number);
+    auto encrypt_path = dmfile_meta->encryptionMergedPath(info->second.number);
     auto offset = info->second.offset;
     auto size = info->second.size;
 
@@ -264,7 +274,7 @@ std::unique_ptr<CompressedSeekableReaderBuffer> ColumnReadStream::buildColDataRe
     auto buffer = ReadBufferFromRandomAccessFileBuilder::build(
         reader.file_provider,
         file_path,
-        encryp_path,
+        encrypt_path,
         reader.dmfile->getConfiguration()->getChecksumFrameLength(),
         read_limiter);
     buffer.seek(offset);

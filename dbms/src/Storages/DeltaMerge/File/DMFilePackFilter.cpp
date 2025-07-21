@@ -19,6 +19,7 @@
 #include <Storages/DeltaMerge/File/DMFilePackFilter.h>
 #include <Storages/DeltaMerge/Filter/FilterHelper.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
+#include <Storages/DeltaMerge/Index/MinMaxIndex.h>
 #include <Storages/DeltaMerge/Index/RSResult.h>
 #include <Storages/DeltaMerge/RowKeyRange.h>
 #include <Storages/DeltaMerge/ScanContext.h>
@@ -232,45 +233,59 @@ std::pair<DataTypePtr, MinMaxIndexPtr> DMFilePackFilter::loadIndex(
         {
             const auto * dmfile_meta = typeid_cast<const DMFileMetaV2 *>(dmfile.meta.get());
             assert(dmfile_meta != nullptr);
-            auto info = dmfile_meta->merged_sub_file_infos.find(colIndexFileName(file_name_base));
-            if (info == dmfile_meta->merged_sub_file_infos.end())
+            const auto col_index_fname = colIndexFileName(file_name_base);
+            auto info_iter = dmfile_meta->merged_sub_file_infos.find(col_index_fname);
+            RUNTIME_CHECK_MSG(
+                info_iter != dmfile_meta->merged_sub_file_infos.end(),
+                "Unknown index file, dmfile_path={} index_fname={}",
+                dmfile.parentPath(),
+                col_index_fname);
+
+            const auto & merged_file_info = info_iter->second;
+            auto file_path = dmfile.meta->mergedPath(merged_file_info.number);
+            auto encrypt_path = dmfile_meta->encryptionMergedPath(merged_file_info.number);
+            auto offset = merged_file_info.offset;
+            auto data_size = merged_file_info.size;
+
+            try
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Unknown index file {}",
-                    dmfile.colIndexPath(file_name_base));
+                auto buffer = ReadBufferFromRandomAccessFileBuilder::build(
+                    file_provider,
+                    file_path,
+                    encrypt_path,
+                    dmfile.getConfiguration()->getChecksumFrameLength(),
+                    read_limiter);
+                buffer.seek(offset);
+
+                String raw_data;
+                raw_data.resize(data_size);
+                buffer.read(reinterpret_cast<char *>(raw_data.data()), data_size);
+
+                auto buf = ChecksumReadBufferBuilder::build(
+                    std::move(raw_data),
+                    file_path,
+                    dmfile.getConfiguration()->getChecksumFrameLength(),
+                    dmfile.getConfiguration()->getChecksumAlgorithm(),
+                    dmfile.getConfiguration()->getChecksumFrameLength());
+
+                auto header_size = dmfile.getConfiguration()->getChecksumHeaderLength();
+                auto frame_total_size = dmfile.getConfiguration()->getChecksumFrameLength() + header_size;
+                auto frame_count = index_file_size / frame_total_size + (index_file_size % frame_total_size != 0);
+
+                return MinMaxIndex::read(*type, *buf, index_file_size - header_size * frame_count);
             }
-
-            auto file_path = dmfile.meta->mergedPath(info->second.number);
-            auto encryp_path = dmfile_meta->encryptionMergedPath(info->second.number);
-            auto offset = info->second.offset;
-            auto data_size = info->second.size;
-
-            auto buffer = ReadBufferFromRandomAccessFileBuilder::build(
-                file_provider,
-                file_path,
-                encryp_path,
-                dmfile.getConfiguration()->getChecksumFrameLength(),
-                read_limiter);
-            buffer.seek(offset);
-
-            String raw_data;
-            raw_data.resize(data_size);
-
-            buffer.read(reinterpret_cast<char *>(raw_data.data()), data_size);
-
-            auto buf = ChecksumReadBufferBuilder::build(
-                std::move(raw_data),
-                dmfile.colIndexPath(file_name_base), // just for debug
-                dmfile.getConfiguration()->getChecksumFrameLength(),
-                dmfile.getConfiguration()->getChecksumAlgorithm(),
-                dmfile.getConfiguration()->getChecksumFrameLength());
-
-            auto header_size = dmfile.getConfiguration()->getChecksumHeaderLength();
-            auto frame_total_size = dmfile.getConfiguration()->getChecksumFrameLength() + header_size;
-            auto frame_count = index_file_size / frame_total_size + (index_file_size % frame_total_size != 0);
-
-            return MinMaxIndex::read(*type, *buf, index_file_size - header_size * frame_count);
+            catch (DB::Exception & e)
+            {
+                e.addMessage(fmt::format(
+                    "loading column index, merged_file={} col_id={} index_name={} offset={} size={}",
+                    file_path,
+                    col_id,
+                    col_index_fname,
+                    offset,
+                    data_size));
+                e.rethrow();
+                return MinMaxIndexPtr{}; // to suppress warning
+            }
         }
         else
         { // v2
