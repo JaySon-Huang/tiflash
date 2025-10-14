@@ -231,6 +231,8 @@ DM::SegmentReadTasks StorageDisaggregated::buildReadTask(
         });
         auto [remote_table_ranges, region_num] = buildRemoteTableRanges();
         scan_context->setRegionNumOfCurrentInstance(region_num);
+        scan_context->total_remote_region_num = scan_context->total_local_region_num.load();
+        scan_context->total_local_region_num = 0;
         // only send to tiflash node with label [{"engine":"tiflash"}, {"engine-role":"write"}]
         const auto label_filter = pingcap::kv::labelFilterOnlyTiFlashWriteNode;
         batch_cop_tasks = buildBatchCopTasks(remote_table_ranges, label_filter);

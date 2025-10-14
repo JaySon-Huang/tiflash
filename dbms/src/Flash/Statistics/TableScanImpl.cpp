@@ -25,6 +25,8 @@ namespace DB
 {
 String TableScanTimeDetail::toJson() const
 {
+    if (num_streams == 0)
+        return R"("num_streams":0)";
     auto max_cost_ms = max_stream_cost_ns < 0 ? 0 : max_stream_cost_ns / 1'000'000.0;
     auto min_cost_ms = min_stream_cost_ns < 0 ? 0 : min_stream_cost_ns / 1'000'000.0;
     return fmt::format(
