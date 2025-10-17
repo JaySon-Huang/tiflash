@@ -348,15 +348,22 @@ inline static RandomAccessFilePtr createFromNormalFile(
         auto * file_cache = FileCache::instance();
         if (file_cache != nullptr)
         {
+            Stopwatch sw_download_object;
             S3::S3FilenameView s3_fname = S3::S3FilenameView::fromKey(remote_fname);
             auto file_seg = file_cache->downloadFileForLocalRead(s3_fname, filesize);
-            scan_context.value()->disagg_read_cache_miss_size += filesize.value();
-            scan_context.value()->disagg_s3file_miss_count++;
-            return std::make_shared<PosixRandomAccessFile>(
+            auto ptr = std::make_shared<PosixRandomAccessFile>(
                 file_seg->getLocalFileName(),
                 /*flags*/ -1,
                 /*read_limiter*/ nullptr,
                 file_seg);
+            if (scan_context.has_value())
+            {
+                scan_context.value()->disagg_read_cache_miss_size += filesize.value();
+                scan_context.value()->disagg_s3file_miss_count++;
+                scan_context.value()->disagg_s3file_block_wait_count++;
+                scan_context.value()->disagg_s3file_block_wait_ms += sw_download_object.elapsedSeconds() * 1000;
+            }
+            return ptr;
         }
         // fallback to directly read from S3
     }
