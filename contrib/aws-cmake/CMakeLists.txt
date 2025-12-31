@@ -265,6 +265,9 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_EVENT_STREAM_DIR}/include/")
 file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/*.c"
     "${AWS_COMMON_DIR}/source/external/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/*.c"
+    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/internal/*.c"
     "${AWS_COMMON_DIR}/source/posix/*.c"
 )
 
@@ -301,6 +304,11 @@ list(APPEND AWS_PUBLIC_INCLUDES
     "${AWS_COMMON_DIR}/include/"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
+list(APPEND AWS_PRIVATE_INCLUDES
+    # libcbor files do includes like: #include "cbor/cbor_export.h"
+    # To make these paths work, add the location we're storing them as a search path.
+    "${AWS_COMMON_DIR}/source/external/libcbor"
+)
 
 
 # aws-checksums
@@ -335,6 +343,8 @@ if (OS_LINUX)
         "${AWS_IO_DIR}/source/linux/*.c"
         "${AWS_IO_DIR}/source/posix/*.c"
     )
+    list(APPEND EVENT_LOOP_DEFINES "EPOLL")
+    set(PLATFORM_LIBS "")
 elseif (OS_DARWIN)
     file(GLOB AWS_IO_OS_SRC
         "${AWS_IO_DIR}/source/bsd/*.c"
@@ -342,6 +352,14 @@ elseif (OS_DARWIN)
         # Note darwin source files leads to compile errors, ignore them
         # "${AWS_IO_DIR}/source/darwin/*.c"
     )
+    find_library(SECURITY_LIB Security)
+    find_library(NETWORK_LIB Network)
+    # Enable dispatch queue if the libraries are available
+    if (NETWORK_LIB AND SECURITY_LIB)
+        list(APPEND PLATFORM_LIBS "-framework Security -framework Network")
+        list(APPEND EVENT_LOOP_DEFINES "DISPATCH_QUEUE")
+    endif ()
+    list(APPEND EVENT_LOOP_DEFINES "KQUEUE")
 endif()
 
 set(AWS_IO_TLS_SRC)
@@ -349,6 +367,7 @@ if (USE_S2N)
     file(GLOB AWS_IO_TLS_SRC
             "${AWS_IO_DIR}/source/s2n/*.c"
     )
+    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_S2N_INSOURCE_PATH")
 endif()
 
 list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC} ${AWS_IO_TLS_SRC})
@@ -373,7 +392,9 @@ if (USE_S2N)
     list(APPEND AWS_PRIVATE_INCLUDES
         "${AWS_S2N_TLS_DIR}/"
         "${AWS_S2N_TLS_DIR}/api/"
+        "${AWS_S2N_TLS_DIR}/api/unstable/"
     )
+    set(S2N_PRELUDE "${AWS_S2N_TLS_DIR}/utils/s2n_prelude.h")
 endif()
 
 
@@ -389,6 +410,10 @@ file(GLOB AWS_CRT_SRC
 
 list(APPEND AWS_SOURCES ${AWS_CRT_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_CRT_DIR}/include/")
+set(FULL_VERSION "0.30.1")
+set(PROJECT_VERSION_MAJOR "0")
+set(PROJECT_VERSION_MINOR "30")
+set(PROJECT_VERSION_PATCH "1")
 configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in"
     ${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h @ONLY)
 
@@ -445,6 +470,10 @@ target_include_directories(_aws SYSTEM BEFORE PUBLIC ${AWS_PUBLIC_INCLUDES})
 target_include_directories(_aws SYSTEM BEFORE PRIVATE ${AWS_PRIVATE_INCLUDES})
 target_compile_definitions(_aws PUBLIC ${AWS_PUBLIC_COMPILE_DEFS})
 target_compile_definitions(_aws PRIVATE ${AWS_PRIVATE_COMPILE_DEFS})
+foreach(EVENT_LOOP_DEFINE IN LISTS EVENT_LOOP_DEFINES)
+    target_compile_definitions(_aws PRIVATE "-DAWS_ENABLE_${EVENT_LOOP_DEFINE}")
+endforeach()
+target_compile_options(_aws PRIVATE -include "${S2N_PRELUDE}")
 target_link_libraries(_aws PRIVATE ${AWS_PRIVATE_LIBS})
 target_no_warning(_aws deprecated-declarations)
 target_no_warning(_aws implicit-function-declaration)
