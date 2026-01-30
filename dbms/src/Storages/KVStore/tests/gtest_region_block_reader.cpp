@@ -759,7 +759,7 @@ try
         ASSERT_FALSE(reader.read(res_block, *data_list_read, false));
     }
     {
-        // force_decode=true can decode the block, and filling the default value for c1
+        // force_decode=true can decode the block, and filling the "zero value" for c1
         auto reader = RegionBlockReader(decoding_schema);
         Block res_block = createBlockSortByColumnID(decoding_schema);
         ASSERT_TRUE(reader.read(res_block, *data_list_read, true));
@@ -784,7 +784,7 @@ try
         ASSERT_FALSE(reader.read(res_block, *data_list_read, false));
     }
     {
-        // force_decode=true can decode the block, and filling the default value for c1
+        // force_decode=true can decode the block, and filling the "zero value" for c1
         auto reader = RegionBlockReader(decoding_schema);
         Block res_block = createBlockSortByColumnID(decoding_schema);
         ASSERT_TRUE(reader.read(res_block, *data_list_read, true));
