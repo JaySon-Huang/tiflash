@@ -88,6 +88,7 @@ public:
     }
 
     Status waitForNotEmpty();
+    Status waitForNotEmptyFor(std::chrono::milliseconds timeout);
 
     void setComplete(UInt64 size_)
     {
@@ -402,6 +403,10 @@ public:
     static UInt64 getEstimatedSizeOfFileType(FileSegment::FileType file_type);
     static FileSegment::FileType getFileType(const String & fname);
     static FileSegment::FileType getFileTypeOfColData(const std::filesystem::path & p);
+
+    // Wait a short period for an existing downloading segment to become ready,
+    // so concurrent readers of the same key can reuse the same local cache file.
+    static constexpr UInt64 wait_on_downloading_segment_ms = 50;
 
     enum class ShouldCacheRes
     {

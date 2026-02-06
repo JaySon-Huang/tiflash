@@ -1178,4 +1178,48 @@ TEST_F(FileCacheTest, GetBeingBlock)
     waitForBgDownload(file_cache);
 }
 
+TEST_F(FileCacheTest, WaitForNotEmptyForTimeout)
+{
+    auto seg = std::make_shared<FileSegment>("local-f", FileSegment::Status::Empty, 0, FileType::Meta);
+
+    auto status = seg->waitForNotEmptyFor(1ms);
+    ASSERT_EQ(status, FileSegment::Status::Empty);
+
+    seg->setComplete(123);
+    status = seg->waitForNotEmptyFor(1ms);
+    ASSERT_EQ(status, FileSegment::Status::Complete);
+}
+
+TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
+{
+    auto cache_dir = fmt::format("{}/wait_on_downloading", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/meta";
+    auto s3_fname = S3FilenameView::fromKey(key);
+    auto local_fname = file_cache.toLocalFilename(key);
+    auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Empty, 1024, FileType::Meta);
+    {
+        std::lock_guard lock(file_cache.mtx);
+        auto & table = file_cache.tables[magic_enum::enum_integer(FileType::Meta)];
+        table.set(key, seg);
+    }
+
+    auto status_setter = std::thread([seg]() {
+        std::this_thread::sleep_for(10ms);
+        seg->setComplete(1024);
+    });
+
+    auto got = file_cache.get(s3_fname, 1024);
+    status_setter.join();
+    ASSERT_EQ(got, seg);
+}
+
 } // namespace DB::tests::S3

@@ -123,6 +123,19 @@ FileSegment::Status FileSegment::waitForNotEmpty()
     return status;
 }
 
+FileSegment::Status FileSegment::waitForNotEmptyFor(std::chrono::milliseconds timeout)
+{
+    std::unique_lock lock(mtx);
+
+    if (status != Status::Empty)
+        return status;
+
+    PerfContext::file_cache.fg_wait_download_from_s3++;
+
+    cv_ready.wait_for(lock, timeout, [&] { return status != Status::Empty; });
+    return status;
+}
+
 void CacheSizeHistogram::addFileSegment(const FileSegmentPtr & file_seg)
 {
     if (!file_seg)
@@ -451,6 +464,17 @@ FileSegmentPtr FileCache::get(const S3::S3FilenameView & s3_fname, const std::op
             else
             {
                 reportCacheMissDownloadingType(file_type);
+
+                // Reuse the same cache file for concurrent readers of the same key.
+                // Wait outside FileCache::mtx so other keys are not blocked.
+                lock.unlock();
+                auto status
+                    = f->waitForNotEmptyFor(std::chrono::milliseconds(FileCache::wait_on_downloading_segment_ms));
+                if (status == FileSegment::Status::Complete)
+                {
+                    GET_METRIC(tiflash_storage_remote_cache, type_dtfile_hit).Increment();
+                    return f;
+                }
                 return nullptr;
             }
         }
