@@ -460,12 +460,15 @@ retry:
             f->setLastAccessTime(std::chrono::system_clock::now());
             if (f->isReadyToRead())
             {
+                if (!should_retry_too_many_downloading)
+                    GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Increment();
                 GET_METRIC(tiflash_storage_remote_cache, type_dtfile_hit).Increment();
                 return f;
             }
             else
             {
                 reportCacheMissDownloadingType(file_type);
+                GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Increment();
 
                 // Reuse the same cache file for concurrent readers of the same key.
                 // Wait outside FileCache::mtx so other keys are not blocked.
@@ -474,6 +477,7 @@ retry:
                     = f->waitForNotEmptyFor(std::chrono::milliseconds(FileCache::wait_on_downloading_segment_ms));
                 if (status == FileSegment::Status::Complete)
                 {
+                    GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Increment();
                     GET_METRIC(tiflash_storage_remote_cache, type_dtfile_hit).Increment();
                     return f;
                 }
@@ -493,6 +497,7 @@ retry:
             if (should_retry_too_many_downloading)
             {
                 should_retry_too_many_downloading = false;
+                GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Increment();
                 lock.unlock();
 
                 // Give the downloading queue a short chance to drain and then retry this key once.

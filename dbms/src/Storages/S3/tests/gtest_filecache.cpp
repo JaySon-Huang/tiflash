@@ -15,6 +15,7 @@
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 #include <Common/SyncPoint/SyncPoint.h>
+#include <Common/TiFlashMetrics.h>
 #include <Debug/TiFlashTestEnv.h>
 #include <IO/BaseFile/RateLimiter.h>
 #include <IO/IOThreadPools.h>
@@ -1207,6 +1208,9 @@ TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
     auto s3_fname = S3FilenameView::fromKey(key);
     auto local_fname = file_cache.toLocalFilename(key);
     auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Empty, 1024, FileType::Meta);
+    auto wait_on_downloading_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value();
+    auto wait_on_downloading_hit_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value();
     {
         std::lock_guard lock(file_cache.mtx);
         auto & table = file_cache.tables[magic_enum::enum_integer(FileType::Meta)];
@@ -1221,6 +1225,12 @@ TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
     auto got = file_cache.get(s3_fname, 1024);
     status_setter.join();
     ASSERT_EQ(got, seg);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value(),
+        wait_on_downloading_before + 1);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value(),
+        wait_on_downloading_hit_before + 1);
 }
 
 TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
@@ -1231,6 +1241,10 @@ TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
     UInt16 vcores = 1;
     IORateLimiter rate_limiter;
     FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    auto retry_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Value();
+    auto retry_success_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Value();
 
     file_cache.bg_downloading_count.store(vcores * file_cache.max_downloading_count_scale.load(std::memory_order_relaxed));
     ASSERT_EQ(file_cache.canCache(FileType::Meta), FileCache::ShouldCacheRes::RejectTooManyDownloading);
@@ -1261,6 +1275,12 @@ TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
     pause.disable();
     ASSERT_NE(got, nullptr);
     ASSERT_TRUE(got->isReadyToRead());
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Value(),
+        retry_before + 1);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Value(),
+        retry_success_before + 1);
 }
 
 } // namespace DB::tests::S3
