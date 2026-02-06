@@ -870,10 +870,14 @@ static_assert(RAFT_REGION_BIG_WRITE_THRES * 4 < RAFT_REGION_BIG_WRITE_MAX, "Inva
       F(type_dtfile_miss, {"type", "dtfile_miss"}),                                                                                 \
       F(type_dtfile_not_cache_type, {"type", "dtfile_not_cache_type"}),                                                             \
       F(type_dtfile_too_many_download, {"type", "dtfile_too_many_download"}),                                                       \
+      F(type_dtfile_too_many_download_retry, {"type", "dtfile_too_many_download_retry"}),                                           \
+      F(type_dtfile_too_many_download_retry_success, {"type", "dtfile_too_many_download_retry_success"}),                           \
       F(type_dtfile_evict, {"type", "dtfile_evict"}),                                                                               \
       F(type_dtfile_full, {"type", "dtfile_full"}),                                                                                 \
       F(type_dtfile_download, {"type", "dtfile_download"}),                                                                         \
       F(type_dtfile_download_failed, {"type", "dtfile_download_failed"}),                                                           \
+      F(type_dtfile_wait_on_downloading, {"type", "dtfile_wait_on_downloading"}),                                                   \
+      F(type_dtfile_wait_on_downloading_hit, {"type", "dtfile_wait_on_downloading_hit"}),                                           \
       F(type_page_hit, {"type", "page_hit"}),                                                                                       \
       F(type_page_miss, {"type", "page_miss"}),                                                                                     \
       F(type_page_evict, {"type", "page_evict"}),                                                                                   \
