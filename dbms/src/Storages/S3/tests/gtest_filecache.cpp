@@ -36,6 +36,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <random>
 #include <thread>
@@ -1220,6 +1221,46 @@ TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
     auto got = file_cache.get(s3_fname, 1024);
     status_setter.join();
     ASSERT_EQ(got, seg);
+}
+
+TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
+{
+    auto cache_dir = fmt::format("{}/retry_too_many_downloading", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    file_cache.bg_downloading_count.store(vcores * file_cache.max_downloading_count_scale.load(std::memory_order_relaxed));
+    ASSERT_EQ(file_cache.canCache(FileType::Meta), FileCache::ShouldCacheRes::RejectTooManyDownloading);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/meta";
+    auto s3_fname = S3FilenameView::fromKey(key);
+    auto local_fname = file_cache.toLocalFilename(key);
+
+    auto pause = SyncPointCtl::enableInScope("before_FileCache::get_retry_too_many_downloading_sleep");
+    auto getter = std::async(std::launch::async, [&]() { return file_cache.get(s3_fname, 1024); });
+
+    pause.waitAndPause();
+
+    {
+        std::lock_guard lock(file_cache.mtx);
+        file_cache.bg_downloading_count.store(0, std::memory_order_relaxed);
+        auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Complete, 1024, FileType::Meta);
+        auto & table = file_cache.tables[magic_enum::enum_integer(FileType::Meta)];
+        table.set(key, seg);
+    }
+
+    pause.next();
+
+    auto got = getter.get();
+    pause.disable();
+    ASSERT_NE(got, nullptr);
+    ASSERT_TRUE(got->isReadyToRead());
 }
 
 } // namespace DB::tests::S3
