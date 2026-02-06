@@ -408,6 +408,9 @@ public:
     // so concurrent readers of the same key can reuse the same local cache file.
     static constexpr UInt64 wait_on_downloading_segment_ms = 50;
 
+    // Retry once after short backoff when bg downloading queue is temporarily full.
+    static constexpr UInt64 retry_on_too_many_downloading_ms = 10;
+
     enum class ShouldCacheRes
     {
         Cache,

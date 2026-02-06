@@ -451,6 +451,8 @@ FileSegmentPtr FileCache::get(const S3::S3FilenameView & s3_fname, const std::op
     auto & table = tables[static_cast<UInt64>(file_type)];
 
     FileSegmentPtr file_seg;
+    bool should_retry_too_many_downloading = true;
+retry:
     {
         std::unique_lock lock(mtx);
         if (auto f = table.get(s3_key); f != nullptr)
@@ -488,6 +490,17 @@ FileSegmentPtr FileCache::get(const S3::S3FilenameView & s3_fname, const std::op
             return nullptr;
         case ShouldCacheRes::RejectTooManyDownloading:
             GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download).Increment();
+            if (should_retry_too_many_downloading)
+            {
+                should_retry_too_many_downloading = false;
+                lock.unlock();
+
+                // Give the downloading queue a short chance to drain and then retry this key once.
+                // This avoids a direct fallback-to-S3 burst caused by short queue-size jitters.
+                SYNC_FOR("before_FileCache::get_retry_too_many_downloading_sleep");
+                std::this_thread::sleep_for(std::chrono::milliseconds(FileCache::retry_on_too_many_downloading_ms));
+                goto retry;
+            }
             return nullptr;
         case ShouldCacheRes::Cache:
             break;
