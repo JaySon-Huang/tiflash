@@ -339,6 +339,98 @@ std::tuple<FileSegmentPtr, bool> FileCache::downloadFileForLocalReadWithRetry(
         retry_count);
 }
 
+void reportCacheMissDownloadingType(FileType file_type)
+{
+    switch (file_type)
+    {
+    case FileType::Unknown:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_unknown).Increment();
+        break;
+    case FileType::Meta:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_meta).Increment();
+        break;
+    case FileType::VectorIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_vector_index).Increment();
+        break;
+    case FileType::FullTextIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_full_text_index).Increment();
+        break;
+    case FileType::InvertedIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_inverted_index).Increment();
+        break;
+    case FileType::Merged:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_merged).Increment();
+        break;
+    case FileType::Index:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_index).Increment();
+        break;
+    case FileType::Mark:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_mark).Increment();
+        break;
+    case FileType::NullMap:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_null_map).Increment();
+        break;
+    case FileType::DeleteMarkColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_delete_mark_col_data).Increment();
+        break;
+    case FileType::VersionColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_version_col_data).Increment();
+        break;
+    case FileType::HandleColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_handle_col_data).Increment();
+        break;
+    case FileType::ColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_col_data).Increment();
+        break;
+    }
+}
+
+void reportCacheMissType(FileType file_type)
+{
+    switch (file_type)
+    {
+    case FileType::Unknown:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_unknown).Increment();
+        break;
+    case FileType::Meta:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_meta).Increment();
+        break;
+    case FileType::VectorIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_vector_index).Increment();
+        break;
+    case FileType::FullTextIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_full_text_index).Increment();
+        break;
+    case FileType::InvertedIndex:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_inverted_index).Increment();
+        break;
+    case FileType::Merged:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_merged).Increment();
+        break;
+    case FileType::Index:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_index).Increment();
+        break;
+    case FileType::Mark:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_mark).Increment();
+        break;
+    case FileType::NullMap:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_null_map).Increment();
+        break;
+    case FileType::DeleteMarkColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_delete_mark_col_data).Increment();
+        break;
+    case FileType::VersionColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_version_col_data).Increment();
+        break;
+    case FileType::HandleColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_handle_col_data).Increment();
+        break;
+    case FileType::ColData:
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_miss_col_data).Increment();
+        break;
+    }
+}
+
 FileSegmentPtr FileCache::get(const S3::S3FilenameView & s3_fname, const std::optional<UInt64> & filesize)
 {
     auto s3_key = s3_fname.toFullKey();
@@ -358,12 +450,13 @@ FileSegmentPtr FileCache::get(const S3::S3FilenameView & s3_fname, const std::op
             }
             else
             {
-                GET_METRIC(tiflash_storage_remote_cache, type_dtfile_miss).Increment();
+                reportCacheMissDownloadingType(file_type);
                 return nullptr;
             }
         }
 
         GET_METRIC(tiflash_storage_remote_cache, type_dtfile_miss).Increment();
+        reportCacheMissType(file_type);
         switch (canCache(file_type))
         {
         case ShouldCacheRes::RejectTypeNotMatch:

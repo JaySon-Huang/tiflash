@@ -879,6 +879,35 @@ static_assert(RAFT_REGION_BIG_WRITE_THRES * 4 < RAFT_REGION_BIG_WRITE_MAX, "Inva
       F(type_page_evict, {"type", "page_evict"}),                                                                                   \
       F(type_page_full, {"type", "page_full"}),                                                                                     \
       F(type_page_download, {"type", "page_download"}))                                                                             \
+    M(tiflash_storage_remote_cache_miss_type,                                                                                       \
+      "Detailed miss types of remote cache",                                                                                        \
+      Counter,                                                                                                                      \
+      F(type_miss_meta, {"type", "miss_meta"}),                                                                                     \
+      F(type_miss_vector_index, {"type", "miss_vector_index"}),                                                                     \
+      F(type_miss_full_text_index, {"type", "miss_full_text_index"}),                                                               \
+      F(type_miss_inverted_index, {"type", "miss_inverted_index"}),                                                                 \
+      F(type_miss_merged, {"type", "miss_merged"}),                                                                                 \
+      F(type_miss_index, {"type", "miss_index"}),                                                                                   \
+      F(type_miss_mark, {"type", "miss_mark"}),                                                                                     \
+      F(type_miss_null_map, {"type", "miss_null_map"}),                                                                             \
+      F(type_miss_delete_mark_col_data, {"type", "miss_delete_mark_col_data"}),                                                     \
+      F(type_miss_version_col_data, {"type", "miss_version_col_data"}),                                                             \
+      F(type_miss_handle_col_data, {"type", "miss_handle_col_data"}),                                                               \
+      F(type_miss_col_data, {"type", "miss_col_data"}),                                                                             \
+      F(type_miss_unknown, {"type", "miss_unknown"}),                                                                               \
+      F(type_downloading_meta, {"type", "downloading_meta"}),                                                                       \
+      F(type_downloading_vector_index, {"type", "downloading_vector_index"}),                                                       \
+      F(type_downloading_full_text_index, {"type", "downloading_full_text_index"}),                                                 \
+      F(type_downloading_inverted_index, {"type", "downloading_inverted_index"}),                                                   \
+      F(type_downloading_merged, {"type", "downloading_merged"}),                                                                   \
+      F(type_downloading_index, {"type", "downloading_index"}),                                                                     \
+      F(type_downloading_mark, {"type", "downloading_mark"}),                                                                       \
+      F(type_downloading_null_map, {"type", "downloading_null_map"}),                                                               \
+      F(type_downloading_delete_mark_col_data, {"type", "downloading_delete_mark_col_data"}),                                       \
+      F(type_downloading_version_col_data, {"type", "downloading_version_col_data"}),                                               \
+      F(type_downloading_handle_col_data, {"type", "downloading_handle_col_data"}),                                                 \
+      F(type_downloading_col_data, {"type", "downloading_col_data"}),                                                               \
+      F(type_downloading_unknown, {"type", "downloading_unknown"}))                                                                 \
     M(tiflash_storage_remote_cache_bytes,                                                                                           \
       "Flow of remote cache",                                                                                                       \
       Counter,                                                                                                                      \
