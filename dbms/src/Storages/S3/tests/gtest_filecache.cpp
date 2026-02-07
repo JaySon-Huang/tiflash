@@ -1257,6 +1257,91 @@ TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
         wait_on_downloading_hit_before + 1);
 }
 
+
+TEST_F(FileCacheTest, GetWaitOnDownloadingSegmentForMerged)
+{
+    auto cache_dir = fmt::format("{}/wait_on_downloading_merged", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/1.merged";
+    auto s3_fname = S3FilenameView::fromKey(key);
+    auto local_fname = file_cache.toLocalFilename(key);
+    auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Empty, 1024, FileType::Merged);
+
+    auto wait_on_downloading_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value();
+    auto wait_on_downloading_hit_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value();
+    {
+        std::lock_guard lock(file_cache.mtx);
+        auto & table = file_cache.tables[magic_enum::enum_integer(FileType::Merged)];
+        table.set(key, seg);
+    }
+
+    auto status_setter = std::thread([seg]() {
+        std::this_thread::sleep_for(10ms);
+        seg->setComplete(1024);
+    });
+
+    auto got = file_cache.get(s3_fname, 1024);
+    status_setter.join();
+    ASSERT_EQ(got, seg);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value(),
+        wait_on_downloading_before + 1);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value(),
+        wait_on_downloading_hit_before + 1);
+}
+
+TEST_F(FileCacheTest, GetNotWaitOnDownloadingSegmentForColData)
+{
+    auto cache_dir = fmt::format("{}/wait_on_downloading_col_data", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/1.dat";
+    auto s3_fname = S3FilenameView::fromKey(key);
+    auto local_fname = file_cache.toLocalFilename(key);
+    auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Empty, 1024, FileType::ColData);
+
+    auto wait_on_downloading_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value();
+    auto wait_on_downloading_hit_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value();
+    {
+        std::lock_guard lock(file_cache.mtx);
+        auto & table = file_cache.tables[magic_enum::enum_integer(FileType::ColData)];
+        table.set(key, seg);
+    }
+
+    auto status_setter = std::thread([seg]() {
+        std::this_thread::sleep_for(10ms);
+        seg->setComplete(1024);
+    });
+
+    auto got = file_cache.get(s3_fname, 1024);
+    status_setter.join();
+    ASSERT_EQ(got, nullptr);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value(),
+        wait_on_downloading_before);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value(),
+        wait_on_downloading_hit_before);
+}
+
 TEST_F(FileCacheTest, GetNotWaitOnDownloadingSegmentWhenConfigZero)
 {
     auto cache_dir = fmt::format("{}/wait_on_downloading_zero", tmp_dir);
