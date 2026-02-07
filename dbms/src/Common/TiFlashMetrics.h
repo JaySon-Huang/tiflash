@@ -899,19 +899,19 @@ static_assert(RAFT_REGION_BIG_WRITE_THRES * 4 < RAFT_REGION_BIG_WRITE_MAX, "Inva
       F(type_miss_handle_col_data, {"type", "miss_handle_col_data"}),                                                               \
       F(type_miss_col_data, {"type", "miss_col_data"}),                                                                             \
       F(type_miss_unknown, {"type", "miss_unknown"}),                                                                               \
-      F(type_downloading_meta, {"type", "downloading_meta"}),                                                                       \
-      F(type_downloading_vector_index, {"type", "downloading_vector_index"}),                                                       \
-      F(type_downloading_full_text_index, {"type", "downloading_full_text_index"}),                                                 \
-      F(type_downloading_inverted_index, {"type", "downloading_inverted_index"}),                                                   \
-      F(type_downloading_merged, {"type", "downloading_merged"}),                                                                   \
-      F(type_downloading_index, {"type", "downloading_index"}),                                                                     \
-      F(type_downloading_mark, {"type", "downloading_mark"}),                                                                       \
-      F(type_downloading_null_map, {"type", "downloading_null_map"}),                                                               \
-      F(type_downloading_delete_mark_col_data, {"type", "downloading_delete_mark_col_data"}),                                       \
-      F(type_downloading_version_col_data, {"type", "downloading_version_col_data"}),                                               \
-      F(type_downloading_handle_col_data, {"type", "downloading_handle_col_data"}),                                                 \
-      F(type_downloading_col_data, {"type", "downloading_col_data"}),                                                               \
-      F(type_downloading_unknown, {"type", "downloading_unknown"}))                                                                 \
+      F(type_ongoing_meta, {"type", "ongoing_meta"}),                                                                       \
+      F(type_ongoing_vector_index, {"type", "ongoing_vector_index"}),                                                       \
+      F(type_ongoing_full_text_index, {"type", "ongoing_full_text_index"}),                                                 \
+      F(type_ongoing_inverted_index, {"type", "ongoing_inverted_index"}),                                                   \
+      F(type_ongoing_merged, {"type", "ongoing_merged"}),                                                                   \
+      F(type_ongoing_index, {"type", "ongoing_index"}),                                                                     \
+      F(type_ongoing_mark, {"type", "ongoing_mark"}),                                                                       \
+      F(type_ongoing_null_map, {"type", "ongoing_null_map"}),                                                               \
+      F(type_ongoing_delete_mark_col_data, {"type", "ongoing_delete_mark_col_data"}),                                       \
+      F(type_ongoing_version_col_data, {"type", "ongoing_version_col_data"}),                                               \
+      F(type_ongoing_handle_col_data, {"type", "ongoing_handle_col_data"}),                                                 \
+      F(type_ongoing_col_data, {"type", "ongoing_col_data"}),                                                               \
+      F(type_ongoing_unknown, {"type", "ongoing_unknown"}))                                                                 \
     M(tiflash_storage_remote_cache_bytes,                                                                                           \
       "Flow of remote cache",                                                                                                       \
       Counter,                                                                                                                      \
