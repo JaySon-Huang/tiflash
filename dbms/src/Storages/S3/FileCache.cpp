@@ -352,6 +352,22 @@ std::tuple<FileSegmentPtr, bool> FileCache::downloadFileForLocalReadWithRetry(
         retry_count);
 }
 
+bool shouldWaitOnDownloadingSegment(FileType file_type)
+{
+    // Only enable waiting-reuse for metadata and shared index-like files.
+    // For data files, waiting usually has low reuse under bursty full scans.
+    switch (file_type)
+    {
+    case FileType::Meta:
+    case FileType::Merged:
+    case FileType::Index:
+    case FileType::Mark:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void reportCacheMissDownloadingType(FileType file_type)
 {
     switch (file_type)
@@ -468,6 +484,11 @@ retry:
             else
             {
                 reportCacheMissDownloadingType(file_type);
+                if (!shouldWaitOnDownloadingSegment(file_type))
+                {
+                    return nullptr;
+                }
+
                 auto wait_ms = wait_on_downloading_segment_ms.load(std::memory_order_relaxed);
                 if (wait_ms == 0)
                 {
