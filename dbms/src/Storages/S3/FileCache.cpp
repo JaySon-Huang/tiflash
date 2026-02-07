@@ -468,13 +468,18 @@ retry:
             else
             {
                 reportCacheMissDownloadingType(file_type);
+                auto wait_ms = wait_on_downloading_segment_ms.load(std::memory_order_relaxed);
+                if (wait_ms == 0)
+                {
+                    // A zero wait time means the optimization is disabled.
+                    return nullptr;
+                }
                 GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Increment();
 
                 // Reuse the same cache file for concurrent readers of the same key.
                 // Wait outside FileCache::mtx so other keys are not blocked.
                 lock.unlock();
-                auto status
-                    = f->waitForNotEmptyFor(std::chrono::milliseconds(FileCache::wait_on_downloading_segment_ms));
+                auto status = f->waitForNotEmptyFor(std::chrono::milliseconds(wait_ms));
                 if (status == FileSegment::Status::Complete)
                 {
                     GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Increment();
@@ -496,6 +501,12 @@ retry:
             GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download).Increment();
             if (should_retry_too_many_downloading)
             {
+                auto retry_ms = retry_on_too_many_downloading_ms.load(std::memory_order_relaxed);
+                if (retry_ms == 0)
+                {
+                    // A zero backoff time means the optimization is disabled.
+                    return nullptr;
+                }
                 should_retry_too_many_downloading = false;
                 GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Increment();
                 lock.unlock();
@@ -503,7 +514,7 @@ retry:
                 // Give the downloading queue a short chance to drain and then retry this key once.
                 // This avoids a direct fallback-to-S3 burst caused by short queue-size jitters.
                 SYNC_FOR("before_FileCache::get_retry_too_many_downloading_sleep");
-                std::this_thread::sleep_for(std::chrono::milliseconds(FileCache::retry_on_too_many_downloading_ms));
+                std::this_thread::sleep_for(std::chrono::milliseconds(retry_ms));
                 goto retry;
             }
             return nullptr;
@@ -1508,6 +1519,28 @@ void FileCache::updateConfig(const Settings & settings)
             cache_min_age_seconds.load(std::memory_order_relaxed),
             cache_min_age);
         cache_min_age_seconds.store(cache_min_age, std::memory_order_relaxed);
+    }
+
+    UInt64 wait_ms = settings.dt_filecache_wait_on_downloading_segment_ms;
+    if (wait_ms != wait_on_downloading_segment_ms.load(std::memory_order_relaxed))
+    {
+        LOG_INFO(
+            log,
+            "Update S3FileCache config: wait_on_downloading_segment_ms {} => {}",
+            wait_on_downloading_segment_ms.load(std::memory_order_relaxed),
+            wait_ms);
+        wait_on_downloading_segment_ms.store(wait_ms, std::memory_order_relaxed);
+    }
+
+    UInt64 retry_ms = settings.dt_filecache_retry_on_too_many_downloading_ms;
+    if (retry_ms != retry_on_too_many_downloading_ms.load(std::memory_order_relaxed))
+    {
+        LOG_INFO(
+            log,
+            "Update S3FileCache config: retry_on_too_many_downloading_ms {} => {}",
+            retry_on_too_many_downloading_ms.load(std::memory_order_relaxed),
+            retry_ms);
+        retry_on_too_many_downloading_ms.store(retry_ms, std::memory_order_relaxed);
     }
 }
 

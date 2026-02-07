@@ -404,12 +404,8 @@ public:
     static FileSegment::FileType getFileType(const String & fname);
     static FileSegment::FileType getFileTypeOfColData(const std::filesystem::path & p);
 
-    // Wait a short period for an existing downloading segment to become ready,
-    // so concurrent readers of the same key can reuse the same local cache file.
-    static constexpr UInt64 wait_on_downloading_segment_ms = 50;
-
-    // Retry once after short backoff when bg downloading queue is temporarily full.
-    static constexpr UInt64 retry_on_too_many_downloading_ms = 10;
+    static constexpr UInt64 default_wait_on_downloading_segment_ms = 50;
+    static constexpr UInt64 default_retry_on_too_many_downloading_ms = 10;
 
     enum class ShouldCacheRes
     {
@@ -475,6 +471,8 @@ public:
     std::atomic<UInt64> cache_min_age_seconds = 1800;
     std::atomic<double> download_count_scale = 2.0;
     std::atomic<double> max_downloading_count_scale = 10.0;
+    std::atomic<UInt64> wait_on_downloading_segment_ms = default_wait_on_downloading_segment_ms;
+    std::atomic<UInt64> retry_on_too_many_downloading_ms = default_retry_on_too_many_downloading_ms;
     // the on-going background download count
     std::atomic<UInt64> bg_downloading_count = 0;
     std::array<LRUFileTable, magic_enum::enum_count<FileSegment::FileType>()> tables;
