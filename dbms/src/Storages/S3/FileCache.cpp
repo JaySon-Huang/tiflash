@@ -368,48 +368,48 @@ bool shouldWaitOnDownloadingSegment(FileType file_type)
     }
 }
 
-void reportCacheMissDownloadingType(FileType file_type)
+void reportCacheMissOngoingType(FileType file_type)
 {
     switch (file_type)
     {
     case FileType::Unknown:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_unknown).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_unknown).Increment();
         break;
     case FileType::Meta:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_meta).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_meta).Increment();
         break;
     case FileType::VectorIndex:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_vector_index).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_vector_index).Increment();
         break;
     case FileType::FullTextIndex:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_full_text_index).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_full_text_index).Increment();
         break;
     case FileType::InvertedIndex:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_inverted_index).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_inverted_index).Increment();
         break;
     case FileType::Merged:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_merged).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_merged).Increment();
         break;
     case FileType::Index:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_index).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_index).Increment();
         break;
     case FileType::Mark:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_mark).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_mark).Increment();
         break;
     case FileType::NullMap:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_null_map).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_null_map).Increment();
         break;
     case FileType::DeleteMarkColData:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_delete_mark_col_data).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_delete_mark_col_data).Increment();
         break;
     case FileType::VersionColData:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_version_col_data).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_version_col_data).Increment();
         break;
     case FileType::HandleColData:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_handle_col_data).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_handle_col_data).Increment();
         break;
     case FileType::ColData:
-        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_downloading_col_data).Increment();
+        GET_METRIC(tiflash_storage_remote_cache_miss_type, type_ongoing_col_data).Increment();
         break;
     }
 }
@@ -483,7 +483,7 @@ retry:
             }
             else
             {
-                reportCacheMissDownloadingType(file_type);
+                reportCacheMissOngoingType(file_type);
                 if (!shouldWaitOnDownloadingSegment(file_type))
                 {
                     return nullptr;
