@@ -1073,14 +1073,20 @@ TEST_F(FileCacheTest, UpdateConfig)
     // default values
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 2.0);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 10.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, FileCache::default_wait_on_downloading_segment_ms);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, FileCache::default_retry_on_too_many_downloading_ms);
 
     Settings settings;
     settings.dt_filecache_downloading_count_scale = 1.5;
     settings.dt_filecache_max_downloading_count_scale = 5.0;
+    settings.dt_filecache_wait_on_downloading_segment_ms = 80;
+    settings.dt_filecache_retry_on_too_many_downloading_ms = 15;
     // updated
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 1.5);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 1.5);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1088,6 +1094,8 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 1.5);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 1.5);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1096,6 +1104,8 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 4.0);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 4.0);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1104,6 +1114,8 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 4.0);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 4.0);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1113,6 +1125,8 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 4.0);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 4.0);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1122,6 +1136,8 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 0.1);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 5.0);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), 1);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 5.0);
 
@@ -1131,8 +1147,16 @@ TEST_F(FileCacheTest, UpdateConfig)
     file_cache.updateConfig(settings);
     ASSERT_DOUBLE_EQ(file_cache.download_count_scale, 2.0);
     ASSERT_DOUBLE_EQ(file_cache.max_downloading_count_scale, 0.1);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 80);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 15);
     ASSERT_EQ(S3FileCachePool::get().getMaxThreads(), vcores * 2.0);
     ASSERT_EQ(S3FileCachePool::get().getQueueSize(), vcores * 2.0);
+
+    settings.dt_filecache_wait_on_downloading_segment_ms = 20;
+    settings.dt_filecache_retry_on_too_many_downloading_ms = 5;
+    file_cache.updateConfig(settings);
+    ASSERT_EQ(file_cache.wait_on_downloading_segment_ms, 20);
+    ASSERT_EQ(file_cache.retry_on_too_many_downloading_ms, 5);
 }
 
 TEST_F(FileCacheTest, GetBeingBlock)
@@ -1233,6 +1257,46 @@ TEST_F(FileCacheTest, GetWaitOnDownloadingSegment)
         wait_on_downloading_hit_before + 1);
 }
 
+TEST_F(FileCacheTest, GetNotWaitOnDownloadingSegmentWhenConfigZero)
+{
+    auto cache_dir = fmt::format("{}/wait_on_downloading_zero", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    Settings settings;
+    settings.dt_filecache_wait_on_downloading_segment_ms = 0;
+    file_cache.updateConfig(settings);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/meta";
+    auto s3_fname = S3FilenameView::fromKey(key);
+    auto local_fname = file_cache.toLocalFilename(key);
+    auto seg = std::make_shared<FileSegment>(local_fname, FileSegment::Status::Empty, 1024, FileType::Meta);
+
+    auto wait_on_downloading_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value();
+    auto wait_on_downloading_hit_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value();
+    {
+        std::lock_guard lock(file_cache.mtx);
+        auto & table = file_cache.tables[magic_enum::enum_integer(FileType::Meta)];
+        table.set(key, seg);
+    }
+
+    auto got = file_cache.get(s3_fname, 1024);
+    ASSERT_EQ(got, nullptr);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading).Value(),
+        wait_on_downloading_before);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_wait_on_downloading_hit).Value(),
+        wait_on_downloading_hit_before);
+}
+
 TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
 {
     auto cache_dir = fmt::format("{}/retry_too_many_downloading", tmp_dir);
@@ -1281,6 +1345,42 @@ TEST_F(FileCacheTest, GetRetryAfterTooManyDownloading)
     ASSERT_EQ(
         GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Value(),
         retry_success_before + 1);
+}
+
+TEST_F(FileCacheTest, GetNotRetryAfterTooManyDownloadingWhenConfigZero)
+{
+    auto cache_dir = fmt::format("{}/retry_too_many_downloading_zero", tmp_dir);
+    StorageRemoteCacheConfig cache_config{.dir = cache_dir, .capacity = cache_capacity, .dtfile_level = 100};
+
+    UInt16 vcores = 1;
+    IORateLimiter rate_limiter;
+    FileCache file_cache(capacity_metrics, cache_config, vcores, rate_limiter);
+
+    Settings settings;
+    settings.dt_filecache_retry_on_too_many_downloading_ms = 0;
+    file_cache.updateConfig(settings);
+
+    auto retry_before = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Value();
+    auto retry_success_before
+        = GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Value();
+
+    file_cache.bg_downloading_count.store(vcores * file_cache.max_downloading_count_scale.load(std::memory_order_relaxed));
+    ASSERT_EQ(file_cache.canCache(FileType::Meta), FileCache::ShouldCacheRes::RejectTooManyDownloading);
+
+    auto key = S3Filename::fromDMFileOID(
+                  DMFileOID{.store_id = nextId(), .table_id = static_cast<Int64>(nextId()), .file_id = nextId()})
+                   .toFullKey()
+        + "/meta";
+    auto s3_fname = S3FilenameView::fromKey(key);
+
+    auto got = file_cache.get(s3_fname, 1024);
+    ASSERT_EQ(got, nullptr);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry).Value(),
+        retry_before);
+    ASSERT_EQ(
+        GET_METRIC(tiflash_storage_remote_cache, type_dtfile_too_many_download_retry_success).Value(),
+        retry_success_before);
 }
 
 } // namespace DB::tests::S3
