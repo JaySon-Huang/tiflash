@@ -306,12 +306,14 @@ void adjustThreadPoolSize(const Settings & settings, size_t logical_cores)
 
     if (BuildReadTaskForWNPool::instance)
     {
+        // Reserved for compatibility. The current disagg read-task build path no longer depends on this pool.
         BuildReadTaskForWNPool::instance->setMaxThreads(max_io_thread_count);
         BuildReadTaskForWNPool::instance->setMaxFreeThreads(max_io_thread_count / 2);
         BuildReadTaskForWNPool::instance->setQueueSize(max_io_thread_count * 2);
     }
     if (BuildReadTaskForWNTablePool::instance)
     {
+        // Reserved for compatibility. The current disagg read-task build path no longer depends on this pool.
         BuildReadTaskForWNTablePool::instance->setMaxThreads(max_io_thread_count);
         BuildReadTaskForWNTablePool::instance->setMaxFreeThreads(max_io_thread_count / 2);
         BuildReadTaskForWNTablePool::instance->setQueueSize(max_io_thread_count * 2);

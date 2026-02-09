@@ -250,18 +250,71 @@ DM::SegmentReadTasks StorageDisaggregated::buildReadTask(
     }
 
     std::mutex output_lock;
-    DM::SegmentReadTasks output_seg_tasks;
+    std::vector<SegmentBuildTaskUnit> output_build_task_units;
 
-    // Then, for each BatchCopTask, let's build read tasks concurrently.
+    // Then, for each BatchCopTask, collect segment build task units concurrently.
     IOPoolHelper::FutureContainer futures(log, batch_cop_tasks.size());
     for (const auto & cop_task : batch_cop_tasks)
     {
         auto f = BuildReadTaskForWNPool::get().scheduleWithFuture(
-            [&] { buildReadTaskForWriteNode(db_context, scan_context, cop_task, output_lock, output_seg_tasks); },
+            [&, cop_task] {
+                buildReadTaskForWriteNode(db_context, scan_context, cop_task, output_lock, output_build_task_units);
+            },
             getBuildTaskIOThreadPoolTimeout());
         futures.add(std::move(f));
     }
     futures.getAllResults();
+
+    const size_t build_task_batch_size = getBuildTaskBatchSize();
+    const size_t num_batches = output_build_task_units.empty()
+        ? 0
+        : (output_build_task_units.size() + build_task_batch_size - 1) / build_task_batch_size;
+    LOG_INFO(
+        log,
+        "build read task units done, num_write_nodes={} total_units={} batch_size={} num_batches={} pool_threads={}",
+        batch_cop_tasks.size(),
+        output_build_task_units.size(),
+        build_task_batch_size,
+        num_batches,
+        BuildReadTaskPool::get().getMaxThreads());
+
+    std::mutex output_seg_tasks_lock;
+    DM::SegmentReadTasks output_seg_tasks;
+
+    // Build segment read tasks in a single-level thread pool.
+    IOPoolHelper::FutureContainer task_build_futures(log, num_batches);
+    for (size_t begin = 0; begin < output_build_task_units.size(); begin += build_task_batch_size)
+    {
+        const size_t end = std::min(begin + build_task_batch_size, output_build_task_units.size());
+        auto f = BuildReadTaskPool::get().scheduleWithFuture(
+            [&, begin, end] {
+                DM::SegmentReadTasks local_seg_tasks;
+                for (size_t i = begin; i < end; ++i)
+                {
+                    const auto & unit = output_build_task_units[i];
+                    local_seg_tasks.push_back(std::make_shared<DM::SegmentReadTask>(
+                        unit.table_tracing_logger,
+                        db_context,
+                        scan_context,
+                        unit.segment,
+                        unit.snapshot_id,
+                        unit.store_id,
+                        unit.store_address,
+                        unit.keyspace_id,
+                        unit.physical_table_id,
+                        unit.pk_col_id,
+                        unit.is_same_zone,
+                        unit.establish_disagg_task_resp_size));
+                }
+
+                std::lock_guard lock(output_seg_tasks_lock);
+                output_seg_tasks.splice(output_seg_tasks.end(), local_seg_tasks);
+            },
+            getBuildTaskIOThreadPoolTimeout());
+        task_build_futures.add(std::move(f));
+    }
+    task_build_futures.getAllResults();
+
     LOG_INFO(
         log,
         "build read tasks for all write nodes done, num_write_nodes={} total_seg_tasks={}",
@@ -282,7 +335,7 @@ void StorageDisaggregated::buildReadTaskForWriteNode(
     const DM::ScanContextPtr & scan_context,
     const pingcap::coprocessor::BatchCopTask & batch_cop_task,
     std::mutex & output_lock,
-    DM::SegmentReadTasks & output_seg_tasks)
+    std::vector<SegmentBuildTaskUnit> & output_build_task_units)
 {
     Stopwatch watch;
 
@@ -425,31 +478,28 @@ void StorageDisaggregated::buildReadTaskForWriteNode(
             elapsed_seconds);
     });
     // Now we have successfully established disaggregated read for this write node.
-    // Let's parse the result and generate actual segment read tasks.
-    // There may be multiple tables, so we concurrently build tasks for these tables.
-    // Note: Building a SegmentReadTask may need to read meta of DMFile from S3.
-    IOPoolHelper::FutureContainer futures(log, resp.tables().size());
+    // Let's parse the result and collect segment task build units.
+    std::vector<SegmentBuildTaskUnit> local_build_task_units;
+    local_build_task_units.reserve(resp.tables_size());
+
+    // Build task units table by table in current thread to keep implementation simple and deterministic.
     for (auto i = 0; i < resp.tables().size(); ++i)
     {
-        auto f = BuildReadTaskForWNTablePool::get().scheduleWithFuture(
-            [&, i] {
-                buildReadTaskForWriteNodeTable(
-                    db_context,
-                    scan_context,
-                    snapshot_id,
-                    resp.store_id(),
-                    req->address(),
-                    resp.tables()[i],
-                    is_same_zone,
-                    /*is_first_table=*/i == 0,
-                    resp_size,
-                    output_lock,
-                    output_seg_tasks);
-            },
-            getBuildTaskIOThreadPoolTimeout());
-        futures.add(std::move(f));
+        buildReadTaskForWriteNodeTable(
+            snapshot_id,
+            resp.store_id(),
+            req->address(),
+            resp.tables()[i],
+            is_same_zone,
+            /*is_first_table=*/i == 0,
+            resp_size,
+            local_build_task_units);
     }
-    futures.getAllResults();
+
+    std::lock_guard lock(output_lock);
+    output_build_task_units.reserve(output_build_task_units.size() + local_build_task_units.size());
+    for (auto & unit : local_build_task_units)
+        output_build_task_units.emplace_back(std::move(unit));
 }
 
 bool StorageDisaggregated::isSameZone(const pingcap::coprocessor::BatchCopTask & batch_cop_task) const
@@ -467,8 +517,6 @@ bool StorageDisaggregated::isSameZone(const pingcap::coprocessor::BatchCopTask &
 }
 
 void StorageDisaggregated::buildReadTaskForWriteNodeTable(
-    const Context & db_context,
-    const DM::ScanContextPtr & scan_context,
     const DM::DisaggTaskId & snapshot_id,
     StoreID store_id,
     const String & store_address,
@@ -476,8 +524,7 @@ void StorageDisaggregated::buildReadTaskForWriteNodeTable(
     bool is_same_zone,
     bool is_first_table,
     size_t resp_size,
-    std::mutex & output_lock,
-    DM::SegmentReadTasks & output_seg_tasks)
+    std::vector<SegmentBuildTaskUnit> & output_build_task_units)
 {
     DB::DM::RemotePb::RemotePhysicalTable table;
     auto parse_ok = table.ParseFromString(serialized_physical_table);
@@ -488,42 +535,30 @@ void StorageDisaggregated::buildReadTaskForWriteNodeTable(
     LOG_INFO(
         table_tracing_logger,
         "build read tasks for write node table begin, num_segments={}",
-        store_id,
-        table.keyspace_id(),
-        table.table_id(),
         table.segments().size());
-    IOPoolHelper::FutureContainer futures(log, table.segments().size());
+
+    output_build_task_units.reserve(output_build_task_units.size() + table.segments().size());
     for (auto i = 0; i < table.segments().size(); ++i)
     {
         const bool is_first_seg = (is_first_table && i == 0);
-        auto f = BuildReadTaskPool::get().scheduleWithFuture(
-            [&, i, is_first_seg]() {
-                auto seg_read_task = std::make_shared<DM::SegmentReadTask>(
-                    table_tracing_logger,
-                    db_context,
-                    scan_context,
-                    table.segments()[i],
-                    snapshot_id,
-                    store_id,
-                    store_address,
-                    table.keyspace_id(),
-                    table.table_id(),
-                    table.pk_col_id(),
-                    is_same_zone,
-                    is_first_seg ? resp_size : 0);
-                std::lock_guard lock(output_lock);
-                output_seg_tasks.push_back(seg_read_task);
-            },
-            getBuildTaskIOThreadPoolTimeout());
-        futures.add(std::move(f));
+
+        output_build_task_units.push_back(SegmentBuildTaskUnit{
+            .table_tracing_logger = table_tracing_logger,
+            .snapshot_id = snapshot_id,
+            .store_id = store_id,
+            .store_address = store_address,
+            .keyspace_id = table.keyspace_id(),
+            .physical_table_id = static_cast<TableID>(table.table_id()),
+            .pk_col_id = table.pk_col_id(),
+            .is_same_zone = is_same_zone,
+            .establish_disagg_task_resp_size = is_first_seg ? resp_size : 0,
+            .segment = table.segments()[i],
+        });
     }
-    futures.getAllResults();
+
     LOG_INFO(
         table_tracing_logger,
         "build read tasks for write node table done, num_segments={}",
-        store_id,
-        table.keyspace_id(),
-        table.table_id(),
         table.segments().size());
 }
 
@@ -865,6 +900,11 @@ size_t StorageDisaggregated::getBuildTaskRPCTimeout() const
 size_t StorageDisaggregated::getBuildTaskIOThreadPoolTimeout() const
 {
     return context.getSettingsRef().disagg_build_task_timeout * 1000000;
+}
+
+size_t StorageDisaggregated::getBuildTaskBatchSize() const
+{
+    return std::max<UInt64>(1, context.getSettingsRef().disagg_build_read_task_batch_size);
 }
 
 } // namespace DB

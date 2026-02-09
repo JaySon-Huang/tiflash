@@ -69,6 +69,20 @@ public:
         unsigned num_streams) override;
 
 private:
+    struct SegmentBuildTaskUnit
+    {
+        LoggerPtr table_tracing_logger;
+        DM::DisaggTaskId snapshot_id;
+        StoreID store_id;
+        String store_address;
+        KeyspaceID keyspace_id;
+        TableID physical_table_id;
+        ColumnID pk_col_id;
+        bool is_same_zone;
+        size_t establish_disagg_task_resp_size;
+        DM::RemotePb::RemoteSegment segment;
+    };
+
     // helper functions for building the task read from a shared remote storage system (e.g. S3)
     BlockInputStreams readThroughS3(const Context & db_context, unsigned num_streams);
     void readThroughS3(
@@ -86,11 +100,9 @@ private:
         const DM::ScanContextPtr & scan_context,
         const pingcap::coprocessor::BatchCopTask & batch_cop_task,
         std::mutex & output_lock,
-        DM::SegmentReadTasks & output_seg_tasks);
+        std::vector<SegmentBuildTaskUnit> & output_build_task_units);
 
     void buildReadTaskForWriteNodeTable(
-        const Context & db_context,
-        const DM::ScanContextPtr & scan_context,
         const DM::DisaggTaskId & snapshot_id,
         StoreID store_id,
         const String & store_address,
@@ -98,8 +110,7 @@ private:
         bool is_same_zone,
         bool is_first_table,
         size_t resp_size,
-        std::mutex & output_lock,
-        DM::SegmentReadTasks & output_seg_tasks);
+        std::vector<SegmentBuildTaskUnit> & output_build_task_units);
     bool isSameZone(const pingcap::coprocessor::BatchCopTask & batch_cop_task) const;
 
     std::shared_ptr<disaggregated::EstablishDisaggTaskRequest> buildEstablishDisaggTaskReq(
@@ -150,6 +161,7 @@ private:
 
     size_t getBuildTaskRPCTimeout() const;
     size_t getBuildTaskIOThreadPoolTimeout() const;
+    size_t getBuildTaskBatchSize() const;
 
 private:
     Context & context;
