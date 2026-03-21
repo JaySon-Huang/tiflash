@@ -846,6 +846,15 @@ static_assert(RAFT_REGION_BIG_WRITE_THRES * 4 < RAFT_REGION_BIG_WRITE_MAX, "Inva
       F(type_to_finished, {"type", "to_finished"}),                                                                                 \
       F(type_to_error, {"type", "to_error"}),                                                                                       \
       F(type_to_cancelled, {"type", "to_cancelled"}))                                                                               \
+    M(tiflash_storage_s3_lock_mgr_status, "S3 Lock Manager", Gauge, F(type_prelock_keys, {{"type", "prelock_keys"}}))               \
+    M(tiflash_storage_s3_lock_mgr_counter,                                                                                          \
+      "S3 Lock Manager Counter",                                                                                                    \
+      Counter,                                                                                                                      \
+      F(type_create_lock_local, {{"type", "create_lock_local"}}),                                                                   \
+      F(type_create_lock_ingest, {{"type", "create_lock_ingest"}}),                                                                 \
+      F(type_clean_lock, {{"type", "clean_lock"}}),                                                                                 \
+      F(type_clean_lock_erase_hit, {{"type", "clean_lock_erase_hit"}}),                                                             \
+      F(type_clean_lock_erase_miss, {{"type", "clean_lock_erase_miss"}}))                                                           \
     M(tiflash_storage_s3_gc_status,                                                                                                 \
       "S3 GC status",                                                                                                               \
       Gauge,                                                                                                                        \
@@ -899,19 +908,19 @@ static_assert(RAFT_REGION_BIG_WRITE_THRES * 4 < RAFT_REGION_BIG_WRITE_MAX, "Inva
       F(type_miss_handle_col_data, {"type", "miss_handle_col_data"}),                                                               \
       F(type_miss_col_data, {"type", "miss_col_data"}),                                                                             \
       F(type_miss_unknown, {"type", "miss_unknown"}),                                                                               \
-      F(type_ongoing_meta, {"type", "ongoing_meta"}),                                                                       \
-      F(type_ongoing_vector_index, {"type", "ongoing_vector_index"}),                                                       \
-      F(type_ongoing_full_text_index, {"type", "ongoing_full_text_index"}),                                                 \
-      F(type_ongoing_inverted_index, {"type", "ongoing_inverted_index"}),                                                   \
-      F(type_ongoing_merged, {"type", "ongoing_merged"}),                                                                   \
-      F(type_ongoing_index, {"type", "ongoing_index"}),                                                                     \
-      F(type_ongoing_mark, {"type", "ongoing_mark"}),                                                                       \
-      F(type_ongoing_null_map, {"type", "ongoing_null_map"}),                                                               \
-      F(type_ongoing_delete_mark_col_data, {"type", "ongoing_delete_mark_col_data"}),                                       \
-      F(type_ongoing_version_col_data, {"type", "ongoing_version_col_data"}),                                               \
-      F(type_ongoing_handle_col_data, {"type", "ongoing_handle_col_data"}),                                                 \
-      F(type_ongoing_col_data, {"type", "ongoing_col_data"}),                                                               \
-      F(type_ongoing_unknown, {"type", "ongoing_unknown"}))                                                                 \
+      F(type_ongoing_meta, {"type", "ongoing_meta"}),                                                                               \
+      F(type_ongoing_vector_index, {"type", "ongoing_vector_index"}),                                                               \
+      F(type_ongoing_full_text_index, {"type", "ongoing_full_text_index"}),                                                         \
+      F(type_ongoing_inverted_index, {"type", "ongoing_inverted_index"}),                                                           \
+      F(type_ongoing_merged, {"type", "ongoing_merged"}),                                                                           \
+      F(type_ongoing_index, {"type", "ongoing_index"}),                                                                             \
+      F(type_ongoing_mark, {"type", "ongoing_mark"}),                                                                               \
+      F(type_ongoing_null_map, {"type", "ongoing_null_map"}),                                                                       \
+      F(type_ongoing_delete_mark_col_data, {"type", "ongoing_delete_mark_col_data"}),                                               \
+      F(type_ongoing_version_col_data, {"type", "ongoing_version_col_data"}),                                                       \
+      F(type_ongoing_handle_col_data, {"type", "ongoing_handle_col_data"}),                                                         \
+      F(type_ongoing_col_data, {"type", "ongoing_col_data"}),                                                                       \
+      F(type_ongoing_unknown, {"type", "ongoing_unknown"}))                                                                         \
     M(tiflash_storage_remote_cache_bytes,                                                                                           \
       "Flow of remote cache",                                                                                                       \
       Counter,                                                                                                                      \
