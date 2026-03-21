@@ -38,6 +38,7 @@
 #include <shared_mutex>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 
 #ifdef FIU_ENABLE
@@ -1704,12 +1705,33 @@ std::unordered_set<String> PageDirectory<Trait>::apply(PageEntriesEdit && edit, 
 
     SYNC_FOR("before_PageDirectory::apply_to_memory");
     std::unordered_set<String> applied_data_files;
+    size_t put_count = 0;
+    size_t put_external_count = 0;
+    size_t checkpoint_info_count = 0;
+    size_t put_external_with_checkpoint_info_count = 0;
+    std::vector<String> suspicious_records;
     {
         std::unique_lock table_lock(table_rw_mutex);
 
         // create entry version list for page_id.
         for (const auto & r : edit.getRecords())
         {
+            if (r.type == EditRecordType::PUT)
+                ++put_count;
+            else if (r.type == EditRecordType::PUT_EXTERNAL)
+                ++put_external_count;
+            if (r.entry.checkpoint_info.has_value())
+            {
+                ++checkpoint_info_count;
+                if (r.type == EditRecordType::PUT_EXTERNAL)
+                    ++put_external_with_checkpoint_info_count;
+            }
+            if (r.type == EditRecordType::PUT_EXTERNAL && !r.entry.checkpoint_info.has_value()
+                && suspicious_records.size() < 8)
+            {
+                suspicious_records.emplace_back(fmt::format("page_id={}", r.page_id));
+            }
+
             // Protected in write_lock
             if (r.type == EditRecordType::DEL)
             {
@@ -1797,6 +1819,21 @@ std::unordered_set<String> PageDirectory<Trait>::apply(PageEntriesEdit && edit, 
 
         // stage 3, the edit committed, incr the sequence number to publish changes for `createSnapshot`
         sequence.fetch_add(edit_size);
+    }
+
+    if (applied_data_files.empty() && put_external_count > 0)
+    {
+        LOG_INFO(
+            log,
+            "PageDirectory apply has no applied_data_files with PUT_EXTERNAL records, edit_size={} put_count={} "
+            "put_external_count={} checkpoint_info_count={} put_external_with_checkpoint_info_count={} "
+            "suspicious_records={}",
+            edit_size,
+            put_count,
+            put_external_count,
+            checkpoint_info_count,
+            put_external_with_checkpoint_info_count,
+            suspicious_records);
     }
 
     success = true;

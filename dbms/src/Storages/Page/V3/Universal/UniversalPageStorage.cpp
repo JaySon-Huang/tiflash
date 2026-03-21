@@ -36,6 +36,7 @@
 #include <fiu.h>
 
 #include <mutex>
+#include <vector>
 
 namespace DB
 {
@@ -110,6 +111,8 @@ void UniversalPageStorage::write(
     SCOPE_EXIT(
         { GET_METRIC(tiflash_storage_page_write_duration_seconds, type_total).Observe(watch.elapsedSeconds()); });
     bool has_writes_from_remote = write_batch.hasWritesFromRemote();
+    std::vector<String> remote_lock_keys;
+    String write_batch_debug;
     if (has_writes_from_remote)
     {
         assert(remote_locks_local_mgr != nullptr);
@@ -118,12 +121,34 @@ void UniversalPageStorage::write(
         // If any "lock" failed to be created, then it will throw exception.
         // Note that if `remote_locks_local_mgr`'s store_id is not inited, it will blocks until inited
         remote_locks_local_mgr->createS3LockForWriteBatch(write_batch);
+        for (const auto & w : write_batch.getWrites())
+        {
+            switch (w.type)
+            {
+            case WriteBatchWriteType::PUT_EXTERNAL:
+            case WriteBatchWriteType::PUT_REMOTE:
+                if (w.data_location.has_value())
+                    remote_lock_keys.emplace_back(*w.data_location->data_file_id);
+                break;
+            default:
+                break;
+            }
+        }
+        write_batch_debug = write_batch.toString();
     }
     auto edit = blob_store->write(std::move(write_batch), page_type, write_limiter);
     auto applied_lock_ids = page_directory->apply(std::move(edit), write_limiter);
     if (has_writes_from_remote)
     {
         assert(remote_locks_local_mgr != nullptr);
+        if (!remote_lock_keys.empty() && applied_lock_ids.empty())
+        {
+            LOG_INFO(
+                log,
+                "Remote write batch has lock keys but no applied lock ids, write_batch={} lock_keys={}",
+                write_batch_debug,
+                remote_lock_keys);
+        }
         // Remove the applied locks from checkpoint_manager.pre_lock_files
         remote_locks_local_mgr->cleanAppliedS3ExternalFiles(std::move(applied_lock_ids));
     }
