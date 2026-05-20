@@ -15,12 +15,15 @@
 #include <Common/config.h> // for ENABLE_NEXT_GEN_COLUMNAR
 #if ENABLE_NEXT_GEN_COLUMNAR
 #include <Common/Exception.h>
+#include <Common/FmtUtils.h>
 #include <Common/MyTime.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadManager.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/AddExtraTableIDColumnTransformAction.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Flash/Coprocessor/CodecUtils.h>
@@ -67,6 +70,47 @@ extern const int COLUMNAR_SNAPSHOT_ERROR;
 
 namespace
 {
+void logProxyBlockEnumOrdinals(const LoggerPtr & log, const Block & block)
+{
+    for (const auto & col : block)
+    {
+        if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(col.type.get()))
+        {
+            UNUSED(enum8);
+            const auto & enum_col = typeid_cast<const ColumnInt8 &>(*col.column);
+            FmtBuffer fmt_buf;
+            fmt_buf.joinStr(
+                enum_col.getData().begin(),
+                enum_col.getData().end(),
+                [](const Int8 v, FmtBuffer & fb) { fb.fmtAppend("{}", static_cast<Int64>(v)); },
+                ",");
+            LOG_INFO(
+                log,
+                "proxy block enum column name={} rows={} ordinals=[{}]",
+                col.name,
+                enum_col.size(),
+                fmt_buf.toString());
+        }
+        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(col.type.get()))
+        {
+            UNUSED(enum16);
+            const auto & enum_col = typeid_cast<const ColumnInt16 &>(*col.column);
+            FmtBuffer fmt_buf;
+            fmt_buf.joinStr(
+                enum_col.getData().begin(),
+                enum_col.getData().end(),
+                [](const Int16 v, FmtBuffer & fb) { fb.fmtAppend("{}", static_cast<Int64>(v)); },
+                ",");
+            LOG_INFO(
+                log,
+                "proxy block enum column name={} rows={} ordinals=[{}]",
+                col.name,
+                enum_col.size(),
+                fmt_buf.toString());
+        }
+    }
+}
+
 std::vector<std::tuple<UInt64, String, DataTypePtr>> genGeneratedColumnInfosForDisaggregatedRead(
     const TiDBTableScan & table_scan)
 {
@@ -890,6 +934,7 @@ Block RNProxyInputStream::readImpl([[maybe_unused]] FilterPtr & res_filter, [[ma
 
     Block block = header.cloneWithColumns(std::move(columns));
     LOG_DEBUG(log, "Read block rows={}, structure={}", block.rows(), block.dumpStructure());
+    logProxyBlockEnumOrdinals(log, block);
     if (physical_table_id == -1)
     {
         LOG_WARNING(log, "physical_table_id is not set, use table_id {} instead", table_id);
