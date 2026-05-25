@@ -22,12 +22,12 @@
 namespace DB::S3::TencentCloud
 {
 //  AWSCredentialsProvider for Tencent Cloud using OIDC
-class TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+class STSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
 {
 public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider> build(const Aws::Client::ClientConfiguration & cfg);
 
-    TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider(
+    STSAssumeRoleWebIdentityCredentialsProvider(
         const Aws::Client::ClientConfiguration & cfg,
         const String & region_id,
         const String & role_arn,

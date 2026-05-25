@@ -33,7 +33,7 @@
 
 namespace DB::S3::TencentCloud
 {
-std::shared_ptr<Aws::Auth::AWSCredentialsProvider> TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::build(
+std::shared_ptr<Aws::Auth::AWSCredentialsProvider> STSAssumeRoleWebIdentityCredentialsProvider::build(
     const Aws::Client::ClientConfiguration & cfg)
 {
     // check environment variables
@@ -54,10 +54,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> TencentCloudSTSAssumeRoleWebI
             "Environment variables must be specified to use Tencent Cloud STS AssumeRole web identity creds provider.");
         return nullptr;
     }
-    return std::make_shared<TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider>(cfg, region, role_arn, provider_id, token_file);
+    return std::make_shared<STSAssumeRoleWebIdentityCredentialsProvider>(cfg, region, role_arn, provider_id, token_file);
 }
 
-TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider(
+STSAssumeRoleWebIdentityCredentialsProvider::STSAssumeRoleWebIdentityCredentialsProvider(
     const Aws::Client::ClientConfiguration & cfg,
     const String & region_id,
     const String & role_arn,
@@ -86,13 +86,13 @@ TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::TencentCloudSTSAssumeRo
     // use default retry strategy in poco http client
     m_http_client_factory = std::make_shared<PocoHTTPClientFactory>(poco_cfg);
     m_limiter = Aws::MakeShared<Aws::Utils::RateLimits::DefaultRateLimiter<>>(
-        "TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider",
+        "STSAssumeRoleWebIdentityCredentialsProvider",
         200000);
     m_initialized = true;
     LOG_INFO(log, "Creating Tencent Cloud STS AssumeRole with web identity creds provider.");
 }
 
-Aws::String TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::calculateRequestBody() const
+Aws::String STSAssumeRoleWebIdentityCredentialsProvider::calculateRequestBody() const
 {
     Aws::Utils::Json::JsonValue request_body;
     request_body.WithString("ProviderId", m_provider_id);
@@ -102,7 +102,7 @@ Aws::String TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::calculateRe
     return request_body.View().WriteCompact();
 }
 
-Aws::Auth::AWSCredentials TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
+Aws::Auth::AWSCredentials STSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
 {
     // A valid client means required information like role arn and token file were constructed correctly.
     // We can use this provider to load creds, otherwise, we can just return empty creds.
@@ -115,7 +115,7 @@ Aws::Auth::AWSCredentials TencentCloudSTSAssumeRoleWebIdentityCredentialsProvide
     return m_credentials;
 }
 
-void TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
+void STSAssumeRoleWebIdentityCredentialsProvider::Reload()
 {
     LOG_INFO(
         log,
@@ -144,7 +144,7 @@ void TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
         m_endpoint,
         Aws::Http::HttpMethod::HTTP_POST,
         Aws::Utils::Stream::DefaultResponseStreamFactoryMethod);
-    auto body_stream = Aws::MakeShared<std::stringstream>("TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider");
+    auto body_stream = Aws::MakeShared<std::stringstream>("STSAssumeRoleWebIdentityCredentialsProvider");
     (*body_stream) << request_body;
     http_request->AddContentBody(body_stream);
     http_request->SetHeaderValue("Host", fmt::format("sts.{}.tencentcloudapi.com", m_region));
@@ -230,14 +230,14 @@ void TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
 }
 
 
-bool TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::expiresSoon() const
+bool STSAssumeRoleWebIdentityCredentialsProvider::expiresSoon() const
 {
     return (
         (m_credentials.GetExpiration() - Aws::Utils::DateTime::Now()).count()
         < CREDENTIAL_PROVIDER_EXPIRATION_GRACE_PERIOD);
 }
 
-void TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
+void STSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     if (!m_credentials.IsEmpty() && !expiresSoon())
