@@ -134,6 +134,31 @@ TEST(S3CommonTest, updateRegionByEndpoint)
             Aws::Http::Scheme::HTTP,
             CloudVendor::KingsoftCloud,
         },
+        // Tencent Cloud endpoint
+        TestCase{
+            "https://cos.ap-beijing.myqcloud.com",
+            "ap-beijing",
+            Aws::Http::Scheme::HTTPS,
+            CloudVendor::TencentCloud,
+        },
+        TestCase{
+            "https://cos.ap-beijing-fsi.myqcloud.com",
+            "ap-beijing-fsi",
+            Aws::Http::Scheme::HTTPS,
+            CloudVendor::TencentCloud,
+        },
+        TestCase{
+            "https://cos.ap-shenzhen-fsi.myqcloud.com",
+            "ap-shenzhen-fsi",
+            Aws::Http::Scheme::HTTPS,
+            CloudVendor::TencentCloud,
+        },
+        TestCase{
+            "https://cos.ap-singapore.myqcloud.com",
+            "ap-singapore",
+            Aws::Http::Scheme::HTTPS,
+            CloudVendor::TencentCloud,
+        },
         // non-AWS endpoint
         TestCase{
             "minio.mydomain.com",

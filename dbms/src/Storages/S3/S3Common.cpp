@@ -467,6 +467,12 @@ CloudVendor updateRegionByEndpoint(Aws::Client::ClientConfiguration & cfg, const
     //   - Internal: ks3-<region>-internal.ksyuncs.com
     //   - External: ks3-<region>.ksyuncs.com
     // Reference: https://endocs.ksyun.com/documents/37088
+    // Tencent Cloud endpoint format:
+    //   - cos.ap-beijing.myqcloud.com
+    //   - cos.ap-beijing-fsi.myqcloud.com
+    //   - cos.ap-shenzhen-fsi.myqcloud.com
+    //   - cos.ap-singapore.myqcloud.com
+    // Reference: https://www.tencentcloud.com/document/product/436/6224?lang=en
     CloudVendor vendor = CloudVendor::UnknownFixAddress;
     static const RE2 region_pattern(
         R"((?:^s3\.|^s3-fips\.|^oss-|^ks3-)(?:dualstack.)?([a-z0-9\-]+)\.(?:amazonaws|aliyuncs|ksyuncs)\.)");

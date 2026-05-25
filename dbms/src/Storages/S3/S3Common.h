@@ -148,6 +148,7 @@ enum class CloudVendor
     AWS,
     AlibabaCloud,
     KingsoftCloud,
+    TencentCloud,
 };
 
 CloudVendor updateRegionByEndpoint(Aws::Client::ClientConfiguration & cfg, const LoggerPtr & log);

@@ -15,6 +15,7 @@
 #include <Common/Logger.h>
 #include <Storages/S3/Credentials.h>
 #include <Storages/S3/CredentialsAliCloud.h>
+#include <Storages/S3/CredentialsTencentCloud.h>
 #include <Storages/S3/PocoHTTPClientFactory.h>
 #include <aws/core/Version.h>
 #include <aws/core/auth/AWSCredentials.h>
@@ -360,6 +361,15 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(const Aws::Client::Client
             AddProvider(provider);
         }
         if (auto provider = DB::S3::AlibabaCloud::OIDCCredentialsProvider::build(cfg); provider != nullptr)
+        {
+            AddProvider(provider);
+        }
+        break;
+    }
+    case CloudVendor::TencentCloud:
+    {
+        if (auto provider = DB::S3::TencentCloud::TencentCloudSTSAssumeRoleWebIdentityCredentialsProvider::build(cfg);
+            provider != nullptr)
         {
             AddProvider(provider);
         }

@@ -33,7 +33,6 @@
 
 namespace DB::S3::AlibabaCloud
 {
-static constexpr int CREDENTIAL_PROVIDER_EXPIRATION_GRACE_PERIOD = 180 * 1000; // 180 seconds
 
 /// OIDCCredentialsProvider ///
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> OIDCCredentialsProvider::build(
