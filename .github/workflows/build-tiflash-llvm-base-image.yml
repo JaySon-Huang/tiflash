@@ -23,8 +23,8 @@ permissions:
   packages: write
 
 env:
-  DOCKERFILE: release-linux-llvm/dockerfiles/Dockerfile-tiflash-llvm-base
-  DOCKER_CONTEXT: release-linux-llvm/dockerfiles
+  DOCKERFILE: ./release-linux-llvm/dockerfiles/Dockerfile-tiflash-llvm-base
+  DOCKER_CONTEXT: ./release-linux-llvm/dockerfiles
 
 jobs:
   build:
