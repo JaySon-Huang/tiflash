@@ -2336,12 +2336,6 @@ dependencies = [
 
 [[package]]
 name = "fallible-iterator"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
-
-[[package]]
-name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
@@ -2496,7 +2490,7 @@ checksum = "09a5a3f0acb82df800ca3aa50c0d60d286c5d13d4cfc3114b3a9663f13b032fe"
 dependencies = [
  "arrayvec",
  "cfg-if",
- "fallible-iterator 0.3.0",
+ "fallible-iterator",
  "gimli 0.31.1",
  "macho-unwind-info",
  "pe-unwind-info",
@@ -2752,7 +2746,7 @@ version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 dependencies = [
- "fallible-iterator 0.3.0",
+ "fallible-iterator",
  "stable_deref_trait",
 ]
 
@@ -2946,34 +2940,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "hexhex"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c56592988a798d4df9155ea41f1d83d1e9a3eefd50fb0c31eb861b6c273ed2fc"
-dependencies = [
- "hexhex_impl",
- "hexhex_macros",
-]
-
-[[package]]
-name = "hexhex_impl"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f530c66081961311028f67d22da8e3f739dab6979fc200f199c3ef0fb2e194a"
-dependencies = [
- "fallible-iterator 0.2.0",
-]
-
-[[package]]
-name = "hexhex_macros"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd0ae2c93351a14664ef0fa185c434a56783fb83a71b158a3389d594dd391e1f"
-dependencies = [
- "hexhex_impl",
-]
 
 [[package]]
 name = "hmac"
@@ -3552,7 +3518,6 @@ dependencies = [
  "fslock",
  "futures 0.3.32",
  "hex 0.4.3",
- "hexhex",
  "http 0.2.12",
  "hyper 0.14.26",
  "hyper-rustls",
@@ -4114,12 +4079,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "mnt"
-version = "0.3.1"
+name = "mountinfo"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1587ebb20a5b04738f16cffa7e2526f1b8496b84f92920facd518362ff1559eb"
+checksum = "6341a1c48d5425a185c43f75480227dc738cf85ecc6a4bc8ca847406d44f1c17"
 dependencies = [
- "libc",
+ "regex",
 ]
 
 [[package]]
@@ -7142,7 +7107,7 @@ dependencies = [
  "libc",
  "log",
  "log_wrappers",
- "mnt",
+ "mountinfo",
  "nix 0.24.3",
  "num-traits",
  "num_cpus",
