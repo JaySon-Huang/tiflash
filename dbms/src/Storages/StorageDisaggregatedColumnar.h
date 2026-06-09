@@ -194,6 +194,18 @@ private:
 #ifdef DBMS_PUBLIC_GTEST
 /// Build an RNProxyReadTask with zero readers for pipeline source operator unit tests.
 RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context);
+
+/// Phase 2 unit test helper: mirrors addColumnarPipelineSourcesAndRecordProfile() in
+/// StorageDisaggregatedColumnar.cpp (RNProxySourceOp / NullSourceOp + table scan profiles).
+void addColumnarPipelineSourcesAndRecordProfileForGTest(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    DAGContext & dag_context,
+    const String & table_scan_executor_id,
+    RNProxyReadTaskPtr task_pool,
+    unsigned num_streams,
+    const Block & null_source_header,
+    const LoggerPtr & log);
 #endif
 } // namespace DB
 #endif

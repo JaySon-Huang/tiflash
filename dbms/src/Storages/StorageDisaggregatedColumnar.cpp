@@ -34,9 +34,11 @@
 #include <Flash/Coprocessor/GenSchemaAndColumn.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
 #include <Flash/Coprocessor/RequestUtils.h>
+#include <Flash/Pipeline/Exec/PipelineExecBuilder.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <IO/IOThreadPools.h>
 #include <Interpreters/Context.h>
+#include <Operators/NullSourceOp.h>
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
@@ -242,6 +244,64 @@ std::tuple<DM::ColumnDefinesPtr, int> genColumnDefinesForDisaggregatedReadThroug
     // genColumnDefinesForDisaggregatedRead already skips generated columns.
     // executeGeneratedColumnPlaceholder fills virtual columns later in the pipeline.
     return {std::move(column_defines), extra_table_id_index};
+}
+
+/// Header for columnar pipeline source ops. Matches RNProxySourceOp::setHeader so downstream
+/// generated column / cast / filter / projection see the same schema.
+Block buildColumnarPipelineSourceHeader(const TiDBTableScan & table_scan)
+{
+    DM::ColumnDefinesPtr column_defines;
+    int extra_table_id_index;
+    std::tie(column_defines, extra_table_id_index) = genColumnDefinesForDisaggregatedReadThroughColumnar(table_scan);
+    return AddExtraTableIDColumnTransformAction::buildHeader(*column_defines, extra_table_id_index);
+}
+
+/// Phase 2 (docs/design/2026-06-09-storage-disaggregated-columnar-pipeline.md):
+/// add RNProxySourceOp or NullSourceOp, then record table scan inbound IO / operator profiles
+/// before any downstream transform is appended to the builder.
+void addColumnarPipelineSourcesAndRecordProfile(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    DAGContext & dag_context,
+    const String & table_scan_id,
+    RNProxyReadTaskPtr task_pool,
+    unsigned num_streams,
+    const Block & null_source_header,
+    const LoggerPtr & log)
+{
+    if (task_pool && task_pool->getReaderCount() > 0)
+    {
+        const size_t reader_count = task_pool->getReaderCount();
+        const size_t source_num = std::min<size_t>(num_streams, reader_count);
+        LOG_INFO(
+            log,
+            "use shared proxy reader task pool, reader_num={}, source_num={}",
+            reader_count,
+            source_num);
+        for (size_t i = 0; i < source_num; ++i)
+        {
+            group_builder.addConcurrency(RNProxySourceOp::create({
+                .exec_context = exec_context,
+                .task = task_pool,
+            }));
+        }
+    }
+
+    if (group_builder.empty())
+    {
+        group_builder.addConcurrency(
+            std::make_unique<NullSourceOp>(exec_context, null_source_header, log->identifier()));
+        LOG_INFO(
+            log,
+            "no proxy reader to read, use NullSourceOp for columnar pipeline table_scan_id={}",
+            table_scan_id);
+    }
+
+    // Same timing as buildRemoteSegmentSourceOps() in StorageDisaggregatedRemote.cpp.
+    // addOperatorProfileInfos is first-write-wins for table_scan_id; record here so later
+    // projection/filter profiles are not attributed to the table scan executor.
+    dag_context.addInboundIOProfileInfos(table_scan_id, group_builder.getCurIOProfileInfos());
+    dag_context.addOperatorProfileInfos(table_scan_id, group_builder.getCurProfileInfos());
 }
 
 std::shared_ptr<RNProxyReaderSharedContext> buildProxyReaderSharedContext(
@@ -542,23 +602,18 @@ void StorageDisaggregated::readThroughColumnar(
         remote_table_ranges,
         num_streams);
     const auto generated_column_infos = genGeneratedColumnInfosForDisaggregatedRead(table_scan);
+    RNProxyReadTaskPtr task_pool;
     if (!read_proxy_tasks.empty())
-    {
-        auto & task_pool = read_proxy_tasks.front();
-        const size_t source_num = std::min<size_t>(num_streams, task_pool->getReaderCount());
-        LOG_INFO(
-            log,
-            "use shared proxy reader task pool, reader_num={}, source_num={}",
-            task_pool->getReaderCount(),
-            source_num);
-        for (size_t i = 0; i < source_num; ++i)
-        {
-            group_builder.addConcurrency(RNProxySourceOp::create({
-                .exec_context = exec_context,
-                .task = task_pool,
-            }));
-        }
-    }
+        task_pool = read_proxy_tasks.front();
+    addColumnarPipelineSourcesAndRecordProfile(
+        exec_context,
+        group_builder,
+        *context.getDAGContext(),
+        table_scan.getTableScanExecutorID(),
+        task_pool,
+        num_streams,
+        buildColumnarPipelineSourceHeader(table_scan),
+        log);
 
     executeGeneratedColumnPlaceholder(exec_context, group_builder, generated_column_infos, log);
 
@@ -1298,6 +1353,27 @@ Block RNProxyInputStream::readImpl([[maybe_unused]] FilterPtr & res_filter, [[ma
 }
 
 #ifdef DBMS_PUBLIC_GTEST
+void addColumnarPipelineSourcesAndRecordProfileForGTest(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    DAGContext & dag_context,
+    const String & table_scan_executor_id,
+    RNProxyReadTaskPtr task_pool,
+    unsigned num_streams,
+    const Block & null_source_header,
+    const LoggerPtr & log)
+{
+    addColumnarPipelineSourcesAndRecordProfile(
+        exec_context,
+        group_builder,
+        dag_context,
+        table_scan_executor_id,
+        task_pool,
+        num_streams,
+        null_source_header,
+        log);
+}
+
 RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context)
 {
     auto shared_context = std::make_shared<RNProxyReaderSharedContext>();

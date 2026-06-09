@@ -15,7 +15,10 @@
 #include <Common/config.h>
 #if ENABLE_NEXT_GEN_COLUMNAR
 
+#include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Executor/PipelineExecutorContext.h>
+#include <Flash/Pipeline/Exec/PipelineExecBuilder.h>
+#include <Operators/NullSourceOp.h>
 #include <Storages/Columnar/ColumnarReaderSlot.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/MutableSupport.h>
@@ -28,6 +31,13 @@ class ColumnarSourceOpTest : public ::testing::Test
 {
 protected:
     void SetUp() override { context = TiFlashTestEnv::getContext(); }
+
+    Block buildNullSourceHeaderFromTask(const RNProxyReadTaskPtr & task) const
+    {
+        return AddExtraTableIDColumnTransformAction::buildHeader(
+            task->getColumnsToRead(),
+            task->getExtraTableIDIndex());
+    }
 
     ContextPtr context;
 };
@@ -86,6 +96,61 @@ TEST_F(ColumnarSourceOpTest, EmptyReaderTaskEOF)
     EXPECT_EQ(block.rows(), 0);
 
     source->operateSuffix();
+}
+
+TEST_F(ColumnarSourceOpTest, EmptyReaderUsesNullSourceInPipelineBuilder)
+{
+    PipelineExecutorContext exec_context;
+    PipelineExecGroupBuilder group_builder;
+    auto task = createEmptyRNProxyReadTaskForGTest(*context);
+    const auto null_source_header = buildNullSourceHeaderFromTask(task);
+    auto log = Logger::get("ColumnarSourceOpGTest");
+
+    // Phase 2: zero reader count falls back to NullSourceOp (same header as RNProxySourceOp).
+    group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, null_source_header, log->identifier()));
+
+    ASSERT_FALSE(group_builder.empty());
+    EXPECT_EQ(group_builder.concurrency(), 1);
+    EXPECT_EQ(group_builder.getCurBuilder(0).source_op->getName(), "NullSourceOp");
+
+    // Must succeed before generated column / cast / filter / projection are appended.
+    const auto header = group_builder.getCurrentHeader();
+    EXPECT_EQ(header.columns(), null_source_header.columns());
+}
+
+TEST_F(ColumnarSourceOpTest, TableScanProfileRecordedBeforeDownstreamTransforms)
+{
+    PipelineExecutorContext exec_context;
+    PipelineExecGroupBuilder group_builder;
+    auto task = createEmptyRNProxyReadTaskForGTest(*context);
+    const auto table_scan_id = task->getExecutorID();
+    const auto null_source_header = buildNullSourceHeaderFromTask(task);
+    auto log = Logger::get("ColumnarSourceOpGTest");
+    DAGContext dag_context(/*max_error_count=*/10);
+
+    addColumnarPipelineSourcesAndRecordProfileForGTest(
+        exec_context,
+        group_builder,
+        dag_context,
+        table_scan_id,
+        task,
+        /*num_streams=*/4,
+        null_source_header,
+        log);
+
+    const auto & inbound_io_map = dag_context.getInboundIOProfileInfosMap();
+    const auto & operator_profile_map = dag_context.getOperatorProfileInfosMap();
+    ASSERT_TRUE(inbound_io_map.contains(table_scan_id));
+    ASSERT_TRUE(operator_profile_map.contains(table_scan_id));
+    EXPECT_EQ(inbound_io_map.at(table_scan_id).size(), 1);
+    EXPECT_EQ(operator_profile_map.at(table_scan_id).size(), 1);
+    EXPECT_EQ(group_builder.getCurBuilder(0).source_op->getName(), "NullSourceOp");
+
+    // addOperatorProfileInfos is first-write-wins for table_scan_id.
+    const auto recorded_profile_ptr = operator_profile_map.at(table_scan_id)[0];
+    group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, null_source_header, log->identifier()));
+    dag_context.addOperatorProfileInfos(table_scan_id, group_builder.getCurProfileInfos());
+    EXPECT_EQ(operator_profile_map.at(table_scan_id)[0], recorded_profile_ptr);
 }
 } // namespace DB::tests
 
