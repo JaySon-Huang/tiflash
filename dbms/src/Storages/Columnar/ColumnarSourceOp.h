@@ -57,6 +57,7 @@ enum class RNProxySourceState
 /// - readImpl(): CPU path only; emits ReadyBlock / Done, otherwise schedules IO or notify
 /// - awaitImpl(): non-blocking slot check; never calls proxy FFI or allocates blocks
 /// - executeIOImpl(): attaches stream if needed, reads at most one block per call
+/// - operateSuffixImpl()/destructor: unregister from shared RNProxyReadTask; cancel if not Done
 ///
 /// Stream-model reads still go through RNProxyInputStream in StorageDisaggregatedColumnar.cpp.
 class RNProxySourceOp : public SourceOp
@@ -71,6 +72,8 @@ public:
     };
 
     explicit RNProxySourceOp(const Options & options);
+
+    ~RNProxySourceOp() override;
 
     static SourceOpPtr create(const Options & options) { return std::make_unique<RNProxySourceOp>(options); }
 
@@ -105,6 +108,9 @@ private:
 
     void attachInputStreamForCurrentReader();
 
+    /// Phase 5: unregister from shared RNProxyReadTask once; cancel if this source did not reach Done.
+    void cleanupSharedTaskIfNeeded();
+
     const Context & context;
     const LoggerPtr log;
     RNProxyReadTaskPtr task;
@@ -124,6 +130,8 @@ private:
     Stopwatch total_cost_watch{CLOCK_MONOTONIC_COARSE};
 
     double duration_read_sec = 0;
+
+    bool shared_task_cleanup_done = false;
 };
 } // namespace DB
 #endif

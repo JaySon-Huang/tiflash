@@ -30,13 +30,28 @@ RNProxySourceOp::RNProxySourceOp(const Options & options)
     , log(options.task->getLog())
     , task(options.task)
 {
+    task->registerPipelineSource();
     setHeader(AddExtraTableIDColumnTransformAction::buildHeader(
         options.task->getColumnsToRead(),
         options.task->getExtraTableIDIndex()));
 }
 
+RNProxySourceOp::~RNProxySourceOp()
+{
+    cleanupSharedTaskIfNeeded();
+}
+
+void RNProxySourceOp::cleanupSharedTaskIfNeeded()
+{
+    if (shared_task_cleanup_done)
+        return;
+    shared_task_cleanup_done = true;
+    task->unregisterPipelineSource(source_state == RNProxySourceState::Done);
+}
+
 void RNProxySourceOp::operateSuffixImpl()
 {
+    cleanupSharedTaskIfNeeded();
     UNUSED(context);
     const double total_cost_sec = total_cost_watch.elapsedSeconds();
     const UInt64 rows_per_sec
@@ -109,6 +124,7 @@ OperatorStatus RNProxySourceOp::scheduleWaitReader()
         setNotifyFuture(current_reader_slot.get());
         return OperatorStatus::WAIT_FOR_NOTIFY;
     case RNProxyReaderMaterializeState::Failed:
+    case RNProxyReaderMaterializeState::Cancelled:
         task->rethrowReaderSlotException(reader_index);
     case RNProxyReaderMaterializeState::Consumed:
         throw Exception(
@@ -146,6 +162,7 @@ OperatorStatus RNProxySourceOp::scheduleAcquireReader()
         source_state = RNProxySourceState::WaitReader;
         return scheduleWaitReader();
     case RNProxyReaderMaterializeState::Failed:
+    case RNProxyReaderMaterializeState::Cancelled:
         task->rethrowReaderSlotException(current_reader_idx.value());
     case RNProxyReaderMaterializeState::Consumed:
         throw Exception(

@@ -196,6 +196,79 @@ TEST_F(ColumnarSourceOpTest, ReaderSlotIsNotifyFuture)
     EXPECT_NE(dynamic_cast<NotifyFuture *>(slot.get()), nullptr);
 }
 
+TEST_F(ColumnarSourceOpTest, CancelMarksPendingSlotFailed)
+{
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 2);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    EXPECT_EQ(task->getReaderMaterializeState(1), RNProxyReaderMaterializeState::NotStarted);
+
+    cancelRNProxyReadTaskForGTest(task, "gtest cancel");
+    EXPECT_TRUE(isRNProxyReadTaskCancelledForGTest(task));
+    EXPECT_EQ(task->getReaderMaterializeState(0), RNProxyReaderMaterializeState::Failed);
+    EXPECT_EQ(task->getReaderMaterializeState(1), RNProxyReaderMaterializeState::Failed);
+}
+
+TEST_F(ColumnarSourceOpTest, CancelWakesWaitReaderAndThrows)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_EQ(source->read(block), OperatorStatus::WAIT_FOR_NOTIFY);
+    cancelRNProxyReadTaskForGTest(task, "gtest cancel while waiting");
+    EXPECT_THROW(source->await(), Exception);
+}
+
+TEST_F(ColumnarSourceOpTest, FailedSlotThrowsOnRead)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotExceptionForGTest(
+        task,
+        0,
+        std::make_exception_ptr(Exception("proxy reader failed", ErrorCodes::LOGICAL_ERROR)));
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_THROW(source->read(block), Exception);
+}
+
+TEST_F(ColumnarSourceOpTest, SourceSuffixCancelsSharedTaskWhenNotDone)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_EQ(source->read(block), OperatorStatus::WAIT_FOR_NOTIFY);
+    source->operateSuffix();
+    EXPECT_TRUE(isRNProxyReadTaskCancelledForGTest(task));
+}
+
+TEST_F(ColumnarSourceOpTest, LastSourceClosesPendingSlotsOnNormalFinish)
+{
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 2);
+    setReaderSlotStateForGTest(task, 1, RNProxyReaderMaterializeState::Creating);
+
+    task->registerPipelineSource();
+    task->unregisterPipelineSource(/*finished_normally=*/true);
+
+    EXPECT_EQ(task->getReaderMaterializeState(0), RNProxyReaderMaterializeState::Cancelled);
+    EXPECT_EQ(task->getReaderMaterializeState(1), RNProxyReaderMaterializeState::Cancelled);
+}
+
 TEST_F(ColumnarSourceOpTest, EmptyReaderUsesNullSourceInPipelineBuilder)
 {
     PipelineExecutorContext exec_context;

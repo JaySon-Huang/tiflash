@@ -38,6 +38,8 @@ enum class RNProxyReaderMaterializeState
     Ready,
     Failed,
     Consumed,
+    /// Pipeline closed or query cancelled before this reader was claimed.
+    Cancelled,
 };
 
 /// Per-reader slot shared between RNProxyReadTask and RNProxySourceOp.

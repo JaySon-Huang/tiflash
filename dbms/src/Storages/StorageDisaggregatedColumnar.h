@@ -108,6 +108,17 @@ public:
 
     void rethrowReaderSlotException(size_t reader_index) const;
 
+    /// Phase 5: cancel pending prefetch / waiters. Idempotent.
+    void cancel(const String & reason);
+
+    void registerPipelineSource();
+
+    /// Called from RNProxySourceOp suffix/destructor. Cancels on abnormal exit; closes
+    /// unclaimed slots when the last pipeline source unregisters after normal completion.
+    void unregisterPipelineSource(bool finished_normally);
+
+    bool isCancelled() const;
+
     void prefetchReader(size_t reader_index);
 
     std::optional<size_t> tryAcquireReaderIndex();
@@ -135,8 +146,12 @@ private:
     std::shared_ptr<RNProxyReaderSharedContext> shared_reader_context;
     std::vector<std::shared_ptr<RNProxyReaderSlot>> reader_slots;
     std::atomic_size_t next_reader_index = 0;
+    std::atomic<bool> cancelled{false};
+    std::atomic_size_t active_pipeline_sources{0};
     std::once_flag prefetch_thread_manager_once;
     std::shared_ptr<ThreadManager> prefetch_thread_manager;
+
+    void closePendingSlots();
 };
 
 class RNProxyInputStream : public IProfilingBlockInputStream
@@ -219,6 +234,15 @@ void setReaderSlotStateForGTest(
     const RNProxyReadTaskPtr & task,
     size_t reader_index,
     RNProxyReaderMaterializeState state);
+
+void setReaderSlotExceptionForGTest(
+    const RNProxyReadTaskPtr & task,
+    size_t reader_index,
+    std::exception_ptr exception);
+
+void cancelRNProxyReadTaskForGTest(const RNProxyReadTaskPtr & task, const String & reason);
+
+bool isRNProxyReadTaskCancelledForGTest(const RNProxyReadTaskPtr & task);
 
 /// Phase 2 unit test helper: mirrors addColumnarPipelineSourcesAndRecordProfile() in
 /// StorageDisaggregatedColumnar.cpp (RNProxySourceOp / NullSourceOp + table scan profiles).

@@ -883,6 +883,11 @@ ColumnarReaderPtr RNProxyReadTask::getOrCreateReader(size_t reader_index)
         }
         case RNProxyReaderMaterializeState::Failed:
             std::rethrow_exception(slot->exception);
+        case RNProxyReaderMaterializeState::Cancelled:
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "proxy reader {} cancelled",
+                reader_index);
         case RNProxyReaderMaterializeState::Consumed:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "proxy reader {} is already consumed", reader_index);
         case RNProxyReaderMaterializeState::Creating:
@@ -896,12 +901,22 @@ ColumnarReaderPtr RNProxyReadTask::getOrCreateReader(size_t reader_index)
             }
             if (slot->state == RNProxyReaderMaterializeState::Failed)
                 std::rethrow_exception(slot->exception);
+            if (slot->state == RNProxyReaderMaterializeState::Cancelled)
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "proxy reader {} cancelled",
+                    reader_index);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "proxy reader {} becomes invalid after wait, state={}",
                 reader_index,
                 static_cast<Int32>(slot->state));
         case RNProxyReaderMaterializeState::NotStarted:
+            if (isCancelled())
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "proxy reader {} cancelled",
+                    reader_index);
             slot->state = RNProxyReaderMaterializeState::Creating;
             should_create_inline = true;
             break;
@@ -970,11 +985,75 @@ void RNProxyReadTask::rethrowReaderSlotException(size_t reader_index) const
     std::lock_guard lock(slot->mutex);
     if (slot->state == RNProxyReaderMaterializeState::Failed)
         std::rethrow_exception(slot->exception);
+    if (slot->state == RNProxyReaderMaterializeState::Cancelled)
+        throw Exception(
+            ErrorCodes::QUERY_WAS_CANCELLED,
+            "proxy reader {} cancelled",
+            reader_index);
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "proxy reader {} is not failed, state={}",
         reader_index,
         static_cast<Int32>(slot->state));
+}
+
+bool RNProxyReadTask::isCancelled() const
+{
+    return cancelled.load(std::memory_order_acquire);
+}
+
+void RNProxyReadTask::closePendingSlots()
+{
+    for (auto & slot : reader_slots)
+    {
+        {
+            std::lock_guard lock(slot->mutex);
+            if (slot->state == RNProxyReaderMaterializeState::NotStarted
+                || slot->state == RNProxyReaderMaterializeState::Creating)
+            {
+                slot->reader.reset();
+                slot->exception = nullptr;
+                slot->state = RNProxyReaderMaterializeState::Cancelled;
+            }
+        }
+        slot->notifyWaiters();
+    }
+}
+
+void RNProxyReadTask::cancel(const String & reason)
+{
+    if (cancelled.exchange(true, std::memory_order_acq_rel))
+        return;
+
+    const auto exception = std::make_exception_ptr(Exception(reason, ErrorCodes::QUERY_WAS_CANCELLED));
+    for (auto & slot : reader_slots)
+    {
+        {
+            std::lock_guard lock(slot->mutex);
+            if (slot->state == RNProxyReaderMaterializeState::NotStarted
+                || slot->state == RNProxyReaderMaterializeState::Creating)
+            {
+                slot->reader.reset();
+                slot->exception = exception;
+                slot->state = RNProxyReaderMaterializeState::Failed;
+            }
+        }
+        slot->notifyWaiters();
+    }
+}
+
+void RNProxyReadTask::registerPipelineSource()
+{
+    active_pipeline_sources.fetch_add(1, std::memory_order_relaxed);
+}
+
+void RNProxyReadTask::unregisterPipelineSource(bool finished_normally)
+{
+    if (!finished_normally)
+        cancel("RNProxy pipeline source stopped before finishing all proxy snapshots");
+
+    if (active_pipeline_sources.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        closePendingSlots();
 }
 
 ColumnarReaderPtr RNProxyReadTask::materializeReaderInIOThread(size_t reader_index)
@@ -996,6 +1075,11 @@ ColumnarReaderPtr RNProxyReadTask::materializeReaderInIOThread(size_t reader_ind
             break;
         case RNProxyReaderMaterializeState::Failed:
             std::rethrow_exception(slot->exception);
+        case RNProxyReaderMaterializeState::Cancelled:
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "proxy reader {} cancelled",
+                reader_index);
         case RNProxyReaderMaterializeState::Consumed:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "proxy reader {} is already consumed", reader_index);
         case RNProxyReaderMaterializeState::Creating:
@@ -1004,6 +1088,11 @@ ColumnarReaderPtr RNProxyReadTask::materializeReaderInIOThread(size_t reader_ind
                 "proxy reader {} is still creating, pipeline source should WAIT_FOR_NOTIFY",
                 reader_index);
         case RNProxyReaderMaterializeState::NotStarted:
+            if (isCancelled())
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "proxy reader {} cancelled",
+                    reader_index);
             slot->state = RNProxyReaderMaterializeState::Creating;
             break;
         }
@@ -1041,6 +1130,9 @@ void RNProxyReadTask::prefetchReader(size_t reader_index)
     if (reader_index >= reader_slots.size())
         return;
 
+    if (isCancelled())
+        return;
+
     std::call_once(prefetch_thread_manager_once, [&] { prefetch_thread_manager = newThreadManager(); });
 
     auto slot = reader_slots[reader_index];
@@ -1055,6 +1147,9 @@ void RNProxyReadTask::prefetchReader(size_t reader_index)
         true,
         "PrefetchRNProxyReader",
         [self = shared_from_this(), slot, reader_index] {
+            if (self->isCancelled())
+                return;
+
             LOG_INFO(
                 self->getLog(),
                 "materialize proxy reader asynchronously, reader_index={}, region_id={}",
@@ -1063,9 +1158,12 @@ void RNProxyReadTask::prefetchReader(size_t reader_index)
             try
             {
                 auto reader = self->createColumnarReaderWithBackoff(reader_index);
+                if (self->isCancelled())
+                    return;
+
                 {
                     auto guard = std::lock_guard(slot->mutex);
-                    if (slot->state == RNProxyReaderMaterializeState::Consumed)
+                    if (slot->state != RNProxyReaderMaterializeState::Creating)
                         return;
                     slot->reader.emplace(std::move(reader));
                     slot->state = RNProxyReaderMaterializeState::Ready;
@@ -1073,9 +1171,12 @@ void RNProxyReadTask::prefetchReader(size_t reader_index)
             }
             catch (...)
             {
+                if (self->isCancelled())
+                    return;
+
                 {
                     auto guard = std::lock_guard(slot->mutex);
-                    if (slot->state == RNProxyReaderMaterializeState::Consumed)
+                    if (slot->state != RNProxyReaderMaterializeState::Creating)
                         return;
                     slot->exception = std::current_exception();
                     slot->state = RNProxyReaderMaterializeState::Failed;
@@ -1531,6 +1632,31 @@ void setReaderSlotStateForGTest(
     if (state != RNProxyReaderMaterializeState::Ready)
         slot->reader.reset();
     slot->exception = nullptr;
+}
+
+void setReaderSlotExceptionForGTest(
+    const RNProxyReadTaskPtr & task,
+    size_t reader_index,
+    std::exception_ptr exception)
+{
+    RUNTIME_CHECK(task != nullptr);
+    auto slot = task->getReaderSlot(reader_index);
+    std::lock_guard lock(slot->mutex);
+    slot->state = RNProxyReaderMaterializeState::Failed;
+    slot->reader.reset();
+    slot->exception = exception;
+}
+
+void cancelRNProxyReadTaskForGTest(const RNProxyReadTaskPtr & task, const String & reason)
+{
+    RUNTIME_CHECK(task != nullptr);
+    task->cancel(reason);
+}
+
+bool isRNProxyReadTaskCancelledForGTest(const RNProxyReadTaskPtr & task)
+{
+    RUNTIME_CHECK(task != nullptr);
+    return task->isCancelled();
 }
 #endif
 
