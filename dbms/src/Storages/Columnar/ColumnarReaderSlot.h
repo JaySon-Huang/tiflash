@@ -17,6 +17,9 @@
 #include <Common/config.h> // for ENABLE_NEXT_GEN_COLUMNAR
 #if ENABLE_NEXT_GEN_COLUMNAR
 
+#include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
+#include <Flash/Pipeline/Schedule/Tasks/PipeConditionVariable.h>
+#include <Flash/Pipeline/Schedule/Tasks/Task.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 
 #include <condition_variable>
@@ -27,8 +30,7 @@
 namespace DB
 {
 /// Lifecycle of a single ColumnarReader materialized from proxy FFI.
-/// Pipeline source operators observe these states without blocking the IO thread pool;
-/// Phase 3 will replace `cv` blocking wait with PipeConditionVariable / NotifyFuture.
+/// Pipeline source operators observe these states without blocking the IO thread pool.
 enum class RNProxyReaderMaterializeState
 {
     NotStarted,
@@ -40,16 +42,22 @@ enum class RNProxyReaderMaterializeState
 
 /// Per-reader slot shared between RNProxyReadTask and RNProxySourceOp.
 ///
-/// RNProxyReadTask owns creation/prefetch; RNProxySourceOp only reads state via
-/// RNProxyReadTask accessors. Keep slot fields narrow so future notify-based waiting
-/// can be added here without touching read-planning code in StorageDisaggregatedColumnar.
-struct RNProxyReaderSlot
+/// Pipeline path: RNProxySourceOp waits on `PipeConditionVariable` via NotifyFuture while
+/// prefetch materializes the reader. Stream path: RNProxyInputStream still blocks on `cv`.
+struct RNProxyReaderSlot : public NotifyFuture
 {
     ~RNProxyReaderSlot();
 
+    void registerTask(TaskPtr && task) override;
+
+    /// Wake pipeline tasks registered on pipe_cv and stream-model waiters on cv.
+    void notifyWaiters();
+
     std::mutex mutex;
-    // TODO(Phase 3): add PipeConditionVariable for WAIT_FOR_NOTIFY based wake-up.
+    // Stream-model blocking wait in RNProxyReadTask::getOrCreateReader().
     std::condition_variable cv;
+    // Pipeline-model WAIT_FOR_NOTIFY wake-up for RNProxySourceOp.
+    PipeConditionVariable pipe_cv;
     RNProxyReaderMaterializeState state = RNProxyReaderMaterializeState::NotStarted;
     std::optional<ColumnarReaderPtr> reader;
     std::exception_ptr exception;

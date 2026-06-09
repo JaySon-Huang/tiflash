@@ -921,7 +921,7 @@ ColumnarReaderPtr RNProxyReadTask::getOrCreateReader(size_t reader_index)
             auto guard = std::lock_guard(slot->mutex);
             slot->state = RNProxyReaderMaterializeState::Consumed;
         }
-        slot->cv.notify_all();
+        slot->notifyWaiters();
         return reader;
     }
     catch (...)
@@ -931,7 +931,107 @@ ColumnarReaderPtr RNProxyReadTask::getOrCreateReader(size_t reader_index)
             slot->exception = std::current_exception();
             slot->state = RNProxyReaderMaterializeState::Failed;
         }
-        slot->cv.notify_all();
+        slot->notifyWaiters();
+        throw;
+    }
+}
+
+std::shared_ptr<RNProxyReaderSlot> RNProxyReadTask::getReaderSlot(size_t reader_index) const
+{
+    RUNTIME_CHECK(reader_index < reader_slots.size());
+    return reader_slots[reader_index];
+}
+
+RNProxyReaderMaterializeState RNProxyReadTask::getReaderMaterializeState(size_t reader_index) const
+{
+    RUNTIME_CHECK(reader_index < reader_slots.size());
+    const auto slot = reader_slots[reader_index];
+    std::lock_guard lock(slot->mutex);
+    return slot->state;
+}
+
+std::optional<ColumnarReaderPtr> RNProxyReadTask::tryTakeReadyReader(size_t reader_index)
+{
+    RUNTIME_CHECK(reader_index < reader_slots.size());
+    const auto slot = reader_slots[reader_index];
+    std::lock_guard lock(slot->mutex);
+    if (slot->state != RNProxyReaderMaterializeState::Ready || !slot->reader.has_value())
+        return std::nullopt;
+    auto reader = std::move(slot->reader);
+    slot->reader.reset();
+    slot->state = RNProxyReaderMaterializeState::Consumed;
+    return reader;
+}
+
+void RNProxyReadTask::rethrowReaderSlotException(size_t reader_index) const
+{
+    RUNTIME_CHECK(reader_index < reader_slots.size());
+    const auto slot = reader_slots[reader_index];
+    std::lock_guard lock(slot->mutex);
+    if (slot->state == RNProxyReaderMaterializeState::Failed)
+        std::rethrow_exception(slot->exception);
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "proxy reader {} is not failed, state={}",
+        reader_index,
+        static_cast<Int32>(slot->state));
+}
+
+ColumnarReaderPtr RNProxyReadTask::materializeReaderInIOThread(size_t reader_index)
+{
+    RUNTIME_CHECK(reader_index < reader_slots.size());
+    const auto slot = reader_slots[reader_index];
+    {
+        std::lock_guard lock(slot->mutex);
+        switch (slot->state)
+        {
+        case RNProxyReaderMaterializeState::Ready:
+            if (slot->reader.has_value())
+            {
+                auto reader = std::move(slot->reader.value());
+                slot->reader.reset();
+                slot->state = RNProxyReaderMaterializeState::Consumed;
+                return reader;
+            }
+            break;
+        case RNProxyReaderMaterializeState::Failed:
+            std::rethrow_exception(slot->exception);
+        case RNProxyReaderMaterializeState::Consumed:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "proxy reader {} is already consumed", reader_index);
+        case RNProxyReaderMaterializeState::Creating:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "proxy reader {} is still creating, pipeline source should WAIT_FOR_NOTIFY",
+                reader_index);
+        case RNProxyReaderMaterializeState::NotStarted:
+            slot->state = RNProxyReaderMaterializeState::Creating;
+            break;
+        }
+    }
+
+    LOG_INFO(
+        getLog(),
+        "materialize proxy reader on IO thread, reader_index={}, region_id={}",
+        reader_index,
+        reader_plans[reader_index].region_id);
+    try
+    {
+        auto reader = createColumnarReaderWithBackoff(reader_index);
+        {
+            auto guard = std::lock_guard(slot->mutex);
+            slot->state = RNProxyReaderMaterializeState::Consumed;
+        }
+        slot->notifyWaiters();
+        return reader;
+    }
+    catch (...)
+    {
+        {
+            auto guard = std::lock_guard(slot->mutex);
+            slot->exception = std::current_exception();
+            slot->state = RNProxyReaderMaterializeState::Failed;
+        }
+        slot->notifyWaiters();
         throw;
     }
 }
@@ -981,8 +1081,15 @@ void RNProxyReadTask::prefetchReader(size_t reader_index)
                     slot->state = RNProxyReaderMaterializeState::Failed;
                 }
             }
-            slot->cv.notify_all();
+            slot->notifyWaiters();
         });
+}
+
+BlockInputStreamPtr RNProxyReadTask::createInputStreamWithReader(size_t reader_index, ColumnarReaderPtr reader)
+{
+    auto stream = createInputStream(reader_index);
+    std::static_pointer_cast<RNProxyInputStream>(stream)->setPreloadedReader(std::move(reader));
+    return stream;
 }
 
 std::optional<size_t> RNProxyReadTask::tryAcquireReaderIndex()
@@ -1208,6 +1315,12 @@ BlockInputStreams RNProxyReadTask::getInputStreams()
 }
 
 // RNProxyInputStream
+void RNProxyInputStream::setPreloadedReader(ColumnarReaderPtr preloaded_reader)
+{
+    RUNTIME_CHECK(!reader.has_value());
+    reader.emplace(std::move(preloaded_reader));
+}
+
 void RNProxyInputStream::ensureReader()
 {
     if (reader.has_value())
@@ -1376,18 +1489,48 @@ void addColumnarPipelineSourcesAndRecordProfileForGTest(
 
 RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context)
 {
+    return createRNProxyReadTaskWithReaderPlansForGTest(context, 0);
+}
+
+RNProxyReadTaskPtr createRNProxyReadTaskWithReaderPlansForGTest(const Context & context, size_t reader_count)
+{
     auto shared_context = std::make_shared<RNProxyReaderSharedContext>();
     shared_context->log = Logger::get("ColumnarSourceOpGTest");
     shared_context->context = &context;
     shared_context->start_ts = 1;
     auto column_defines = std::make_shared<DM::ColumnDefines>();
-    // Keep at least one column so SourceOp::setHeader receives a non-empty block header.
     column_defines->emplace_back(1, "gtest_col", DataTypeFactory::instance().get("Int64"));
     shared_context->column_defines = std::move(column_defines);
     shared_context->extra_table_id_index = MutSup::invalid_col_id;
     shared_context->logical_table_id = 1;
     shared_context->executor_id = "gtest_table_scan";
-    return std::make_shared<RNProxyReadTask>(std::vector<RNProxyReaderPlan>{}, shared_context);
+
+    std::vector<RNProxyReaderPlan> reader_plans;
+    reader_plans.reserve(reader_count);
+    for (size_t i = 0; i < reader_count; ++i)
+    {
+        reader_plans.push_back(RNProxyReaderPlan{
+            .region_id = static_cast<RegionID>(i + 1),
+            .region_ver = 1,
+            .region_conf_ver = 1,
+            .physical_table_ranges = {},
+        });
+    }
+    return std::make_shared<RNProxyReadTask>(std::move(reader_plans), shared_context);
+}
+
+void setReaderSlotStateForGTest(
+    const RNProxyReadTaskPtr & task,
+    size_t reader_index,
+    RNProxyReaderMaterializeState state)
+{
+    RUNTIME_CHECK(task != nullptr);
+    auto slot = task->getReaderSlot(reader_index);
+    std::lock_guard lock(slot->mutex);
+    slot->state = state;
+    if (state != RNProxyReaderMaterializeState::Ready)
+        slot->reader.reset();
+    slot->exception = nullptr;
 }
 #endif
 

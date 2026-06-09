@@ -91,9 +91,22 @@ public:
 
     BlockInputStreamPtr createInputStream(size_t reader_index);
 
+    BlockInputStreamPtr createInputStreamWithReader(size_t reader_index, ColumnarReaderPtr reader);
+
     ColumnarReaderPtr createColumnarReaderWithBackoff(size_t reader_index) const;
 
     ColumnarReaderPtr getOrCreateReader(size_t reader_index);
+
+    /// Non-blocking pipeline helpers (Phase 3). Stream path keeps using getOrCreateReader().
+    std::shared_ptr<RNProxyReaderSlot> getReaderSlot(size_t reader_index) const;
+
+    RNProxyReaderMaterializeState getReaderMaterializeState(size_t reader_index) const;
+
+    std::optional<ColumnarReaderPtr> tryTakeReadyReader(size_t reader_index);
+
+    ColumnarReaderPtr materializeReaderInIOThread(size_t reader_index);
+
+    void rethrowReaderSlotException(size_t reader_index) const;
 
     void prefetchReader(size_t reader_index);
 
@@ -171,6 +184,10 @@ public:
     static BlockInputStreamPtr create(const Options & options) { return std::make_shared<RNProxyInputStream>(options); }
 
 private:
+    friend class RNProxyReadTask;
+
+    void setPreloadedReader(ColumnarReaderPtr reader);
+
     void ensureReader();
 
     const Context & context;
@@ -194,6 +211,14 @@ private:
 #ifdef DBMS_PUBLIC_GTEST
 /// Build an RNProxyReadTask with zero readers for pipeline source operator unit tests.
 RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context);
+
+/// Build an RNProxyReadTask with `reader_count` placeholder reader plans for slot tests.
+RNProxyReadTaskPtr createRNProxyReadTaskWithReaderPlansForGTest(const Context & context, size_t reader_count);
+
+void setReaderSlotStateForGTest(
+    const RNProxyReadTaskPtr & task,
+    size_t reader_index,
+    RNProxyReaderMaterializeState state);
 
 /// Phase 2 unit test helper: mirrors addColumnarPipelineSourcesAndRecordProfile() in
 /// StorageDisaggregatedColumnar.cpp (RNProxySourceOp / NullSourceOp + table scan profiles).

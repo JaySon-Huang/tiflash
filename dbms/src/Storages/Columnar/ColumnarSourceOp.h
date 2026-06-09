@@ -23,6 +23,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context_fwd.h>
 #include <Operators/Operator.h>
+#include <Storages/Columnar/ColumnarReaderSlot.h>
 
 #include <memory>
 
@@ -40,7 +41,7 @@ using RNProxyReadTaskPtr = std::shared_ptr<RNProxyReadTask>;
 /// Scheduling model (see docs/design/2026-06-09-storage-disaggregated-columnar-pipeline.md):
 /// - readImpl(): lightweight state check on CPU task thread pool
 /// - executeIOImpl(): proxy FFI read + column deserialize on IO task thread pool
-/// - awaitImpl(): non-blocking wait path; Phase 3 will return WAIT_FOR_NOTIFY while reader materializes
+/// - awaitImpl(): non-blocking slot check; WAIT_FOR_NOTIFY while reader prefetches
 ///
 /// Stream-model reads still go through RNProxyInputStream in StorageDisaggregatedColumnar.cpp.
 class RNProxySourceOp : public SourceOp
@@ -74,6 +75,8 @@ protected:
     OperatorStatus executeIOImpl() override;
 
 private:
+    OperatorStatus awaitReaderSlotStatus();
+
     const Context & context;
     const LoggerPtr log;
     RNProxyReadTaskPtr task;

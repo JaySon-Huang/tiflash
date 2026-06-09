@@ -18,6 +18,7 @@
 #include <Storages/Columnar/ColumnarSourceOp.h>
 
 #include <Common/Stopwatch.h>
+#include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
 #include <Storages/StorageDisaggregatedColumnar.h>
 #include <DataStreams/AddExtraTableIDColumnTransformAction.h>
 
@@ -62,6 +63,29 @@ void RNProxySourceOp::operatePrefixImpl()
     LOG_INFO(log, "Begin reading proxy snapshots");
 }
 
+OperatorStatus RNProxySourceOp::awaitReaderSlotStatus()
+{
+    RUNTIME_CHECK(current_reader_idx.has_value());
+    const auto reader_index = current_reader_idx.value();
+    const auto state = task->getReaderMaterializeState(reader_index);
+    switch (state)
+    {
+    case RNProxyReaderMaterializeState::Ready:
+    case RNProxyReaderMaterializeState::NotStarted:
+        return OperatorStatus::IO_IN;
+    case RNProxyReaderMaterializeState::Creating:
+        setNotifyFuture(task->getReaderSlot(reader_index).get());
+        return OperatorStatus::WAIT_FOR_NOTIFY;
+    case RNProxyReaderMaterializeState::Failed:
+        task->rethrowReaderSlotException(reader_index);
+    case RNProxyReaderMaterializeState::Consumed:
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "proxy reader {} already consumed before pipeline read",
+            reader_index);
+    }
+}
+
 OperatorStatus RNProxySourceOp::readImpl(Block & block)
 {
     if (unlikely(done))
@@ -77,27 +101,18 @@ OperatorStatus RNProxySourceOp::readImpl(Block & block)
         return OperatorStatus::HAS_OUTPUT;
     }
 
-    return awaitImpl();
+    const auto status = awaitImpl();
+    if (status == OperatorStatus::HAS_OUTPUT && done)
+        block = {};
+    return status;
 }
 
 OperatorStatus RNProxySourceOp::awaitImpl()
 {
     if (unlikely(done || t_block.has_value()))
-    {
         return OperatorStatus::HAS_OUTPUT;
-    }
 
-    return OperatorStatus::IO_IN;
-}
-
-OperatorStatus RNProxySourceOp::executeIOImpl()
-{
-    if (unlikely(done || t_block.has_value()))
-    {
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (!current_input_stream)
+    if (!current_reader_idx.has_value())
     {
         auto next_reader_idx = task->tryAcquireReaderIndex();
         if (!next_reader_idx.has_value())
@@ -106,9 +121,42 @@ OperatorStatus RNProxySourceOp::executeIOImpl()
             return OperatorStatus::HAS_OUTPUT;
         }
         current_reader_idx = next_reader_idx;
-        current_input_stream = task->createInputStream(current_reader_idx.value());
-        ++total_streams;
+        // Prefetch the next reader asynchronously; current reader is materialized on IO thread or taken from slot.
         task->prefetchReader(current_reader_idx.value() + 1);
+    }
+
+    // Guard against missed wake-up: if prefetch finished before task registration, go to IO path directly.
+    const auto status = awaitReaderSlotStatus();
+    if (status == OperatorStatus::WAIT_FOR_NOTIFY
+        && task->getReaderMaterializeState(current_reader_idx.value()) != RNProxyReaderMaterializeState::Creating)
+    {
+        return OperatorStatus::IO_IN;
+    }
+    return status;
+}
+
+OperatorStatus RNProxySourceOp::executeIOImpl()
+{
+    if (unlikely(done || t_block.has_value()))
+        return OperatorStatus::HAS_OUTPUT;
+
+    RUNTIME_CHECK(current_reader_idx.has_value());
+    const auto reader_index = current_reader_idx.value();
+
+    if (!current_input_stream)
+    {
+        if (auto ready_reader = task->tryTakeReadyReader(reader_index); ready_reader.has_value())
+        {
+            current_input_stream
+                = task->createInputStreamWithReader(reader_index, std::move(ready_reader.value()));
+        }
+        else
+        {
+            current_input_stream = task->createInputStreamWithReader(
+                reader_index,
+                task->materializeReaderInIOThread(reader_index));
+        }
+        ++total_streams;
     }
 
     FilterPtr filter_ignored = nullptr;
@@ -120,14 +168,14 @@ OperatorStatus RNProxySourceOp::executeIOImpl()
         total_rows += block.rows();
         total_bytes += block.bytes();
         t_block.emplace(std::move(block));
-        return OperatorStatus::HAS_OUTPUT;
-    }
-    else
-    {
         current_input_stream.reset();
         current_reader_idx.reset();
-        return awaitImpl();
+        return OperatorStatus::HAS_OUTPUT;
     }
+
+    current_input_stream.reset();
+    current_reader_idx.reset();
+    return awaitImpl();
 }
 } // namespace DB
 #endif

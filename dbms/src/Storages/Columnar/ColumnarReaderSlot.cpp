@@ -25,5 +25,17 @@ RNProxyReaderSlot::~RNProxyReaderSlot()
     if (reader.has_value() && reader->inner.ptr != nullptr)
         RustGcHelper::instance().gcRustPtr(reader->inner.ptr, reader->inner.type);
 }
+
+void RNProxyReaderSlot::registerTask(TaskPtr && task)
+{
+    task->setNotifyType(NotifyType::WAIT_ON_TABLE_SCAN_READ);
+    pipe_cv.registerTask(std::move(task));
+}
+
+void RNProxyReaderSlot::notifyWaiters()
+{
+    cv.notify_all();
+    pipe_cv.notifyAll();
+}
 } // namespace DB
 #endif

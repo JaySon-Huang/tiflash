@@ -18,6 +18,7 @@
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Executor/PipelineExecutorContext.h>
 #include <Flash/Pipeline/Exec/PipelineExecBuilder.h>
+#include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
 #include <Operators/NullSourceOp.h>
 #include <Storages/Columnar/ColumnarReaderSlot.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
@@ -85,17 +86,42 @@ TEST_F(ColumnarSourceOpTest, EmptyReaderTaskEOF)
     source->operatePrefix();
 
     Block block;
-    // read() delegates to awaitImpl() and returns IO_IN when no reader is available yet.
-    EXPECT_EQ(source->read(block), OperatorStatus::IO_IN);
-
-    // executeIO() finds no reader index, marks source done, and returns HAS_OUTPUT.
-    EXPECT_EQ(source->executeIO(), OperatorStatus::HAS_OUTPUT);
-
-    // After EOF, source must still emit one empty block for downstream operators.
+    // Zero readers: awaitImpl marks source done and returns HAS_OUTPUT without blocking IO.
     EXPECT_EQ(source->read(block), OperatorStatus::HAS_OUTPUT);
     EXPECT_EQ(block.rows(), 0);
 
     source->operateSuffix();
+}
+
+TEST_F(ColumnarSourceOpTest, TryTakeReadyReaderReturnsNullWhenNotReady)
+{
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    EXPECT_FALSE(task->tryTakeReadyReader(0).has_value());
+    EXPECT_EQ(task->getReaderMaterializeState(0), RNProxyReaderMaterializeState::NotStarted);
+
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    EXPECT_FALSE(task->tryTakeReadyReader(0).has_value());
+    EXPECT_EQ(task->getReaderMaterializeState(0), RNProxyReaderMaterializeState::Creating);
+}
+
+TEST_F(ColumnarSourceOpTest, AwaitImplReturnsWaitForNotifyWhenReaderCreating)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_EQ(source->read(block), OperatorStatus::WAIT_FOR_NOTIFY);
+}
+
+TEST_F(ColumnarSourceOpTest, ReaderSlotIsNotifyFuture)
+{
+    auto slot = std::make_shared<RNProxyReaderSlot>();
+    EXPECT_NE(dynamic_cast<NotifyFuture *>(slot.get()), nullptr);
 }
 
 TEST_F(ColumnarSourceOpTest, EmptyReaderUsesNullSourceInPipelineBuilder)
