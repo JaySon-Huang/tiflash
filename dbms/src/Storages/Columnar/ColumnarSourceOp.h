@@ -32,6 +32,21 @@ namespace DB
 class RNProxyReadTask;
 using RNProxyReadTaskPtr = std::shared_ptr<RNProxyReadTask>;
 
+/// Phase 4 source states (docs/design/2026-06-09-storage-disaggregated-columnar-pipeline.md).
+enum class RNProxySourceState
+{
+    /// All reader indices consumed; readImpl emits one final empty block.
+    Done,
+    /// t_block is cached; readImpl emits without proxy FFI / await / IO.
+    ReadyBlock,
+    /// current_input_stream is attached; executeIOImpl reads at most one block.
+    Reading,
+    /// current_reader_idx is reserved while prefetch materializes the slot.
+    WaitReader,
+    /// Claim the next reader index from the shared task pool.
+    AcquireReader,
+};
+
 /// Pipeline source operator for disaggregated columnar read through proxy FFI.
 ///
 /// Each concurrent source pulls reader indices from a shared RNProxyReadTask pool,
@@ -39,9 +54,9 @@ using RNProxyReadTaskPtr = std::shared_ptr<RNProxyReadTask>;
 /// (generated column placeholder, cast, filter, projection).
 ///
 /// Scheduling model (see docs/design/2026-06-09-storage-disaggregated-columnar-pipeline.md):
-/// - readImpl(): lightweight state check on CPU task thread pool
-/// - executeIOImpl(): proxy FFI read + column deserialize on IO task thread pool
-/// - awaitImpl(): non-blocking slot check; WAIT_FOR_NOTIFY while reader prefetches
+/// - readImpl(): CPU path only; emits ReadyBlock / Done, otherwise schedules IO or notify
+/// - awaitImpl(): non-blocking slot check; never calls proxy FFI or allocates blocks
+/// - executeIOImpl(): attaches stream if needed, reads at most one block per call
 ///
 /// Stream-model reads still go through RNProxyInputStream in StorageDisaggregatedColumnar.cpp.
 class RNProxySourceOp : public SourceOp
@@ -63,6 +78,10 @@ public:
 
     IOProfileInfoPtr getIOProfileInfo() const override { return IOProfileInfo::createForLocal(profile_info_ptr); }
 
+#ifdef DBMS_PUBLIC_GTEST
+    RNProxySourceState getSourceStateForGTest() const { return source_state; }
+#endif
+
 protected:
     void operateSuffixImpl() override;
 
@@ -75,7 +94,16 @@ protected:
     OperatorStatus executeIOImpl() override;
 
 private:
-    OperatorStatus awaitReaderSlotStatus();
+    /// Lightweight scheduling on CPU / wait-reactor threads. No proxy FFI or Block allocation.
+    OperatorStatus scheduleNextAction();
+
+    OperatorStatus scheduleWaitReader();
+
+    OperatorStatus scheduleAcquireReader();
+
+    void releaseCurrentReader();
+
+    void attachInputStreamForCurrentReader();
 
     const Context & context;
     const LoggerPtr log;
@@ -84,13 +112,15 @@ private:
     size_t total_rows = 0;
     size_t total_streams = 0;
 
+    RNProxySourceState source_state = RNProxySourceState::AcquireReader;
+
     std::optional<size_t> current_reader_idx;
+    std::shared_ptr<RNProxyReaderSlot> current_reader_slot;
     BlockInputStreamPtr current_input_stream;
 
     // Block read from the current reader stream; emitted on the next readImpl() call.
     std::optional<Block> t_block = std::nullopt;
 
-    bool done = false;
     Stopwatch total_cost_watch{CLOCK_MONOTONIC_COARSE};
 
     double duration_read_sec = 0;

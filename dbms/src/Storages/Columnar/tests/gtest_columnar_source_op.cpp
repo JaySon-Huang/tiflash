@@ -33,6 +33,13 @@ class ColumnarSourceOpTest : public ::testing::Test
 protected:
     void SetUp() override { context = TiFlashTestEnv::getContext(); }
 
+    void TearDown() override
+    {
+        // Tests that return WAIT_FOR_NOTIFY register a thread-local notify future
+        // without going through the full pipeline executor cleanup path.
+        clearNotifyFuture();
+    }
+
     Block buildNullSourceHeaderFromTask(const RNProxyReadTaskPtr & task) const
     {
         return AddExtraTableIDColumnTransformAction::buildHeader(
@@ -86,9 +93,13 @@ TEST_F(ColumnarSourceOpTest, EmptyReaderTaskEOF)
     source->operatePrefix();
 
     Block block;
-    // Zero readers: awaitImpl marks source done and returns HAS_OUTPUT without blocking IO.
+    // Zero readers: AcquireReader -> Done on CPU path; no proxy FFI or blocking IO.
     EXPECT_EQ(source->read(block), OperatorStatus::HAS_OUTPUT);
     EXPECT_EQ(block.rows(), 0);
+
+    auto * proxy_source = dynamic_cast<RNProxySourceOp *>(source.get());
+    ASSERT_NE(proxy_source, nullptr);
+    EXPECT_EQ(proxy_source->getSourceStateForGTest(), RNProxySourceState::Done);
 
     source->operateSuffix();
 }
@@ -116,6 +127,67 @@ TEST_F(ColumnarSourceOpTest, AwaitImplReturnsWaitForNotifyWhenReaderCreating)
 
     Block block;
     EXPECT_EQ(source->read(block), OperatorStatus::WAIT_FOR_NOTIFY);
+
+    auto * proxy_source = dynamic_cast<RNProxySourceOp *>(source.get());
+    ASSERT_NE(proxy_source, nullptr);
+    EXPECT_EQ(proxy_source->getSourceStateForGTest(), RNProxySourceState::WaitReader);
+}
+
+TEST_F(ColumnarSourceOpTest, NotStartedReaderSchedulesIOIn)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_EQ(source->read(block), OperatorStatus::IO_IN);
+
+    auto * proxy_source = dynamic_cast<RNProxySourceOp *>(source.get());
+    ASSERT_NE(proxy_source, nullptr);
+    EXPECT_EQ(proxy_source->getSourceStateForGTest(), RNProxySourceState::Reading);
+}
+
+TEST_F(ColumnarSourceOpTest, AwaitImplDoesNotBlockWhenReaderCreating)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    // awaitImpl() is a non-blocking slot check; it must not call proxy FFI.
+    // Do not call read() first: read() already registers the notify future.
+    EXPECT_EQ(source->await(), OperatorStatus::WAIT_FOR_NOTIFY);
+
+    auto * proxy_source = dynamic_cast<RNProxySourceOp *>(source.get());
+    ASSERT_NE(proxy_source, nullptr);
+    EXPECT_EQ(proxy_source->getSourceStateForGTest(), RNProxySourceState::WaitReader);
+}
+
+TEST_F(ColumnarSourceOpTest, ReadySlotAfterWaitTransitionsToReading)
+{
+    PipelineExecutorContext exec_context;
+    auto task = createRNProxyReadTaskWithReaderPlansForGTest(*context, 1);
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Creating);
+    auto source = RNProxySourceOp::create({
+        .exec_context = exec_context,
+        .task = task,
+    });
+
+    Block block;
+    EXPECT_EQ(source->read(block), OperatorStatus::WAIT_FOR_NOTIFY);
+
+    setReaderSlotStateForGTest(task, 0, RNProxyReaderMaterializeState::Ready);
+    EXPECT_EQ(source->await(), OperatorStatus::IO_IN);
+
+    auto * proxy_source = dynamic_cast<RNProxySourceOp *>(source.get());
+    ASSERT_NE(proxy_source, nullptr);
+    EXPECT_EQ(proxy_source->getSourceStateForGTest(), RNProxySourceState::Reading);
 }
 
 TEST_F(ColumnarSourceOpTest, ReaderSlotIsNotifyFuture)

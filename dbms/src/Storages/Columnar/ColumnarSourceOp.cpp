@@ -63,18 +63,50 @@ void RNProxySourceOp::operatePrefixImpl()
     LOG_INFO(log, "Begin reading proxy snapshots");
 }
 
-OperatorStatus RNProxySourceOp::awaitReaderSlotStatus()
+void RNProxySourceOp::releaseCurrentReader()
 {
+    current_input_stream.reset();
+    current_reader_slot.reset();
+    current_reader_idx.reset();
+}
+
+void RNProxySourceOp::attachInputStreamForCurrentReader()
+{
+    RUNTIME_CHECK(source_state == RNProxySourceState::Reading);
     RUNTIME_CHECK(current_reader_idx.has_value());
+    RUNTIME_CHECK(!current_input_stream);
+
     const auto reader_index = current_reader_idx.value();
-    const auto state = task->getReaderMaterializeState(reader_index);
-    switch (state)
+    if (auto ready_reader = task->tryTakeReadyReader(reader_index); ready_reader.has_value())
+    {
+        current_input_stream
+            = task->createInputStreamWithReader(reader_index, std::move(ready_reader.value()));
+    }
+    else
+    {
+        current_input_stream = task->createInputStreamWithReader(
+            reader_index,
+            task->materializeReaderInIOThread(reader_index));
+    }
+    ++total_streams;
+}
+
+OperatorStatus RNProxySourceOp::scheduleWaitReader()
+{
+    RUNTIME_CHECK(source_state == RNProxySourceState::WaitReader);
+    RUNTIME_CHECK(current_reader_idx.has_value());
+    RUNTIME_CHECK(current_reader_slot != nullptr);
+
+    const auto reader_index = current_reader_idx.value();
+    const auto slot_state = task->getReaderMaterializeState(reader_index);
+    switch (slot_state)
     {
     case RNProxyReaderMaterializeState::Ready:
     case RNProxyReaderMaterializeState::NotStarted:
+        source_state = RNProxySourceState::Reading;
         return OperatorStatus::IO_IN;
     case RNProxyReaderMaterializeState::Creating:
-        setNotifyFuture(task->getReaderSlot(reader_index).get());
+        setNotifyFuture(current_reader_slot.get());
         return OperatorStatus::WAIT_FOR_NOTIFY;
     case RNProxyReaderMaterializeState::Failed:
         task->rethrowReaderSlotException(reader_index);
@@ -86,96 +118,122 @@ OperatorStatus RNProxySourceOp::awaitReaderSlotStatus()
     }
 }
 
+OperatorStatus RNProxySourceOp::scheduleAcquireReader()
+{
+    RUNTIME_CHECK(source_state == RNProxySourceState::AcquireReader);
+    RUNTIME_CHECK(!current_reader_idx.has_value());
+
+    auto next_reader_idx = task->tryAcquireReaderIndex();
+    if (!next_reader_idx.has_value())
+    {
+        source_state = RNProxySourceState::Done;
+        return OperatorStatus::HAS_OUTPUT;
+    }
+
+    current_reader_idx = next_reader_idx;
+    current_reader_slot = task->getReaderSlot(current_reader_idx.value());
+    // Prefetch the next reader asynchronously; the current one is materialized on the IO thread.
+    task->prefetchReader(current_reader_idx.value() + 1);
+
+    const auto slot_state = task->getReaderMaterializeState(current_reader_idx.value());
+    switch (slot_state)
+    {
+    case RNProxyReaderMaterializeState::Ready:
+    case RNProxyReaderMaterializeState::NotStarted:
+        source_state = RNProxySourceState::Reading;
+        return OperatorStatus::IO_IN;
+    case RNProxyReaderMaterializeState::Creating:
+        source_state = RNProxySourceState::WaitReader;
+        return scheduleWaitReader();
+    case RNProxyReaderMaterializeState::Failed:
+        task->rethrowReaderSlotException(current_reader_idx.value());
+    case RNProxyReaderMaterializeState::Consumed:
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "proxy reader {} already consumed before pipeline read",
+            current_reader_idx.value());
+    }
+}
+
+OperatorStatus RNProxySourceOp::scheduleNextAction()
+{
+    switch (source_state)
+    {
+    case RNProxySourceState::Done:
+    case RNProxySourceState::ReadyBlock:
+        return OperatorStatus::HAS_OUTPUT;
+    case RNProxySourceState::Reading:
+        return OperatorStatus::IO_IN;
+    case RNProxySourceState::WaitReader:
+        return scheduleWaitReader();
+    case RNProxySourceState::AcquireReader:
+        return scheduleAcquireReader();
+    }
+}
+
 OperatorStatus RNProxySourceOp::readImpl(Block & block)
 {
-    if (unlikely(done))
+    switch (source_state)
     {
+    case RNProxySourceState::Done:
         block = {};
         return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (t_block.has_value())
+    case RNProxySourceState::ReadyBlock:
     {
+        RUNTIME_CHECK(t_block.has_value());
         std::swap(block, t_block.value());
         t_block.reset();
+        source_state = RNProxySourceState::AcquireReader;
         return OperatorStatus::HAS_OUTPUT;
     }
-
-    const auto status = awaitImpl();
-    if (status == OperatorStatus::HAS_OUTPUT && done)
-        block = {};
-    return status;
+    case RNProxySourceState::Reading:
+    case RNProxySourceState::WaitReader:
+    case RNProxySourceState::AcquireReader:
+    {
+        // CPU path only: schedule IO / notify without proxy FFI.
+        const auto status = scheduleNextAction();
+        if (source_state == RNProxySourceState::Done)
+            block = {};
+        return status;
+    }
+    }
 }
 
 OperatorStatus RNProxySourceOp::awaitImpl()
 {
-    if (unlikely(done || t_block.has_value()))
+    // Non-blocking state check only. RNProxy source does not use OperatorStatus::WAITING.
+    if (source_state == RNProxySourceState::Done || source_state == RNProxySourceState::ReadyBlock)
         return OperatorStatus::HAS_OUTPUT;
-
-    if (!current_reader_idx.has_value())
-    {
-        auto next_reader_idx = task->tryAcquireReaderIndex();
-        if (!next_reader_idx.has_value())
-        {
-            done = true;
-            return OperatorStatus::HAS_OUTPUT;
-        }
-        current_reader_idx = next_reader_idx;
-        // Prefetch the next reader asynchronously; current reader is materialized on IO thread or taken from slot.
-        task->prefetchReader(current_reader_idx.value() + 1);
-    }
-
-    // Guard against missed wake-up: if prefetch finished before task registration, go to IO path directly.
-    const auto status = awaitReaderSlotStatus();
-    if (status == OperatorStatus::WAIT_FOR_NOTIFY
-        && task->getReaderMaterializeState(current_reader_idx.value()) != RNProxyReaderMaterializeState::Creating)
-    {
-        return OperatorStatus::IO_IN;
-    }
-    return status;
+    return scheduleNextAction();
 }
 
 OperatorStatus RNProxySourceOp::executeIOImpl()
 {
-    if (unlikely(done || t_block.has_value()))
-        return OperatorStatus::HAS_OUTPUT;
-
+    RUNTIME_CHECK(source_state == RNProxySourceState::Reading);
     RUNTIME_CHECK(current_reader_idx.has_value());
-    const auto reader_index = current_reader_idx.value();
 
     if (!current_input_stream)
-    {
-        if (auto ready_reader = task->tryTakeReadyReader(reader_index); ready_reader.has_value())
-        {
-            current_input_stream
-                = task->createInputStreamWithReader(reader_index, std::move(ready_reader.value()));
-        }
-        else
-        {
-            current_input_stream = task->createInputStreamWithReader(
-                reader_index,
-                task->materializeReaderInIOThread(reader_index));
-        }
-        ++total_streams;
-    }
+        attachInputStreamForCurrentReader();
 
     FilterPtr filter_ignored = nullptr;
     Stopwatch w{CLOCK_MONOTONIC_COARSE};
     Block block = current_input_stream->read(filter_ignored, false);
     duration_read_sec += w.elapsedSeconds();
+
+    // At most one block per IO task. Yield back to CPU with NEED_INPUT when the reader is exhausted.
     if likely (block && block.rows() > 0)
     {
         total_rows += block.rows();
         total_bytes += block.bytes();
         t_block.emplace(std::move(block));
-        current_input_stream.reset();
-        current_reader_idx.reset();
+        source_state = RNProxySourceState::ReadyBlock;
+        releaseCurrentReader();
         return OperatorStatus::HAS_OUTPUT;
     }
 
-    current_input_stream.reset();
-    current_reader_idx.reset();
-    return awaitImpl();
+    releaseCurrentReader();
+    source_state = RNProxySourceState::AcquireReader;
+    return OperatorStatus::NEED_INPUT;
 }
 } // namespace DB
 #endif
