@@ -44,6 +44,8 @@
 #include <Storages/KVStore/TiKVHelpers/TiKVRecordFormat.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDisaggregated.h>
+// Pipeline source operator lives in Columnar/ColumnarSourceOp.* (Phase 1 split).
+#include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/StorageDisaggregatedColumnar.h>
 #include <Storages/StorageDisaggregatedHelpers.h>
 #include <TiDB/Decode/TypeMapping.h>
@@ -731,12 +733,6 @@ ColumnarReaderPtr createProxyColumnarReader(
 }
 
 // RNProxyReadTask
-RNProxyReaderSlot::~RNProxyReaderSlot()
-{
-    if (reader.has_value() && reader->inner.ptr != nullptr)
-        RustGcHelper::instance().gcRustPtr(reader->inner.ptr, reader->inner.type);
-}
-
 RNProxyReadTask::RNProxyReadTask(
     std::vector<RNProxyReaderPlan> reader_plans_,
     std::shared_ptr<RNProxyReaderSharedContext> shared_reader_context_)
@@ -1301,102 +1297,23 @@ Block RNProxyInputStream::readImpl([[maybe_unused]] FilterPtr & res_filter, [[ma
     return block;
 }
 
-// RNProxySourceOp
-void RNProxySourceOp::operateSuffixImpl()
+#ifdef DBMS_PUBLIC_GTEST
+RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context)
 {
-    UNUSED(context);
-    const double total_cost_sec = total_cost_watch.elapsedSeconds();
-    const UInt64 rows_per_sec
-        = total_cost_sec > 0 ? static_cast<UInt64>(static_cast<double>(total_rows) / total_cost_sec) : 0;
-    const UInt64 bytes_per_sec
-        = total_cost_sec > 0 ? static_cast<UInt64>(static_cast<double>(total_bytes) / total_cost_sec) : 0;
-    LOG_INFO(
-        log,
-        "Finished reading proxy snapshots, task_pool_worker_total_cost={:.3f}s claimed_streams={} rows={} "
-        "rows_per_sec={} "
-        "bytes={} bytes_per_sec={} read_cost={:.3f}s",
-        total_cost_sec,
-        total_streams,
-        total_rows,
-        rows_per_sec,
-        total_bytes,
-        bytes_per_sec,
-        duration_read_sec);
+    auto shared_context = std::make_shared<RNProxyReaderSharedContext>();
+    shared_context->log = Logger::get("ColumnarSourceOpGTest");
+    shared_context->context = &context;
+    shared_context->start_ts = 1;
+    auto column_defines = std::make_shared<DM::ColumnDefines>();
+    // Keep at least one column so SourceOp::setHeader receives a non-empty block header.
+    column_defines->emplace_back(1, "gtest_col", DataTypeFactory::instance().get("Int64"));
+    shared_context->column_defines = std::move(column_defines);
+    shared_context->extra_table_id_index = MutSup::invalid_col_id;
+    shared_context->logical_table_id = 1;
+    shared_context->executor_id = "gtest_table_scan";
+    return std::make_shared<RNProxyReadTask>(std::vector<RNProxyReaderPlan>{}, shared_context);
 }
-
-void RNProxySourceOp::operatePrefixImpl()
-{
-    total_cost_watch.restart();
-    LOG_INFO(log, "Begin reading proxy snapshots");
-}
-
-OperatorStatus RNProxySourceOp::readImpl(Block & block)
-{
-    if (unlikely(done))
-    {
-        block = {};
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (t_block.has_value())
-    {
-        std::swap(block, t_block.value());
-        t_block.reset();
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    return awaitImpl();
-}
-
-OperatorStatus RNProxySourceOp::awaitImpl()
-{
-    if (unlikely(done || t_block.has_value()))
-    {
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    return OperatorStatus::IO_IN;
-}
-
-OperatorStatus RNProxySourceOp::executeIOImpl()
-{
-    if (unlikely(done || t_block.has_value()))
-    {
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (!current_input_stream)
-    {
-        auto next_reader_idx = task->tryAcquireReaderIndex();
-        if (!next_reader_idx.has_value())
-        {
-            done = true;
-            return OperatorStatus::HAS_OUTPUT;
-        }
-        current_reader_idx = next_reader_idx;
-        current_input_stream = task->createInputStream(current_reader_idx.value());
-        ++total_streams;
-        task->prefetchReader(current_reader_idx.value() + 1);
-    }
-
-    FilterPtr filter_ignored = nullptr;
-    Stopwatch w{CLOCK_MONOTONIC_COARSE};
-    Block block = current_input_stream->read(filter_ignored, false);
-    duration_read_sec += w.elapsedSeconds();
-    if likely (block && block.rows() > 0)
-    {
-        total_rows += block.rows();
-        total_bytes += block.bytes();
-        t_block.emplace(std::move(block));
-        return OperatorStatus::HAS_OUTPUT;
-    }
-    else
-    {
-        current_input_stream.reset();
-        current_reader_idx.reset();
-        return awaitImpl();
-    }
-}
+#endif
 
 } // namespace DB
 #endif

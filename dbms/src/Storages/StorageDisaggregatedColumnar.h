@@ -17,7 +17,6 @@
 #include <Common/config.h> // for ENABLE_NEXT_GEN_COLUMNAR
 #if ENABLE_NEXT_GEN_COLUMNAR
 #include <Common/Logger.h>
-#include <Common/Stopwatch.h>
 #include <DataStreams/AddExtraTableIDColumnTransformAction.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Flash/Coprocessor/DAGExpressionAnalyzer.h>
@@ -26,7 +25,7 @@
 #include <Flash/Mpp/MPPTaskId.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SharedContexts/Disagg.h>
-#include <Operators/Operator.h>
+#include <Storages/Columnar/ColumnarReaderSlot.h>
 #include <Storages/IStorage.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 #pragma GCC diagnostic push
@@ -36,9 +35,6 @@
 #include <tipb/executor.pb.h>
 
 #include <atomic>
-#include <condition_variable>
-#include <exception>
-#include <mutex>
 #include <optional>
 #include <string_view>
 #pragma GCC diagnostic pop
@@ -62,26 +58,6 @@ struct RNProxyReaderPlan
     RegionVersion region_ver;
     UInt64 region_conf_ver;
     std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>> physical_table_ranges;
-};
-
-enum class RNProxyReaderMaterializeState
-{
-    NotStarted,
-    Creating,
-    Ready,
-    Failed,
-    Consumed,
-};
-
-struct RNProxyReaderSlot
-{
-    ~RNProxyReaderSlot();
-
-    std::mutex mutex;
-    std::condition_variable cv;
-    RNProxyReaderMaterializeState state = RNProxyReaderMaterializeState::NotStarted;
-    std::optional<ColumnarReaderPtr> reader;
-    std::exception_ptr exception;
 };
 
 class RNProxyReadTask;
@@ -215,66 +191,9 @@ private:
     UInt64 total_bytes = 0;
 };
 
-class RNProxySourceOp : public SourceOp
-{
-    static constexpr auto NAME = "RNProxy";
-
-public:
-    struct Options
-    {
-        PipelineExecutorContext & exec_context;
-        RNProxyReadTaskPtr task;
-    };
-
-    explicit RNProxySourceOp(const Options & options)
-        : SourceOp(options.exec_context, options.task->getLog()->identifier())
-        , context(options.task->getContext())
-        , log(options.task->getLog())
-        , task(options.task)
-    {
-        setHeader(AddExtraTableIDColumnTransformAction::buildHeader(
-            options.task->getColumnsToRead(),
-            options.task->getExtraTableIDIndex()));
-    }
-
-    static SourceOpPtr create(const Options & options) { return std::make_unique<RNProxySourceOp>(options); }
-
-    String getName() const override { return NAME; }
-
-    IOProfileInfoPtr getIOProfileInfo() const override { return IOProfileInfo::createForLocal(profile_info_ptr); }
-
-protected:
-    void operateSuffixImpl() override;
-
-    void operatePrefixImpl() override;
-
-    OperatorStatus readImpl(Block & block) override;
-
-    OperatorStatus awaitImpl() override;
-
-    OperatorStatus executeIOImpl() override;
-
-private:
-    const Context & context;
-    const LoggerPtr log;
-    RNProxyReadTaskPtr task;
-    UInt64 total_bytes = 0;
-    size_t total_rows = 0;
-    size_t total_streams = 0;
-
-    std::optional<size_t> current_reader_idx;
-    BlockInputStreamPtr current_input_stream;
-
-    // Temporarily store the block read from current_seg_task->stream and pass it to downstream operators in readImpl.
-    std::optional<Block> t_block = std::nullopt;
-
-    bool done = false;
-    // Count the time spent waiting for segment tasks to be ready.
-    //double duration_wait_ready_task_sec = 0;
-    Stopwatch total_cost_watch{CLOCK_MONOTONIC_COARSE};
-
-    // Count the time consumed by reading blocks in the stream of segment tasks.
-    double duration_read_sec = 0;
-};
+#ifdef DBMS_PUBLIC_GTEST
+/// Build an RNProxyReadTask with zero readers for pipeline source operator unit tests.
+RNProxyReadTaskPtr createEmptyRNProxyReadTaskForGTest(const Context & context);
+#endif
 } // namespace DB
 #endif
