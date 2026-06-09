@@ -141,7 +141,8 @@ namespace DB
     M(force_s3_random_access_file_read_fail)                 \
     M(force_s3_random_access_file_seek_fail)                 \
     M(force_s3_random_access_file_seek_chunked)              \
-    M(force_release_snap_meet_null_storage)
+    M(force_release_snap_meet_null_storage)                    \
+    M(force_return_columnar_region_bucket_keys)
 
 #define APPLY_FOR_PAUSEABLE_FAILPOINTS_ONCE(M)    \
     M(pause_with_alter_locks_acquired)            \

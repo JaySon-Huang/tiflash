@@ -38,6 +38,7 @@
 #include <IO/IOThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
+#include <Storages/Columnar/RegionReaderPlan.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
 #include <Storages/KVStore/TMTContext.h>
@@ -163,94 +164,7 @@ size_t getRNProxySourceNum(size_t num_streams, size_t reader_count)
 
 namespace
 {
-using ProxyPhysicalTableRanges = std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>>;
-using BucketSplitUnit = std::pair<TableID, pingcap::coprocessor::KeyRange>;
-
 void normalizeTimestampCompareDateTimeLiteralToUTC(tipb::Expr & expr, const TimezoneInfo & timezone_info);
-
-struct BucketSplitResult
-{
-    bool has_bucket_split = false;
-    std::vector<BucketSplitUnit> units;
-};
-
-struct RegionReaderPlan
-{
-    RegionID region_id;
-    pingcap::kv::RegionVerID region_ver_id;
-    ProxyPhysicalTableRanges physical_table_ranges;
-    std::vector<BucketSplitUnit> bucket_units;
-};
-
-bool isBucketBoundaryInsideRange(const String & bucket_key, const pingcap::coprocessor::KeyRange & range)
-{
-    if (bucket_key.empty())
-        return false;
-    if (!range.start_key.empty() && bucket_key <= range.start_key)
-        return false;
-    if (!range.end_key.empty() && bucket_key >= range.end_key)
-        return false;
-    return true;
-}
-
-BucketSplitResult splitRangesByBucketKeys(
-    const ProxyPhysicalTableRanges & physical_table_ranges,
-    const std::vector<String> & bucket_keys)
-{
-    BucketSplitResult result;
-    if (bucket_keys.size() <= 2)
-        return result;
-
-    for (const auto & [table_id, ranges] : physical_table_ranges)
-    {
-        for (const auto & range : ranges)
-        {
-            String current_start = range.start_key;
-            bool current_range_split = false;
-            for (const auto & bucket_key : bucket_keys)
-            {
-                const auto decoded_bucket_key
-                    = RecordKVFormat::decodeTiKVKey(TiKVKey(bucket_key.data(), bucket_key.size()));
-                String normalized_bucket_key(decoded_bucket_key.data(), decoded_bucket_key.size());
-                if (!isBucketBoundaryInsideRange(normalized_bucket_key, range))
-                    continue;
-                result.units.emplace_back(
-                    table_id,
-                    pingcap::coprocessor::KeyRange{current_start, normalized_bucket_key});
-                current_start = std::move(normalized_bucket_key);
-                current_range_split = true;
-            }
-            if (!range.end_key.empty() && current_start >= range.end_key)
-                continue;
-            result.units.emplace_back(table_id, pingcap::coprocessor::KeyRange{current_start, range.end_key});
-            result.has_bucket_split = result.has_bucket_split || current_range_split;
-        }
-    }
-    return result;
-}
-
-std::vector<String> getRegionBucketKeysFromProxy(const Context & context, RegionID region_id, UInt64 region_ver)
-{
-    const Context & global_ctx = context.getGlobalContext();
-    const TiFlashRaftProxyHelper * proxy_helper = global_ctx.getSharedContextDisagg()->getColumnarProxyHelper();
-    if (proxy_helper == nullptr || proxy_helper->cloud_storage_engine_interfaces.fn_get_region_bucket_keys == nullptr)
-        return {};
-
-    RustStrWithViewVec bucket_keys = proxy_helper->cloud_storage_engine_interfaces.fn_get_region_bucket_keys(
-        region_id,
-        region_ver,
-        proxy_helper->proxy_ptr);
-    SCOPE_EXIT({
-        if (bucket_keys.inner.ptr != nullptr)
-            RustGcHelper::instance().gcRustPtr(bucket_keys.inner.ptr, bucket_keys.inner.type);
-    });
-
-    std::vector<String> res;
-    res.reserve(static_cast<size_t>(bucket_keys.len));
-    for (size_t i = 0; i < bucket_keys.len; ++i)
-        res.emplace_back(bucket_keys.buffs[i].data, bucket_keys.buffs[i].len);
-    return res;
-}
 
 std::vector<std::tuple<UInt64, String, DataTypePtr>> genGeneratedColumnInfosForDisaggregatedRead(
     const TiDBTableScan & table_scan)
@@ -1091,10 +1005,16 @@ std::vector<RNProxyReadTaskPtr> RNProxyReadTask::buildProxyReadTask(
     auto shared_reader_context = buildProxyReaderSharedContext(log, context, start_ts, table_scan, filter_conditions);
 
     std::vector<RNProxyReadTaskPtr> tasks;
-    // Collect all regions in the table scan.
-    std::unordered_map<uint64_t, std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>>>
+
+
+    /// Collect all regions in the table scan.
+    // {
+    //   RegionID1 => [(physical_table_id, key_ranges), ...]
+    //   RegionID2 => [(physical_table_id, key_ranges), ...]
+    // }
+    std::unordered_map<RegionID, std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>>>
         all_remote_regions_by_region;
-    std::unordered_map<uint64_t, pingcap::kv::RegionVerID> region_ver_ids;
+    std::unordered_map<RegionID, pingcap::kv::RegionVerID> region_ver_ids;
 
     std::vector<UInt64> physical_table_ids;
     std::vector<pingcap::coprocessor::KeyRanges> ranges_for_each_physical_table;
@@ -1142,79 +1062,31 @@ std::vector<RNProxyReadTaskPtr> RNProxyReadTask::buildProxyReadTask(
                 region.toString());
         }
     }
-    unsigned region_num = all_remote_regions_by_region.size();
-    unsigned physical_table_num = physical_table_ids.size();
+
+    /// Build RegionReaderPlan and try to increase reader parallelism by bucket split if possible.
+    const size_t region_num = all_remote_regions_by_region.size();
     const bool enable_bucket_parallel = !table_scan.keepOrder() && num_streams > region_num;
-    std::vector<RegionReaderPlan> region_reader_plans;
-    region_reader_plans.reserve(region_num);
-    size_t total_max_reader_num = region_num;
-    size_t total_split_bucket_num = 0;
-    for (const auto & [region_id, physical_table_ranges] : all_remote_regions_by_region)
-    {
-        RegionReaderPlan plan{
-            .region_id = region_id,
-            .region_ver_id = region_ver_ids[region_id],
-            .physical_table_ranges = physical_table_ranges,
-        };
-        if (enable_bucket_parallel)
-        {
-            auto bucket_keys = getRegionBucketKeysFromProxy(context, region_id, plan.region_ver_id.ver);
-            auto split_result = splitRangesByBucketKeys(physical_table_ranges, bucket_keys);
-            if (split_result.has_bucket_split && split_result.units.size() > 1)
-            {
-                total_max_reader_num += split_result.units.size() - 1;
-                total_split_bucket_num += split_result.units.size();
-                plan.bucket_units = std::move(split_result.units);
-            }
-        }
-        region_reader_plans.emplace_back(std::move(plan));
-    }
-    const size_t planned_reader_num = total_max_reader_num;
-    if (enable_bucket_parallel)
-    {
-        LOG_INFO(log, "bucket parallel split bucket count={}", total_split_bucket_num);
-    }
+    const auto build_result = buildColumnarRegionReaderPlans(
+        context,
+        all_remote_regions_by_region,
+        region_ver_ids,
+        enable_bucket_parallel);
+    const size_t planned_reader_num = build_result.planned_reader_num;
+    const size_t total_split_bucket_num = build_result.total_split_bucket_num;
     LOG_INFO(
         log,
-        "region_num={}, table_num={}, num_streams={}, keep_order={}, bucket_parallel={}, planned_reader_num={}, "
-        "max_reader_num={}",
+        "read task built, region_num={}, table_num={}, num_streams={}, keep_order={}, enable_bucket_parallel={}, "
+        "total_split_bucket_num={}, planned_reader_num={}, max_reader_num={}",
         region_num,
-        physical_table_num,
+        physical_table_ids.size(),
         num_streams,
         table_scan.keepOrder(),
         enable_bucket_parallel,
+        total_split_bucket_num,
         planned_reader_num,
-        total_max_reader_num);
+        planned_reader_num);
 
-    std::vector<RNProxyReaderPlan> all_reader_plans;
-    all_reader_plans.reserve(planned_reader_num);
-
-    for (size_t i = 0; i < region_reader_plans.size(); ++i)
-    {
-        const auto & plan = region_reader_plans[i];
-        if (plan.bucket_units.empty())
-        {
-            all_reader_plans.push_back(RNProxyReaderPlan{
-                .region_id = plan.region_id,
-                .region_ver = plan.region_ver_id.ver,
-                .region_conf_ver = plan.region_ver_id.conf_ver,
-                .physical_table_ranges = plan.physical_table_ranges,
-            });
-        }
-        else
-        {
-            for (const auto & [table_id, range] : plan.bucket_units)
-            {
-                all_reader_plans.push_back(RNProxyReaderPlan{
-                    .region_id = plan.region_id,
-                    .region_ver = plan.region_ver_id.ver,
-                    .region_conf_ver = plan.region_ver_id.conf_ver,
-                    .physical_table_ranges
-                    = ProxyPhysicalTableRanges{std::make_tuple(table_id, pingcap::coprocessor::KeyRanges{range})},
-                });
-            }
-        }
-    }
+    auto all_reader_plans = flattenColumnarRegionReaderPlans(build_result.region_reader_plans);
 
     if (all_reader_plans.empty())
         return tasks;

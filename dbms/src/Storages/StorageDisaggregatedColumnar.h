@@ -28,6 +28,7 @@
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Operators/Operator.h>
 #include <Storages/IStorage.h>
+#include <Storages/Columnar/RNProxyReaderPlan.h>
 #include <Storages/KVStore/FFI/ProxyFFI.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -55,14 +56,6 @@ using RSOperatorPtr = std::shared_ptr<RSOperator>;
 } // namespace DM
 
 struct RNProxyReaderSharedContext;
-
-struct RNProxyReaderPlan
-{
-    RegionID region_id;
-    RegionVersion region_ver;
-    UInt64 region_conf_ver;
-    std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>> physical_table_ranges;
-};
 
 enum class RNProxyReaderMaterializeState
 {
