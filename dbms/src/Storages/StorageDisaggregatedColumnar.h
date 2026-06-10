@@ -159,16 +159,16 @@ class RNProxyInputStream : public IProfilingBlockInputStream
     static constexpr auto NAME = "RNProxy";
 
 public:
-    ~RNProxyInputStream();
+    ~RNProxyInputStream() override;
 
-    String getName() const { return NAME; }
-    Block getHeader() const { return header; }
+    String getName() const override { return NAME; }
+    Block getHeader() const override { return header; }
     void setHeader(const Block & header) { this->header = header; }
-    Block read(FilterPtr & res_filter, bool return_filter);
+    Block read(FilterPtr & res_filter, bool return_filter) override;
 
 protected:
-    Block readImpl();
-    Block readImpl(FilterPtr & res_filter, bool return_filter);
+    Block readImpl() override;
+    Block readImpl(FilterPtr & res_filter, bool return_filter) override;
 
 public:
     struct Options
