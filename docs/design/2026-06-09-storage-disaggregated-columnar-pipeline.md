@@ -11,7 +11,7 @@
 1. 当前 TiFlash 中 `ExchangeReceiver` 是如何接入 pipeline executor 的。
 2. 如果要把 `StorageDisaggregated::readThroughColumnar` 路径完整接入 pipeline 执行模型，应如何组织 source operator、异步等待、IO 执行、profile 统计和验证。
 
-当前代码中已经存在 `StorageDisaggregated::readThroughColumnar(PipelineExecutorContext &, PipelineExecGroupBuilder &, ...)` 和 `RNColumnarSourceOp`，说明 columnar 路径已经有基础 pipeline 接入。但这个接入主要把 columnar reader 读取放到 pipeline IO 线程池中，reader materialize 阶段仍可能通过 `std::condition_variable` 阻塞 IO 线程，且 table scan 的 inbound IO profile / source profile 归档不如 TiFlash-write disaggregated 路径完整。本文建议保留当前入口形态，补齐等待通知、profile、空读路径和取消语义，使其更符合 pipeline model 的调度边界。
+当前代码中已经存在 `StorageDisaggregated::readThroughColumnar(PipelineExecutorContext &, PipelineExecGroupBuilder &, ...)` 和 `RNColumnarSourceOp`，说明 columnar 路径已经有基础 pipeline 接入。经过后续实测，reader materialize 不能直接套用 `PipeConditionVariable` + `WAIT_FOR_NOTIFY`：detached prefetch thread 是一次性 producer，存在 lost wakeup race。因此当前 pipeline 路径的安全边界应是：reader materialize 和 block read 继续通过 `IO_IN` 进入 IO task thread pool；只有具备可重入唤醒语义的队列等待，例如 `SharedQueue` 或 ExchangeReceiver queue，才使用 `WAIT_FOR_NOTIFY`。本文保留当前入口形态，补齐 profile、空读、取消和后续 producer-consumer 解耦方向。
 
 ## Context
 
@@ -24,7 +24,7 @@ Pipeline model 将物理执行计划按 pipeline breaker 切成 pipeline DAG，�
 | `HAS_OUTPUT` / `NEED_INPUT` | CPU task thread pool 继续执行 | operator 可继续推进 |
 | `IO_IN` / `IO_OUT` | IO task thread pool | 需要执行读写、反序列化或其他 IO 密集工作 |
 | `WAITING` | Wait Reactor 轮询 `await()` | 条件可能很快变为 ready，但没有外部通知对象 |
-| `WAIT_FOR_NOTIFY` | 注册到 `NotifyFuture` | 等待队列、网络、reader 等对象主动唤醒 |
+| `WAIT_FOR_NOTIFY` | 注册到 `NotifyFuture` | 等待队列、网络或带完成态 future 等对象主动唤醒 |
 | `FINISHED` / `CANCELLED` | task 结束 | pipeline task 生命周期结束 |
 
 `PipelineExec` 负责把 `SourceOp -> TransformOp -> SinkOp` 串起来。它在执行过程中遇到 `IO_*` 会暂存 `io_op`，遇到 `WAITING` 会暂存 `awaitable`，遇到 `WAIT_FOR_NOTIFY` 会暂存 `waiting_for_notify`。`PipelineTaskBase` 再把这些 operator 状态映射为 task 状态，交给 scheduler 调度。
@@ -33,14 +33,14 @@ Pipeline model 将物理执行计划按 pipeline breaker 切成 pipeline DAG，�
 
 这种实现可以避免在 CPU task thread pool 中直接执行 columnar read，但会带来以下性能问题：
 
-* IO worker 可能被等待型工作阻塞。若 `getOrCreateReader()` 发现 `RNColumnarReaderWork` 正在 `Creating`，当前实现会在 IO 线程里通过 `std::condition_variable::wait()` 等待；如果 reader materialize 遇到 region miss、lock resolve、PD/backoff 或 columnar helper 慢调用，IO worker 可能长期占用却没有实际读数据。
+* IO worker 可能被 reader materialize 占用较久。早期实现或 stream path 中，`getOrCreateReader()` 遇到 `Creating` 会通过 `std::condition_variable::wait()` 等待；当前 pipeline path 避免 blocking wait，但 `fn_get_columnar_reader` / backoff / FFI 调用仍在 IO pool 内联执行，可能长时间占用 IO worker。
 * Pipeline scheduler 的让出和公平性会变差。scheduler 只有在 operator 返回 `OperatorStatus` 后才能重新调度；长时间的 `fn_get_columnar_reader`、`fn_read_block`、backoff 或 blocking wait 会让 task 无法及时 yield，影响同 query 其他 source 和其他 query 的 IO task 尾延迟。
 * 观测会失真。reader materialize wait、columnar read、列反序列化都可能被计入 source operator 的 IO/执行时间，而不是 `WAIT_FOR_NOTIFY` 或明确的等待时间，导致 `EXPLAIN ANALYZE` 和 pipeline scheduler metrics 难以区分真 IO 慢、reader 创建慢、region/lock/backoff 慢还是 prefetch 等待。
 * 额外 prefetch 线程绕过 pipeline scheduler。`PrefetchRNColumnarReader` 不在 CPU/IO task queue 中排队，不受 pipeline task scheduler 的统一公平性和资源控制；高并发下它会与 IO pool 同时竞争 CPU、columnar helper FFI、region cache、PD/lock resolver 等资源，并可能提前持有 reader/Rust 侧资源。
 * IO pool 中混入较重 CPU 工作。`RNColumnarInputStream::readImpl()` 除了调用 columnar helper FFI，还会逐列反序列化 ClickHouse column 并填充 extra table id；如果反序列化成本高，IO pool 会被 CPU-heavy 工作占用，CPU pool 则等待 source 输出，造成 CPU/IO pool 负载不均。
 * 查询启动阶段仍有非 scheduler 工作。`readThroughColumnar()` 在 pipeline source ops 建立前构建 `RNColumnarReadTask` 和 reader plans；如果该阶段涉及 region cache miss、bucket key 查询或 backoff，会直接增加 query startup latency，且不受 pipeline task 调度约束。
 
-因此，本文后续设计重点不是简单地把更多逻辑放进 IO task thread pool，而是把“真正需要执行 IO/FFI/反序列化的工作”和“等待 reader 或数据 ready 的工作”分开：前者继续返回 `IO_IN`，后者应尽量返回 `WAIT_FOR_NOTIFY` 并由 producer 主动唤醒。
+因此，本文后续设计重点不是简单地把更多逻辑放进 IO task thread pool，而是把“真正需要执行 IO/FFI/反序列化的工作”和“可安全等待的数据队列 ready”分开：reader materialize / `fn_read_block` / 列反序列化继续返回 `IO_IN`；`SharedQueue`、ExchangeReceiver queue 这类具备可重入唤醒语义的队列等待才返回 `WAIT_FOR_NOTIFY`。
 
 ## ExchangeReceiver 如何接入 Pipeline
 
@@ -124,16 +124,16 @@ StorageDisaggregated::read(...)
 * `readImpl()` 如果有暂存 block 则输出，否则返回 `IO_IN`。
 * `executeIOImpl()` 如果还没有当前 input stream，会通过 `tryAcquireReaderWork()` 领取一个 `RNColumnarReaderWork`，创建固定到该 work 的 `RNColumnarInputStream`，调用 columnar helper FFI `fn_read_block()`，反序列化列数据并暂存 block。
 * `tryAcquireReaderWork()` 从 `pending_reader_works` pop 当前 work 后触发 `prefetchPendingWork()`，后者会用 detached `PrefetchRNColumnarReader` 线程预创建后续 `ColumnarReader`。
-* 如果 `getOrCreateReader()` 发现当前 `RNColumnarReaderWork` 正在 `Creating`，会用 `std::condition_variable` 等待。
+* stream path 中如果 `getOrCreateReader()` 发现当前 `RNColumnarReaderWork` 正在 `Creating`，仍会用 `std::condition_variable` 等待；pipeline path 不应在 IO worker 中做 blocking wait，而应在 `executeIOImpl()` 中内联 materialize 或直接消费已完成的 reader。
 * 如果 materialize reader 时遇到 `EPOCH_NOT_MATCH` 或 `NOT_FOUND`，当前代码会基于失败 work 的 physical ranges 重新规划 reader plans，并通过 `replaceReaderWork()` 将拆分出的新 work 插回 `pending_reader_works`。
 
-这已经避免了在 CPU task thread pool 中直接执行 columnar read，但还没有完全复用 `ExchangeReceiver` 那种 `NotifyFuture` 等待模型。
+这已经避免了在 CPU task thread pool 中直接执行 columnar read。需要注意的是，`ExchangeReceiver` 那种 `NotifyFuture` 等待模型只适用于持续生产、可重入通知的队列；reader materialize 的 detached prefetch 是一次性通知，不能直接复用该模型。
 
 ## Goals
 
 * Columnar read source 必须是 pipeline source operator，而不是 `BlockInputStreamSourceOp` 包装旧流。
 * 读取、反序列化、reader materialize 等 IO/FFI 工作应通过 `IO_IN` 进入 IO task thread pool。
-* 等待异步 reader materialize 或队列数据时，应优先使用 `WAIT_FOR_NOTIFY`，避免阻塞 IO worker 或让 Wait Reactor 忙轮询。
+* 队列数据等待应优先使用 `WAIT_FOR_NOTIFY`，避免阻塞 CPU/IO worker 或让 Wait Reactor 忙轮询；reader materialize 不使用当前的一次性 `PipeConditionVariable` notify 模式。
 * 保持 stream model 和 pipeline model 的结果语义一致，包括 generated column placeholder、duration/timestamp cast、late-materialization filter 的二次过滤、partition table `_tidb_tid`。
 * 正确记录 table scan 的 source operator profile 和 inbound IO profile，避免把后续 projection/filter 的 profile 错记为 table scan。
 * 支持取消、异常、Rust FFI 指针释放和空 range / 空 reader 情况。
@@ -175,14 +175,15 @@ RNColumnarReadTask(shared reader work queue)
 
 建议保留当前 `RNColumnarReadTask` 的共享队列形态，不为每个 reader work 创建单独 pipeline task。原因是 reader plan 数量可能随 region/bucket split 和 region error replan 变化，直接映射成 task 会放大 task 数量；source 内部领取 reader work 能保持 pipeline 并发度稳定。
 
-### 3. 拆分 source 的四类状态
+### 3. 拆分 source 的状态机
 
-`RNColumnarSourceOp` 应明确维护四类状态：
+`RNColumnarSourceOp` 应明确维护以下状态：
 
 ```text
+NEED_READER: 没有当前 reader work，需要领取下一个 work
 READY_BLOCK: t_block 有 block
 READING:     current_input_stream 正在被 IO 线程读取
-WAIT_READER: 已领取 RNColumnarReaderWork，但 reader materialize 尚未完成
+WAIT_READER: 兼容早期状态机的安全状态；pipeline path 不在该状态上 WAIT_FOR_NOTIFY
 DONE:        所有 reader work 已消费完
 ```
 
@@ -193,7 +194,7 @@ readImpl()
   if DONE: emit empty block, HAS_OUTPUT
   if READY_BLOCK: emit block, HAS_OUTPUT
   if current reader can read: IO_IN
-  if waiting async reader: WAIT_FOR_NOTIFY
+  if reader not ready: IO_IN
   else acquire next reader work
 
 executeIOImpl()
@@ -206,61 +207,24 @@ executeIOImpl()
 awaitImpl()
   check reader work state without blocking
   Ready/Failed/Consumed -> HAS_OUTPUT or throw
-  Creating -> WAIT_FOR_NOTIFY
-  NotStarted -> IO_IN or start async materialize then WAIT_FOR_NOTIFY
+  Creating -> IO_IN
+  NotStarted -> IO_IN
 ```
 
-关键约束：`awaitImpl()` 不应使用 `std::condition_variable::wait()` 阻塞。它只做非阻塞状态检查。
+关键约束：`awaitImpl()` 不应使用 `std::condition_variable::wait()` 阻塞，也不应对 reader materialize 返回 `WAIT_FOR_NOTIFY`。它只做非阻塞状态检查，并在 reader 未 ready 时把 task 切到 `IO_IN`。
 
-### 4. 用 NotifyFuture 替代阻塞等待 reader materialize
+### 4. 不用 WAIT_FOR_NOTIFY 等待 reader materialize
 
-当前 `RNColumnarReaderWork` 使用 `std::condition_variable`。为了贴合 pipeline model，建议扩展它，使其拥有一个 `PipeConditionVariable` 或等价的 `NotifyFuture` 包装，并实现通知注册能力：
+`RNColumnarReaderWork` 可以继续保留 `std::condition_variable` 给 stream path 使用，也可以保留 `notify_future` 作为后续实验入口；但 pipeline path 不应通过 `setNotifyFuture(&reader_work->notify_future)` 等待 reader materialize。Observed Issue 已经证明：detached prefetch thread 对单个 reader work 只通知一次，无法保证 scheduler 在 `setNotifyFuture()` 和 `registerTaskToFuture()` 之间不会错过这次通知。
 
-```cpp
-struct RNColumnarReaderNotifyFuture : public NotifyFuture
-{
-    void registerTask(TaskPtr && task) override
-    {
-        task->setNotifyType(NotifyType::WAIT_ON_TABLE_SCAN_READ);
-        pipe_cv.registerTask(std::move(task));
-    }
+pipeline path 的规则应改为：
 
-    void notifyAll()
-    {
-        pipe_cv.notifyAll();
-    }
+* `NotStarted`：source 返回 `IO_IN`，由 `executeIOImpl()` 在 IO pool 中创建 reader。
+* `Creating`：如果 prefetch 已经写入 `Ready`，直接消费；否则仍返回 `IO_IN`，由 `executeIOImpl()` 内联 materialize，避免等待一次性 notify。
+* `Ready`：move 出 reader，转为 `Consumed`。
+* `Failed` / `Consumed`：抛出错误或逻辑错误。
 
-    PipeConditionVariable pipe_cv;
-};
-
-struct RNColumnarReaderWork
-{
-    RNColumnarReaderPlan plan;
-    std::mutex mutex;
-    RNColumnarReaderNotifyFuture notify_future;
-    RNColumnarReaderMaterializeState state;
-    std::optional<ColumnarReaderPtr> reader;
-    std::exception_ptr exception;
-};
-```
-
-当 source 发现 work 正在 `Creating` 时：
-
-```cpp
-setNotifyFuture(&reader_work->notify_future);
-return OperatorStatus::WAIT_FOR_NOTIFY;
-```
-
-当 prefetch thread 创建 reader 成功或失败时：
-
-```cpp
-reader_work->state = Ready 或 Failed;
-reader_work->notify_future.notifyAll();
-```
-
-这样等待 reader materialize 的 task 会像 ExchangeReceiver 一样被生产者唤醒，而不是阻塞 IO 线程。
-
-核心要求是 source 可以把 `current_notify_future` 指向一个能唤醒 task 的对象；具体实现可以是 reader work 内嵌 notify future，也可以是 reader work 持有一个独立的 notify future 指针。
+如果未来希望恢复异步 materialize，需要先实现带完成态的 one-shot future/latch：task 在 notify 之后注册时必须立即被重新提交。这是新的同步原语设计，不是简单给 reader work 加 `PipeConditionVariable`。
 
 ### 5. Reader materialize 和 block read 的执行边界
 
@@ -270,7 +234,7 @@ reader_work->notify_future.notifyAll();
 
 * source 第一次领取 reader work 后，如果 work 是 `NotStarted`，可以返回 `IO_IN`，由 `executeIOImpl()` 同步 materialize 当前 reader。
 * source 读当前 reader 时，`fn_read_block` 和列反序列化放在 `executeIOImpl()` 中。
-* source 读当前 reader 的同时，可异步 prefetch 后一个 reader。等待 prefetch 结果时用 `WAIT_FOR_NOTIFY`。
+* source 读当前 reader 的同时可以尝试 prefetch 后一个 reader，但 pipeline source 不等待 prefetch 的一次性通知；如果领取到 `Creating` work，必须能直接进入 `IO_IN` 路径内联 materialize 或消费已完成 reader。
 * 每次 `executeIOImpl()` 最多产出一个 block，然后返回 `HAS_OUTPUT` 交回 CPU 侧继续 pipeline，避免一个 IO task 长时间独占 worker。
 * 如果当前 reader work 因 region epoch/not found 触发 replan，新拆分出的 reader works 仍放回 `pending_reader_works`，由后续 source 或当前 source 继续领取；source 并发度不随 replan 动态变化。
 
@@ -331,7 +295,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 
 * `RNColumnarSourceOp::operateSuffixImpl()` 或析构时，如果 source 未正常读完，应标记共享 task cancelled。
 * `RNColumnarReadTask::cancel(reason)` 应把所有 `NotStarted/Creating` work 置为 Failed 或 Cancelled，并 `notifyAll()`。
-* prefetch thread 捕获异常后写入 work exception 并通知等待 task。
+* prefetch thread 捕获异常后写入 work exception，并唤醒 stream path 的 blocking wait；pipeline path 不依赖 prefetch 的一次性通知。
 * source 在 `awaitImpl()` 或 `executeIOImpl()` 看到 Failed/Cancelled 时抛出异常，由 `Task::execute()` 捕获并触发 `PipelineExecutorContext::onErrorOccurred()`。
 * Rust FFI 指针仍由 reader work / input stream 的析构和 scope guard 释放，确保 error path 不泄露。
 
@@ -369,22 +333,21 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 2. 在添加 `RNColumnarSourceOp` 后，立即调用 `addInboundIOProfileInfos(table_scan_id, ...)` 和 `addOperatorProfileInfos(table_scan_id, ...)`。
 3. 确保后续 generated column、extra cast、filter 不覆盖 table scan source profile。
 
-### Phase 3: 将 reader materialize 等待改成 NotifyFuture
+### Phase 3: 消除 pipeline path 中的 reader materialize 阻塞等待
 
 修改文件：
 
 * `dbms/src/Storages/Columnar/ColumnarSourceOp.h`
 * `dbms/src/Storages/Columnar/ColumnarSourceOp.cpp`
 * 必要时调整 `dbms/src/Storages/StorageDisaggregatedColumnar.*` 中共享 reader task 接口
-* 如需新增 metrics label，修改 pipeline notify metrics 相关文件；否则复用 `WAIT_ON_TABLE_SCAN_READ`。
 
 改动：
 
-1. 给 `RNColumnarReaderWork` 增加 `PipeConditionVariable` 或等价 `NotifyFuture` 包装。
-2. 将 `getOrCreateReader()` 中对 `Creating` 的阻塞等待拆成非阻塞 `tryGetReadyReader()`。
-3. `RNColumnarSourceOp::awaitImpl()` 在 work 未 ready 时 `setNotifyFuture(&reader_work->notify_future)` 并返回 `WAIT_FOR_NOTIFY`。
-4. `prefetchReaderWork()` 结束时调用 reader work notify。
-5. 保留 stream path 的阻塞 `getOrCreateReader()`，或让 stream path 使用单独的 blocking helper，避免影响旧执行模型。
+1. 将 `getOrCreateReader()` 中对 `Creating` 的阻塞等待限制在 stream path；pipeline path 使用非阻塞状态检查。
+2. 增加或整理 `tryGetReadyReader()` / `createColumnarReaderWithBackoff()` 等窄接口，让 source 可以在 IO pool 中内联 materialize。
+3. `RNColumnarSourceOp::awaitImpl()` 在 `NotStarted` / `Creating` 时返回 `IO_IN`，不设置 reader work notify future。
+4. 如果保留 detached prefetch，必须处理 prefetch 与 inline materialize 的竞争，确保 loser reader 的 Rust ptr 被释放，且不会覆盖 `Consumed` 状态。
+5. 保留 stream path 的阻塞 `getOrCreateReader()`，避免影响旧执行模型。
 
 ### Phase 4: 收敛 source 状态机
 
@@ -397,7 +360,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 
 1. 给 `RNColumnarSourceOp` 明确记录当前 reader work、当前 reader、暂存 block 和 done 状态。
 2. 保证 `readImpl()` 不做 columnar helper FFI 调用。
-3. 保证 `awaitImpl()` 不阻塞、不分配大对象，只检查状态并返回 `HAS_OUTPUT` / `IO_IN` / `WAIT_FOR_NOTIFY`。
+3. 保证 `awaitImpl()` 不阻塞、不分配大对象，只检查状态并返回 `HAS_OUTPUT` / `IO_IN`。
 4. 保证 `executeIOImpl()` 每次最多读取一个 block。
 
 ### Phase 5: 取消、错误和资源释放
@@ -413,7 +376,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 1. 增加 `RNColumnarReadTask::cancel()`。
 2. source suffix/destructor 对未完成共享 task 做 cancel 或 ref-counted close。
 3. prefetch thread 在 cancel 后不再写入 reader，必要时释放 Rust ptr。
-4. 所有 Failed/Cancelled work 必须唤醒等待 task。
+4. 所有 Failed/Cancelled work 必须唤醒 stream path blocking waiters；如果后续引入 queue/future 等待，也必须触发对应 cancel/finish。
 
 ## Validation Strategy
 
@@ -422,7 +385,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 建议新增或扩展 gtest：
 
 * `RNColumnarSourceOp` 状态转换：有 block、EOF、reader creating、reader failed、cancelled。
-* `RNColumnarReaderWork` notify：task 注册后，prefetch 完成能唤醒 task 并重新提交。
+* `RNColumnarReaderWork` 状态转换：`NotStarted` / `Creating` 在 pipeline path 中不会返回 `WAIT_FOR_NOTIFY`，而是进入 `IO_IN`。
 * 空 reader / 空 range：pipeline builder 生成 `NullSourceOp`，不触发 `getCurrentHeader()` 断言。
 * profile 归档：`DAGContext::inbound_io_profile_infos_map[table_scan_id]` 存在，`operator_profile_infos_map[table_scan_id]` 指向 source profile 而不是 projection/filter。
 * region error replan：通过 `replaceReaderWorkForTest()` 或等价测试入口验证失败 work 被新 reader plans 替换，多出来的 works 会重新进入 `pending_reader_works`，且不会丢失 notify/cancel 语义。
@@ -443,7 +406,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 * `PipelineExecutor::toString()` 能看到 table scan 所在 pipeline。
 * `EXPLAIN ANALYZE` 中 table scan runtime stats 不丢失。
 * `tiflash_pipeline_task_change_to_status` 中 `IO_IN`、`WAIT_FOR_NOTIFY` 状态变化符合预期。
-* 高并发查询下 IO worker 不因 reader prefetch wait 长时间阻塞。
+* 高并发查询下 IO worker 不因 reader prefetch wait 或 blocking wait 长时间阻塞。
 
 ## Risks and Mitigations
 
@@ -453,7 +416,7 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 | profile 归档时机不对 | EXPLAIN ANALYZE 表达错误 | 在 source 加入 builder 后立即记录 table scan source profile，并保持 `addOperatorProfileInfos` 的 first-write-wins 语义 |
 | cancel 与 prefetch thread 竞争 | Rust ptr 泄露或 double free | reader work 拥有 reader ptr，状态切换后只允许一个消费者 move reader；未返回 reader 用 scope guard / reader work 析构释放 |
 | region error replan 与 source 领取并发 | reader work 丢失、重复读取或漏唤醒 | `replaceReaderWork()` 只重写当前失败 work 并把新增 works 插回 `pending_reader_works`；队列修改和 work 状态修改使用清晰的锁顺序 |
-| `WAIT_FOR_NOTIFY` metrics 类型不精确 | 观测上无法区分 columnar reader 和普通 table scan | 第一阶段复用 `WAIT_ON_TABLE_SCAN_READ`；如需要更细粒度，再新增 notify type 和 metrics label |
+| `WAIT_FOR_NOTIFY` metrics 类型不精确 | 观测上无法区分 queue 等待和普通 table scan | reader materialize 不使用 `WAIT_FOR_NOTIFY`；后续 producer-consumer 模型使用已有 `WAIT_ON_SHARED_QUEUE_READ/WRITE` metrics |
 | stream path 与 pipeline path 行为漂移 | 两种执行模式结果不一致 | 保留 `RNColumnarInputStream` 对照测试，重点比较 block schema、rows、filters、casts 和 error path |
 
 ## Observed Issue: NotStarted Async Materialize Lost Wakeup Race
@@ -583,4 +546,4 @@ PrefetchRNColumnarReader: 0 threads                  → all terminated
 
 `ExchangeReceiver` 接入 pipeline 的核心不是把旧 stream 包起来，而是把网络接收抽象成 `SourceOp`，通过 `tryReceive -> WAIT_FOR_NOTIFY -> NotifyFuture -> task.notify()` 与 scheduler 对接。
 
-`StorageDisaggregated::readThroughColumnar` 应采用同样原则：`RNColumnarSourceOp` 作为 source，columnar 读取走 `IO_IN`，reader 未 ready 走 `WAIT_FOR_NOTIFY`，数据 ready 后主动唤醒 task。当前代码已经具备 source operator 和 IO pool 接入基础；后续重点是补齐 notify 型等待、table scan profile 归档、空读路径和取消语义。
+`StorageDisaggregated::readThroughColumnar` 应采用同样原则，但要区分 producer 类型：`RNColumnarSourceOp` 作为 source，columnar reader materialize / block read 走 `IO_IN`；只有 `SharedQueue` 或 ExchangeReceiver queue 这种具备可重入唤醒语义的队列等待才走 `WAIT_FOR_NOTIFY`。当前代码已经具备 source operator 和 IO pool 接入基础；后续重点是补齐 table scan profile、空读路径、取消语义，并通过 producer-consumer 模型解耦 IO read 与 CPU transform。
