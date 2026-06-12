@@ -37,6 +37,7 @@
 #include <IO/IOThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
+#include <Operators/NullSourceOp.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
@@ -624,6 +625,49 @@ void StorageDisaggregated::filterConditionsWithPushedDownFilters(
     }
 }
 
+namespace
+{
+void addColumnarNullSource(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan,
+    const LoggerPtr & log)
+{
+    auto header = Block(getColumnWithTypeAndName(genNamesAndTypesForTableScan(table_scan)));
+    group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header, log->identifier()));
+}
+
+void addColumnarTableScanProfileInfos(
+    const Context & context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan)
+{
+    auto * dag_context = context.getDAGContext();
+    const auto & table_scan_id = table_scan.getTableScanExecutorID();
+    dag_context->addInboundIOProfileInfos(table_scan_id, group_builder.getCurIOProfileInfos());
+    dag_context->addOperatorProfileInfos(table_scan_id, group_builder.getCurProfileInfos());
+}
+} // namespace
+
+#ifdef DBMS_PUBLIC_GTEST
+void addColumnarNullSourceForTest(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan,
+    const LoggerPtr & log)
+{
+    addColumnarNullSource(exec_context, group_builder, table_scan, log);
+}
+
+void addColumnarTableScanProfileInfosForTest(
+    const Context & context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan)
+{
+    addColumnarTableScanProfileInfos(context, group_builder, table_scan);
+}
+#endif
+
 BlockInputStreams StorageDisaggregated::readThroughColumnar(const Context & context, unsigned num_streams)
 {
     DAGPipeline pipeline;
@@ -681,7 +725,8 @@ void StorageDisaggregated::readThroughColumnar(
         remote_table_ranges,
         num_streams);
     const auto generated_column_infos = genGeneratedColumnInfosForDisaggregatedRead(table_scan);
-    if (!read_columnar_tasks.empty())
+    bool has_columnar_source = false;
+    if (!read_columnar_tasks.empty() && read_columnar_tasks.front()->getReaderCount() > 0)
     {
         auto & task_pool = read_columnar_tasks.front();
         const size_t source_num = task_pool->getSourceNum();
@@ -697,7 +742,15 @@ void StorageDisaggregated::readThroughColumnar(
                 .task = task_pool,
             }));
         }
+        has_columnar_source = true;
     }
+    if (!has_columnar_source)
+    {
+        // Keep the pipeline group non-empty so downstream generated-column, cast and projection
+        // transforms can still derive their input header for empty columnar ranges.
+        addColumnarNullSource(exec_context, group_builder, table_scan, log);
+    }
+    addColumnarTableScanProfileInfos(context, group_builder, table_scan);
 
     executeGeneratedColumnPlaceholder(exec_context, group_builder, generated_column_infos, log);
 

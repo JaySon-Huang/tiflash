@@ -46,6 +46,8 @@
 namespace DB
 {
 class DAGContext;
+class PipelineExecGroupBuilder;
+class PipelineExecutorContext;
 
 namespace DM
 {
@@ -241,6 +243,19 @@ private:
     UInt64 batch_size = 10240;
     UInt64 total_bytes = 0;
 };
+
+#ifdef DBMS_PUBLIC_GTEST
+void addColumnarNullSourceForTest(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan,
+    const LoggerPtr & log);
+
+void addColumnarTableScanProfileInfosForTest(
+    const Context & context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan);
+#endif
 
 } // namespace DB
 #endif
