@@ -1121,6 +1121,7 @@ ColumnarReaderPtr RNColumnarReadTask::getOrCreateReader(const RNColumnarReaderWo
             reader_work->state = RNColumnarReaderMaterializeState::Consumed;
         }
         reader_work->cv.notify_all();
+        reader_work->notify_future.notifyAll();
         return reader;
     }
     catch (...)
@@ -1132,8 +1133,39 @@ ColumnarReaderPtr RNColumnarReadTask::getOrCreateReader(const RNColumnarReaderWo
             reader_work->state = RNColumnarReaderMaterializeState::Failed;
         }
         reader_work->cv.notify_all();
+        reader_work->notify_future.notifyAll();
         throw;
     }
+}
+
+std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(
+    const RNColumnarReaderWorkPtr & reader_work)
+{
+    RUNTIME_CHECK(reader_work != nullptr);
+
+    std::lock_guard lock(reader_work->mutex);
+    switch (reader_work->state)
+    {
+    case RNColumnarReaderMaterializeState::Ready:
+    {
+        auto reader = std::move(reader_work->reader);
+        reader_work->reader.reset();
+        reader_work->exception = nullptr;
+        reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+        return reader.value();
+    }
+    case RNColumnarReaderMaterializeState::Failed:
+        std::rethrow_exception(reader_work->exception);
+    case RNColumnarReaderMaterializeState::Consumed:
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "columnar reader work for region {} is already consumed",
+            reader_work->plan.region_id);
+    case RNColumnarReaderMaterializeState::Creating:
+    case RNColumnarReaderMaterializeState::NotStarted:
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 void RNColumnarReadTask::prefetchPendingWork()
@@ -1186,6 +1218,7 @@ void RNColumnarReadTask::prefetchReaderWork(const RNColumnarReaderWorkPtr & read
             }
         }
         reader_work->cv.notify_all();
+        reader_work->notify_future.notifyAll();
     });
 }
 
@@ -1230,6 +1263,14 @@ BlockInputStreamPtr RNColumnarReadTask::createSharedInputStream()
         .table_id = getLogicalTableID(),
         .executor_id = getExecutorID(),
     });
+}
+
+BlockInputStreamPtr RNColumnarInputStream::createWithReader(const Options & options, ColumnarReaderPtr reader)
+{
+    auto stream = std::make_shared<RNColumnarInputStream>(options);
+    stream->current_reader_work = options.reader_work;
+    stream->reader.emplace(std::move(reader));
+    return stream;
 }
 
 std::vector<RNColumnarReadTaskPtr> RNColumnarReadTask::buildColumnarReadTaskWithBackoff(

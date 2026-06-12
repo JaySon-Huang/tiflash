@@ -79,6 +79,9 @@ private:
     // IO work caches one block here so the next CPU-side readImpl can hand it to downstream operators.
     std::optional<Block> t_block = std::nullopt;
 
+    // The reader work currently being consumed (or waited on) by this source.
+    RNColumnarReaderWorkPtr current_reader_work;
+
     bool done = false;
     Stopwatch total_cost_watch{CLOCK_MONOTONIC_COARSE};
 

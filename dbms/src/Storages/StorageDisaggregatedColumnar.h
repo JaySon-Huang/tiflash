@@ -24,6 +24,8 @@
 #include <Flash/Coprocessor/DAGPipeline.h>
 #include <Flash/Coprocessor/RemoteRequest.h>
 #include <Flash/Mpp/MPPTaskId.h>
+#include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
+#include <Flash/Pipeline/Schedule/Tasks/PipeConditionVariable.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Storages/IStorage.h>
@@ -74,6 +76,21 @@ struct RNColumnarReaderPlan
     std::vector<std::tuple<TableID, pingcap::coprocessor::KeyRanges>> physical_table_ranges;
 };
 
+/// NotifyFuture adapter so pipeline tasks can wait on reader materialize without blocking an IO thread.
+/// Delegates task registration and wakeup to an internal PipeConditionVariable.
+struct RNColumnarReaderNotifyFuture : public NotifyFuture
+{
+    void registerTask(TaskPtr && task) override
+    {
+        task->setNotifyType(NotifyType::WAIT_ON_TABLE_SCAN_READ);
+        pipe_cv.registerTask(std::move(task));
+    }
+
+    void notifyAll() { pipe_cv.notifyAll(); }
+
+    PipeConditionVariable pipe_cv;
+};
+
 struct RNColumnarReaderWork
 {
     explicit RNColumnarReaderWork(RNColumnarReaderPlan plan_)
@@ -84,7 +101,10 @@ struct RNColumnarReaderWork
 
     RNColumnarReaderPlan plan;
     std::mutex mutex;
+    // cv is kept for the stream path (RNColumnarInputStream) which still uses blocking wait.
     std::condition_variable cv;
+    // notify_future is used by the pipeline path (RNColumnarSourceOp) for WAIT_FOR_NOTIFY.
+    RNColumnarReaderNotifyFuture notify_future;
     RNColumnarReaderMaterializeState state = RNColumnarReaderMaterializeState::NotStarted;
     std::optional<ColumnarReaderPtr> reader;
     std::exception_ptr exception;
@@ -128,6 +148,12 @@ public:
     ColumnarReaderPtr createColumnarReaderWithBackoff(const RNColumnarReaderWorkPtr & reader_work);
 
     ColumnarReaderPtr getOrCreateReader(const RNColumnarReaderWorkPtr & reader_work);
+
+    /// Non-blocking read attempt for the pipeline path.
+    /// Returns the reader if state is Ready (and transitions to Consumed).
+    /// Returns std::nullopt if state is NotStarted or Creating.
+    /// Throws if state is Failed or Consumed (error state).
+    std::optional<ColumnarReaderPtr> tryGetReadyReader(const RNColumnarReaderWorkPtr & reader_work);
 
     std::optional<RNColumnarReaderWorkPtr> tryAcquireReaderWork();
 
@@ -220,6 +246,9 @@ public:
     {
         return std::make_shared<RNColumnarInputStream>(options);
     }
+
+    /// Create an input stream that already owns a materialized reader, bypassing ensureReader().
+    static BlockInputStreamPtr createWithReader(const Options & options, ColumnarReaderPtr reader);
 
 private:
     bool ensureReader();

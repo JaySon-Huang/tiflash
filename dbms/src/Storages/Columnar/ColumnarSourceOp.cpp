@@ -17,6 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Flash/Executor/PipelineExecutorContext.h>
+#include <Flash/Pipeline/Schedule/Tasks/NotifyFuture.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
 #include <common/logger_useful.h>
 
@@ -79,6 +80,61 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         return OperatorStatus::HAS_OUTPUT;
     }
 
+    // If we are waiting for a prefetch thread to finish materializing a reader,
+    // check the state without blocking.
+    if (current_reader_work)
+    {
+        std::optional<ColumnarReaderPtr> ready_reader;
+        {
+            std::lock_guard lock(current_reader_work->mutex);
+            switch (current_reader_work->state)
+            {
+            case RNColumnarReaderMaterializeState::Ready:
+                // Prefetch finished — consume the reader under lock, then proceed to IO.
+                ready_reader.emplace(std::move(current_reader_work->reader.value()));
+                current_reader_work->reader.reset();
+                current_reader_work->exception = nullptr;
+                current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+                break;
+            case RNColumnarReaderMaterializeState::Failed:
+                std::rethrow_exception(current_reader_work->exception);
+            case RNColumnarReaderMaterializeState::Consumed:
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "columnar reader work for region {} is already consumed",
+                    current_reader_work->plan.region_id);
+            case RNColumnarReaderMaterializeState::Creating:
+                // Still being materialized — register for wakeup.
+                setNotifyFuture(&current_reader_work->notify_future);
+                return OperatorStatus::WAIT_FOR_NOTIFY;
+            case RNColumnarReaderMaterializeState::NotStarted:
+                // Should not happen here: executeIOImpl transitions NotStarted → Creating
+                // before returning control. Fall through to IO_IN as a safety net.
+                return OperatorStatus::IO_IN;
+            }
+        }
+
+        if (ready_reader.has_value())
+        {
+            current_input_stream = RNColumnarInputStream::createWithReader(
+                {
+                    .context = context,
+                    .log = log,
+                    .task = task,
+                    .reader_work = current_reader_work,
+                    .columns_to_read = task->getColumnsToRead(),
+                    .extra_table_id_index = task->getExtraTableIDIndex(),
+                    .table_id = task->getLogicalTableID(),
+                    .executor_id = task->getExecutorID(),
+                },
+                std::move(ready_reader.value()));
+            current_reader_work.reset();
+            ++total_streams;
+            return OperatorStatus::IO_IN;
+        }
+    }
+
+    // No current work — need to acquire one in executeIOImpl.
     return OperatorStatus::IO_IN;
 }
 
@@ -91,16 +147,101 @@ OperatorStatus RNColumnarSourceOp::executeIOImpl()
 
     if (!current_input_stream)
     {
-        auto next_reader_work = task->tryAcquireReaderWork();
-        if (!next_reader_work.has_value())
+        // Acquire a reader work if we don't already have one.
+        if (!current_reader_work)
         {
-            done = true;
-            return OperatorStatus::HAS_OUTPUT;
+            auto next_work = task->tryAcquireReaderWork();
+            if (!next_work.has_value())
+            {
+                done = true;
+                return OperatorStatus::HAS_OUTPUT;
+            }
+            current_reader_work = std::move(next_work.value());
         }
-        current_input_stream = task->createInputStream(next_reader_work.value());
-        ++total_streams;
+
+        // Single lock acquisition to atomically check state and decide next action,
+        // avoiding a TOCTOU race with the prefetch thread.
+        bool should_materialize = false;
+        std::optional<ColumnarReaderPtr> ready_reader;
+        {
+            std::lock_guard lock(current_reader_work->mutex);
+            switch (current_reader_work->state)
+            {
+            case RNColumnarReaderMaterializeState::Ready:
+                ready_reader.emplace(std::move(current_reader_work->reader.value()));
+                current_reader_work->reader.reset();
+                current_reader_work->exception = nullptr;
+                current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+                break;
+            case RNColumnarReaderMaterializeState::Failed:
+                std::rethrow_exception(current_reader_work->exception);
+            case RNColumnarReaderMaterializeState::Consumed:
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "columnar reader work for region {} is already consumed",
+                    current_reader_work->plan.region_id);
+            case RNColumnarReaderMaterializeState::NotStarted:
+                current_reader_work->state = RNColumnarReaderMaterializeState::Creating;
+                should_materialize = true;
+                break;
+            case RNColumnarReaderMaterializeState::Creating:
+                // Prefetch is still working on this reader. Yield so awaitImpl can
+                // register for WAIT_FOR_NOTIFY instead of blocking the IO thread.
+                return awaitImpl();
+            }
+        }
+
+        if (ready_reader.has_value())
+        {
+            // Prefetch completed before we even needed to wait.
+            current_input_stream = RNColumnarInputStream::createWithReader(
+                {
+                    .context = context,
+                    .log = log,
+                    .task = task,
+                    .reader_work = current_reader_work,
+                    .columns_to_read = task->getColumnsToRead(),
+                    .extra_table_id_index = task->getExtraTableIDIndex(),
+                    .table_id = task->getLogicalTableID(),
+                    .executor_id = task->getExecutorID(),
+                },
+                std::move(ready_reader.value()));
+            current_reader_work.reset();
+            ++total_streams;
+        }
+        else
+        {
+            RUNTIME_CHECK(should_materialize);
+            // Materialize the reader inline in the IO thread (involves FFI / backoff).
+            auto reader = task->createColumnarReaderWithBackoff(current_reader_work);
+            {
+                std::lock_guard lock(current_reader_work->mutex);
+                current_reader_work->reader.reset();
+                current_reader_work->exception = nullptr;
+                current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+            }
+            // Wake any waiters (stream path via cv, pipeline path via notify_future).
+            current_reader_work->cv.notify_all();
+            current_reader_work->notify_future.notifyAll();
+
+            current_input_stream = RNColumnarInputStream::createWithReader(
+                {
+                    .context = context,
+                    .log = log,
+                    .task = task,
+                    .reader_work = current_reader_work,
+                    .columns_to_read = task->getColumnsToRead(),
+                    .extra_table_id_index = task->getExtraTableIDIndex(),
+                    .table_id = task->getLogicalTableID(),
+                    .executor_id = task->getExecutorID(),
+                },
+                std::move(reader));
+            current_reader_work.reset();
+            ++total_streams;
+        }
     }
 
+    // Read one block from the current input stream.
     FilterPtr filter_ignored = nullptr;
     Stopwatch w{CLOCK_MONOTONIC_COARSE};
     Block block = current_input_stream->read(filter_ignored, false);
