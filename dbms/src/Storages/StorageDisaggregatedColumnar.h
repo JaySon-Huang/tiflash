@@ -191,6 +191,10 @@ public:
         size_t source_num,
         std::shared_ptr<RNColumnarReaderSharedContext> shared_reader_context);
 
+    /// Set by the pipeline path before any source ops are created so
+    /// async prefetch tasks can be submitted to the scheduler.
+    void setPipelineExecutorContext(PipelineExecutorContext * ctx) { exec_context = ctx; }
+
 private:
     void prefetchPendingWork();
 
@@ -203,6 +207,7 @@ private:
     size_t reader_count;
     size_t source_num;
     std::shared_ptr<RNColumnarReaderSharedContext> shared_reader_context;
+    PipelineExecutorContext * exec_context = nullptr;
     mutable std::mutex pending_reader_works_mutex;
     std::deque<RNColumnarReaderWorkPtr> pending_reader_works;
 };

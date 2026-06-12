@@ -143,8 +143,9 @@ OperatorStatus ColumnarReadSourceOp::awaitImpl()
     }
     case ColumnarReadSourceState::NEED_READER:
     {
-        // Producer sources perform their own read-ahead through SharedQueue, so do not start detached prefetch here.
-        auto next_work = task->tryAcquireReaderWork(/*enable_prefetch=*/false);
+        // Prefetch is now executed via TaskScheduler-submitted PrefetchColumnarReaderTask
+        // (IO pool) instead of detached threads, so it is safe to enable here.
+        auto next_work = task->tryAcquireReaderWork(/*enable_prefetch=*/true);
         if (!next_work.has_value())
         {
             state = ColumnarReadSourceState::DONE;

@@ -33,6 +33,7 @@
 #include <Flash/Coprocessor/GenSchemaAndColumn.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
 #include <Flash/Coprocessor/RequestUtils.h>
+#include <Flash/Pipeline/Schedule/TaskScheduler.h>
 #include <IO/Buffer/ReadBufferFromMemory.h>
 #include <IO/IOThreadPools.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,7 @@
 #include <Operators/SharedQueue.h>
 #include <Storages/Columnar/ColumnarReadSourceOp.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
+#include <Storages/Columnar/PrefetchColumnarReaderTask.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
 #include <Storages/KVStore/TMTContext.h>
@@ -731,8 +733,13 @@ void StorageDisaggregated::readThroughColumnar(
     if (!read_columnar_tasks.empty() && read_columnar_tasks.front()->getReaderCount() > 0)
     {
         auto & task_pool = read_columnar_tasks.front();
+        task_pool->setPipelineExecutorContext(&exec_context);
         const size_t source_num = task_pool->getSourceNum();
-        const size_t producer_num = source_num;
+        // Producers do the columnar IO (materialize + read + deserialize);
+        // consumers run the CPU transform chain.  Keep the producer count
+        // high enough to saturate the IO pool, and size the SharedQueue
+        // buffer so that IO bursts do not starve the consumers.
+        const size_t producer_num = std::max<size_t>(1, source_num * 2 / 3);
         LOG_INFO(
             log,
             "use shared columnar reader task pool, reader_num={}, producer_num={}, source_num={}",
@@ -746,7 +753,7 @@ void StorageDisaggregated::readThroughColumnar(
             producer_num,
             source_num,
             /*max_buffered_bytes=*/-1,
-            /*max_queue_size=*/4);
+            /*max_queue_size=*/static_cast<Int64>(producer_num * 2));
 
         for (size_t i = 0; i < producer_num; ++i)
         {
@@ -1230,50 +1237,21 @@ void RNColumnarReadTask::prefetchReaderWork(const RNColumnarReaderWorkPtr & read
 
     const auto region_id = reader_work->plan.region_id;
     LOG_INFO(getLog(), "materialize columnar reader asynchronously, region_id={}", region_id);
-    newThreadManager()->scheduleThenDetach(
-        true,
-        "PrefetchRNColumnarReader",
-        [self = shared_from_this(), reader_work, region_id] {
-            try
-            {
-                auto reader = self->createColumnarReaderWithBackoff(reader_work);
-                {
-                    auto guard = std::lock_guard(reader_work->mutex);
-                    if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
-                    {
-                        LOG_INFO(self->getLog(), "[prefetch] region_id={} already consumed, skip", region_id);
-                        return;
-                    }
-                    reader_work->reader.emplace(std::move(reader));
-                    reader_work->exception = nullptr;
-                    reader_work->state = RNColumnarReaderMaterializeState::Ready;
-                }
-            }
-            catch (...)
-            {
-                {
-                    auto guard = std::lock_guard(reader_work->mutex);
-                    if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
-                    {
-                        LOG_WARNING(
-                            self->getLog(),
-                            "[prefetch] region_id={} already consumed (error path), skip",
-                            region_id);
-                        return;
-                    }
-                    reader_work->reader.reset();
-                    reader_work->exception = std::current_exception();
-                    reader_work->state = RNColumnarReaderMaterializeState::Failed;
-                }
-            }
-            LOG_INFO(
-                self->getLog(),
-                "[prefetch] region_id={} complete, state={}, notifying waiters",
-                region_id,
-                static_cast<int>(reader_work->state));
-            reader_work->cv.notify_all();
-            reader_work->notify_future.notifyAll();
-        });
+
+    // Submit a lightweight IO task to the pipeline scheduler instead of
+    // spawning a detached thread.  The task materializes the reader in the
+    // IO pool and transitions the work to Ready (or Failed) on completion.
+    // The stream path will not have exec_context set, so prefetch is only
+    // used by the pipeline path; the stream path relies on blocking wait.
+    if (exec_context == nullptr)
+        return;
+
+    auto & task_log = getLog();
+    TaskScheduler::instance->submit(std::make_unique<PrefetchColumnarReaderTask>(
+        *exec_context,
+        task_log->identifier(),
+        shared_from_this(),
+        reader_work));
 }
 
 std::optional<RNColumnarReaderWorkPtr> RNColumnarReadTask::tryAcquireReaderWork(bool enable_prefetch)
