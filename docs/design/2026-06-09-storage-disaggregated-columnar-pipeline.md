@@ -464,11 +464,42 @@ Commit 4（状态机收敛）将 NotStarted reader work 的处理从 IO pool 内
 
 ### 复现场景
 
-| 查询 | 时间 | 卡住 tasks | async materialize | 进程状态 |
+| 查询 | 时间 | 卡住 tasks | lost sources | 进程状态 |
 |---|---|---|---|---|
-| start_ts: `...9419782` | 00:16:05 | 5, 6, 9, 10 | ~226 次 | 00:16:09 之后完全停日志，全局死锁 |
-| start_ts: `...46072578` | 00:25:05 | 3, 4, 5, 6, 9, 10 | 226 次 | 00:25:08 之后完全停日志，全局死锁 |
-| start_ts: `...4130378` (加日志) | 00:46:43 | 5, 6, 9, 10 | 226 次 | 127 source 启动，81 完成，**3 个永久丢失，38 个醒来但未完成** |
+| start_ts: `...9419782` | 00:16:05 | 5, 6, 9, 10 | — | 00:16:09 之后完全停日志，全局死锁 |
+| start_ts: `...46072578` | 00:25:05 | 3, 4, 5, 6, 9, 10 | — | 00:25:08 之后完全停日志，全局死锁 |
+| start_ts: `...4130378` (加日志) | 00:46:43 | 5, 6, 9, 10 | 3 lost | 127 source 启动，81 完成，3 个永久丢失 |
+| start_ts: `...3963778` (仅修 NotStarted) | 01:02:33 | 全部未完成 | 1 lost | 127 started / 126 finished，1 个 `Creating(prefetch)` 路径丢失 |
+
+### 两层 Race Window
+
+实际发现该 race 存在于两个路径：
+
+#### Race 1: NotStarted → detached thread async（已在 Commit 4 中引入，首次修 复后消除）
+
+source 主动调 `startAsyncMaterializeReader()` 创建 detached thread，时序窗口 7ms：
+
+```text
+00:46:43.143  [prefetch] complete, notifying waiters  ← notifyAll (队列空)
+00:46:43.150  src=A NEED_READER acquired Creating, region_id=357
+00:46:43.151  src=A -> WAIT_FOR_NOTIFY (prefetch)
+              ↑ setNotifyFuture + registerTaskToFuture 在 notifyAll 之后 → 永久丢失
+```
+
+#### Race 2: Creating (prefetch) → WAIT_FOR_NOTIFY（同样存在，修复后仍复现）
+
+即使修复了 Race 1（NotStarted 走 `IO_IN`），当 source acquire 一个已被 `prefetchPendingWork()` 触发了 prefetch 的 work（状态=Creating）时，`awaitImpl()` 仍然走 `setNotifyFuture + WAIT_FOR_NOTIFY`。prefetch 线程和 scheduler 的 `registerTaskToFuture` 之间仍有 race：
+
+```text
+01:02:33.977  prefetch 启动 (多个 source 的 tryAcquireWork → prefetchPendingWork)
+01:02:33.979  src=B500/B6C0/B880 → NEED_READER Creating → WAIT_FOR_NOTIFY
+01:02:33.984  src=B340 → NEED_READER Creating → WAIT_FOR_NOTIFY  ← 最后一个注册
+01:02:33.986  [prefetch] complete, notifying waiters  ← 4 次 notifyAll 全部在此刻
+01:02:33.986  src=B500/B6C0 WAIT_READER → Ready  ← ✅ 注册在 notifyAll 之前，被唤醒
+01:02:33.987  src=B880 WAIT_READER → Ready         ← ✅ 同上
+01:02:33.987  src=B340 → WAIT_FOR_NOTIFY
+              ↑ setNotifyFuture 在所有 notifyAll 之后 → 永久丢失
+```
 
 ### pstack 全景（第二次复现后抓取）
 
@@ -529,11 +560,17 @@ PrefetchRNColumnarReader: 0 threads                  → all terminated
 
 ### 结论
 
-Commit 4 的 "NotStarted → detached thread async materialize + WAIT_FOR_NOTIFY" 模式在并发度较高时会产生 missed wakeup race，因为 producer（detached thread）是单次执行的，无法像 gRPC 网络线程那样提供可重入的 wakeup。
+`WAIT_FOR_NOTIFY` 协议依赖 producer 提供**可重入的 wakeup**——如果一次 `notifyAll` 时队列为空，后续必须有新的 `notifyAll` 来唤醒后来注册的 waiter。gRPC 线程满足这个条件（持续收包），但 columnar reader materialize 的 detached thread 不满足（一次性执行）。
 
-**修复方向**：回退 Commit 4，回到 Commit 3 的模型——NotStarted reader 在 IO pool 的 `executeIOImpl()` 中内联 materialize。内联 materialize 虽然阻塞 IO pool 数秒，但完全在 pipeline scheduler 的管控之内，不依赖外部 detached thread 的单次通知，从根本上消除了 race window。
+因此，**所有 columnar reader materialize 场景都不能使用 `setNotifyFuture + WAIT_FOR_NOTIFY`**，包括：
+1. NotStarted → 主动触发 `startAsyncMaterializeReader` → WAIT_FOR_NOTIFY（Race 1）
+2. Creating (prefetch) → WAIT_FOR_NOTIFY（Race 2）
 
-这也解释了设计文档 Propose Design §4 和 §5 中提到的约束："等待异步 reader materialize 或队列数据时，应优先使用 `WAIT_FOR_NOTIFY`" 和 "source 第一次领取 reader work 后，如果 work 是 `NotStarted`，可以返回 `IO_IN`，由 `executeIOImpl()` 同步 materialize 当前 reader"——原设计中 NotStarted 是走 `IO_IN` 路径的，Commit 4 将其改为 `WAIT_FOR_NOTIFY` 偏离了这一设计意图。
+**最终修复**：`RNColumnarSourceOp` 中彻底移除所有 `WAIT_FOR_NOTIFY` 返回路径。无论 reader work 处于 NotStarted 还是 Creating 状态，`awaitImpl()` 都返回 `IO_IN`，由 `executeIOImpl()` 在 IO pool 中内联 materialize。若 prefetch 线程恰好已完成（状态=Ready），则直接消费；否则调用 `createColumnarReaderWithBackoff()` 内联执行。
+
+内联 materialize 虽然占用 IO pool 线程数秒（涉及 FFI / backoff），但完全在 pipeline scheduler 的管控之内，不依赖外部 detached thread 的单次通知，从根本上消除了 race window。
+
+这也解释了原设计文档 Proposed Design §4 和 §5 中的约束：NotStarted reader work 应走 `IO_IN` 路径由 `executeIOImpl()` 同步 materialize，而非通过 `WAIT_FOR_NOTIFY` 等待异步完成。
 
 ## Compatibility
 

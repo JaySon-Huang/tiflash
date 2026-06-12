@@ -109,13 +109,12 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         return OperatorStatus::IO_IN;
     case ColumnarSourceState::WAIT_READER:
     {
-        // We are waiting for a detached thread to finish materializing
+        // We are waiting for a prefetch thread to finish materializing
         // current_reader_work. Check the state without blocking.
         assert(current_reader_work);
         const auto region_id = current_reader_work->plan.region_id;
         LOG_INFO(log, "[src={}] WAIT_READER re-check, region_id={}", fmt::ptr(this), region_id);
         std::optional<ColumnarReaderPtr> taken_reader;
-        bool should_async = false;
         {
             std::lock_guard lock(current_reader_work->mutex);
             switch (current_reader_work->state)
@@ -136,51 +135,32 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
                     "columnar reader work for region {} is already consumed",
                     region_id);
             case RNColumnarReaderMaterializeState::Creating:
-                LOG_INFO(log, "[src={}] WAIT_READER -> still Creating, region_id={}", fmt::ptr(this), region_id);
-                setNotifyFuture(&current_reader_work->notify_future);
-                return OperatorStatus::WAIT_FOR_NOTIFY;
+                // Prefetch hasn't finished yet — return IO_IN so executeIOImpl
+                // can either consume the reader (if Ready by then) or materialize
+                // inline. Avoids the lost wakeup race of WAIT_FOR_NOTIFY.
+                LOG_INFO(
+                    log,
+                    "[src={}] WAIT_READER -> still Creating, return IO_IN, region_id={}",
+                    fmt::ptr(this),
+                    region_id);
+                return OperatorStatus::IO_IN;
             case RNColumnarReaderMaterializeState::NotStarted:
-                LOG_INFO(log, "[src={}] WAIT_READER -> NotStarted (unexpected), region_id={}", fmt::ptr(this), region_id);
-                should_async = true;
-                break;
+                // Safety net: an acquired work should never still be NotStarted
+                // when we are in WAIT_READER state. Fall through to IO_IN so
+                // executeIOImpl can materialize it inline.
+                LOG_INFO(
+                    log,
+                    "[src={}] WAIT_READER -> NotStarted (fallback to inline), region_id={}",
+                    fmt::ptr(this),
+                    region_id);
+                current_reader_work->state = RNColumnarReaderMaterializeState::Creating;
+                return OperatorStatus::IO_IN;
             }
         }
         if (taken_reader.has_value())
         {
             consumeReadyReader(std::move(taken_reader.value()));
             return OperatorStatus::IO_IN;
-        }
-        if (should_async)
-        {
-            // Register for wakeup BEFORE starting async materialize so the
-            // notify_future captures the task even if the detached thread
-            // finishes synchronously fast. Then re-check state: if already
-            // Ready, withdraw the notify registration and proceed.
-            LOG_INFO(log, "[src={}] WAIT_READER triggering async, region_id={}", fmt::ptr(this), region_id);
-            setNotifyFuture(&current_reader_work->notify_future);
-            task->startAsyncMaterializeReader(current_reader_work);
-            {
-                std::optional<ColumnarReaderPtr> fast_reader;
-                {
-                    std::lock_guard lock(current_reader_work->mutex);
-                    if (current_reader_work->state == RNColumnarReaderMaterializeState::Ready)
-                    {
-                        fast_reader.emplace(std::move(current_reader_work->reader.value()));
-                        current_reader_work->reader.reset();
-                        current_reader_work->exception = nullptr;
-                        current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
-                    }
-                }
-                if (fast_reader.has_value())
-                {
-                    LOG_INFO(log, "[src={}] async finished synchronously, region_id={}", fmt::ptr(this), region_id);
-                    clearNotifyFuture();
-                    consumeReadyReader(std::move(fast_reader.value()));
-                    return OperatorStatus::IO_IN;
-                }
-            }
-            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (async), region_id={}", fmt::ptr(this), region_id);
-            return OperatorStatus::WAIT_FOR_NOTIFY;
         }
         return OperatorStatus::IO_IN; // unreachable
     }
@@ -197,11 +177,9 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         current_reader_work = std::move(next_work.value());
         const auto region_id = current_reader_work->plan.region_id;
 
-        // Single lock acquisition to atomically check state and decide next action,
-        // avoiding a TOCTOU race with the prefetch thread.
+        // Single lock acquisition to atomically check state and decide next action.
         std::optional<ColumnarReaderPtr> taken_reader;
-        bool should_async = false;
-        bool should_wait = false;
+        bool should_materialize = false;  // inline materialize in IO pool
         {
             std::lock_guard lock(current_reader_work->mutex);
             switch (current_reader_work->state)
@@ -221,12 +199,21 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
                     "columnar reader work for region {} is already consumed",
                     region_id);
             case RNColumnarReaderMaterializeState::NotStarted:
-                LOG_INFO(log, "[src={}] NEED_READER acquired NotStarted, region_id={}", fmt::ptr(this), region_id);
-                should_async = true;
-                break;
             case RNColumnarReaderMaterializeState::Creating:
-                LOG_INFO(log, "[src={}] NEED_READER acquired Creating (prefetch), region_id={}", fmt::ptr(this), region_id);
-                should_wait = true;
+                // Whether the reader work hasn't been started yet or a prefetch
+                // thread is already working on it, return IO_IN so executeIOImpl
+                // handles it inline in the IO pool. This avoids the lost wakeup
+                // race that occurs when a detached thread's one-shot notifyAll
+                // executes before the scheduler registers the waiting task.
+                LOG_INFO(
+                    log,
+                    "[src={}] NEED_READER acquired {} -> inline, region_id={}",
+                    fmt::ptr(this),
+                    current_reader_work->state == RNColumnarReaderMaterializeState::NotStarted
+                        ? "NotStarted" : "Creating",
+                    region_id);
+                current_reader_work->state = RNColumnarReaderMaterializeState::Creating;
+                should_materialize = true;
                 break;
             }
         }
@@ -236,42 +223,10 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
             consumeReadyReader(std::move(taken_reader.value()));
             return OperatorStatus::IO_IN;
         }
-        if (should_async)
+        if (should_materialize)
         {
-            // Register for wakeup BEFORE starting async materialize (see WAIT_READER).
-            LOG_INFO(log, "[src={}] NEED_READER triggering async, region_id={}", fmt::ptr(this), region_id);
-            setNotifyFuture(&current_reader_work->notify_future);
-            task->startAsyncMaterializeReader(current_reader_work);
-            {
-                std::optional<ColumnarReaderPtr> fast_reader;
-                {
-                    std::lock_guard lock(current_reader_work->mutex);
-                    if (current_reader_work->state == RNColumnarReaderMaterializeState::Ready)
-                    {
-                        fast_reader.emplace(std::move(current_reader_work->reader.value()));
-                        current_reader_work->reader.reset();
-                        current_reader_work->exception = nullptr;
-                        current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
-                    }
-                }
-                if (fast_reader.has_value())
-                {
-                    LOG_INFO(log, "[src={}] async finished synchronously, region_id={}", fmt::ptr(this), region_id);
-                    clearNotifyFuture();
-                    consumeReadyReader(std::move(fast_reader.value()));
-                    return OperatorStatus::IO_IN;
-                }
-            }
-            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (async), region_id={}", fmt::ptr(this), region_id);
-            state = ColumnarSourceState::WAIT_READER;
-            return OperatorStatus::WAIT_FOR_NOTIFY;
-        }
-        if (should_wait)
-        {
-            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (prefetch), region_id={}", fmt::ptr(this), region_id);
-            setNotifyFuture(&current_reader_work->notify_future);
-            state = ColumnarSourceState::WAIT_READER;
-            return OperatorStatus::WAIT_FOR_NOTIFY;
+            // executeIOImpl will materialize the reader inline in the IO pool.
+            return OperatorStatus::IO_IN;
         }
         return OperatorStatus::IO_IN; // unreachable
     }
@@ -289,8 +244,60 @@ OperatorStatus RNColumnarSourceOp::executeIOImpl()
         return OperatorStatus::HAS_OUTPUT;
     case ColumnarSourceState::NEED_READER:
     case ColumnarSourceState::WAIT_READER:
-        // Should not be in executeIOImpl at these states; awaitImpl handles them.
-        return awaitImpl();
+    {
+        // awaitImpl has set current_reader_work to Creating and returned IO_IN.
+        // Check if prefetch already finished (Ready) — if so, consume directly.
+        // Otherwise materialize inline in the IO pool.
+        assert(current_reader_work);
+        const auto region_id = current_reader_work->plan.region_id;
+
+        std::optional<ColumnarReaderPtr> taken_reader;
+        {
+            std::lock_guard lock(current_reader_work->mutex);
+            if (current_reader_work->state == RNColumnarReaderMaterializeState::Ready)
+            {
+                // Prefetch finished before we got scheduled on IO pool — consume directly.
+                LOG_INFO(
+                    log,
+                    "[src={}] executeIO found ready (prefetch beat us), region_id={}",
+                    fmt::ptr(this),
+                    region_id);
+                taken_reader.emplace(std::move(current_reader_work->reader.value()));
+                current_reader_work->reader.reset();
+                current_reader_work->exception = nullptr;
+                current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+            }
+        }
+
+        if (taken_reader.has_value())
+        {
+            consumeReadyReader(std::move(taken_reader.value()));
+        }
+        else
+        {
+            // Still Creating (or NotStarted from safety net) — materialize inline.
+            LOG_INFO(
+                log,
+                "[src={}] executeIO materializing inline, region_id={}",
+                fmt::ptr(this),
+                region_id);
+
+            auto reader = task->createColumnarReaderWithBackoff(current_reader_work);
+            {
+                std::lock_guard lock(current_reader_work->mutex);
+                current_reader_work->reader.reset();
+                current_reader_work->exception = nullptr;
+                current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
+            }
+            // Wake any waiters (stream path via cv, pipeline path via notify_future).
+            current_reader_work->cv.notify_all();
+            current_reader_work->notify_future.notifyAll();
+            LOG_INFO(log, "[src={}] inline materialize done, region_id={}", fmt::ptr(this), region_id);
+
+            consumeReadyReader(std::move(reader));
+        }
+        // fall through to READING
+    }
     case ColumnarSourceState::READING:
     {
         assert(current_input_stream);
