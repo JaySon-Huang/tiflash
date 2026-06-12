@@ -37,6 +37,8 @@
 #include <IO/IOThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
+#include <Operators/NullSourceOp.h>
+#include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
 #include <Storages/KVStore/TMTContext.h>
@@ -623,6 +625,49 @@ void StorageDisaggregated::filterConditionsWithPushedDownFilters(
     }
 }
 
+namespace
+{
+void addColumnarNullSource(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan,
+    const LoggerPtr & log)
+{
+    auto header = Block(getColumnWithTypeAndName(genNamesAndTypesForTableScan(table_scan)));
+    group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header, log->identifier()));
+}
+
+void addColumnarTableScanProfileInfos(
+    const Context & context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan)
+{
+    auto * dag_context = context.getDAGContext();
+    const auto & table_scan_id = table_scan.getTableScanExecutorID();
+    dag_context->addInboundIOProfileInfos(table_scan_id, group_builder.getCurIOProfileInfos());
+    dag_context->addOperatorProfileInfos(table_scan_id, group_builder.getCurProfileInfos());
+}
+} // namespace
+
+#ifdef DBMS_PUBLIC_GTEST
+void addColumnarNullSourceForTest(
+    PipelineExecutorContext & exec_context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan,
+    const LoggerPtr & log)
+{
+    addColumnarNullSource(exec_context, group_builder, table_scan, log);
+}
+
+void addColumnarTableScanProfileInfosForTest(
+    const Context & context,
+    PipelineExecGroupBuilder & group_builder,
+    const TiDBTableScan & table_scan)
+{
+    addColumnarTableScanProfileInfos(context, group_builder, table_scan);
+}
+#endif
+
 BlockInputStreams StorageDisaggregated::readThroughColumnar(const Context & context, unsigned num_streams)
 {
     DAGPipeline pipeline;
@@ -680,7 +725,8 @@ void StorageDisaggregated::readThroughColumnar(
         remote_table_ranges,
         num_streams);
     const auto generated_column_infos = genGeneratedColumnInfosForDisaggregatedRead(table_scan);
-    if (!read_columnar_tasks.empty())
+    bool has_columnar_source = false;
+    if (!read_columnar_tasks.empty() && read_columnar_tasks.front()->getReaderCount() > 0)
     {
         auto & task_pool = read_columnar_tasks.front();
         const size_t source_num = task_pool->getSourceNum();
@@ -696,7 +742,15 @@ void StorageDisaggregated::readThroughColumnar(
                 .task = task_pool,
             }));
         }
+        has_columnar_source = true;
     }
+    if (!has_columnar_source)
+    {
+        // Keep the pipeline group non-empty so downstream generated-column, cast and projection
+        // transforms can still derive their input header for empty columnar ranges.
+        addColumnarNullSource(exec_context, group_builder, table_scan, log);
+    }
+    addColumnarTableScanProfileInfos(context, group_builder, table_scan);
 
     executeGeneratedColumnPlaceholder(exec_context, group_builder, generated_column_infos, log);
 
@@ -1499,103 +1553,6 @@ Block RNColumnarInputStream::readImpl([[maybe_unused]] FilterPtr & res_filter, [
 
         total_bytes += block.bytes();
         return block;
-    }
-}
-
-// RNColumnarSourceOp
-void RNColumnarSourceOp::operateSuffixImpl()
-{
-    UNUSED(context);
-    const auto keyspace_id = exec_context.getKeyspaceID();
-    const double total_cost_sec = total_cost_watch.elapsedSeconds();
-    const UInt64 rows_per_sec
-        = total_cost_sec > 0 ? static_cast<UInt64>(static_cast<double>(total_rows) / total_cost_sec) : 0;
-    const UInt64 bytes_per_sec
-        = total_cost_sec > 0 ? static_cast<UInt64>(static_cast<double>(total_bytes) / total_cost_sec) : 0;
-    LOG_INFO(
-        log,
-        "Finished reading columnar snapshots, keyspace_id={} task_pool_worker_total_cost={:.3f}s claimed_streams={} "
-        "rows={} "
-        "rows_per_sec={} "
-        "bytes={} bytes_per_sec={} read_cost={:.3f}s",
-        keyspace_id,
-        total_cost_sec,
-        total_streams,
-        total_rows,
-        rows_per_sec,
-        total_bytes,
-        bytes_per_sec,
-        duration_read_sec);
-}
-
-void RNColumnarSourceOp::operatePrefixImpl()
-{
-    total_cost_watch.restart();
-    LOG_INFO(log, "Begin reading columnar snapshots, keyspace_id={}", exec_context.getKeyspaceID());
-}
-
-OperatorStatus RNColumnarSourceOp::readImpl(Block & block)
-{
-    if (unlikely(done))
-    {
-        block = {};
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (t_block.has_value())
-    {
-        std::swap(block, t_block.value());
-        t_block.reset();
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    return awaitImpl();
-}
-
-OperatorStatus RNColumnarSourceOp::awaitImpl()
-{
-    if (unlikely(done || t_block.has_value()))
-    {
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    return OperatorStatus::IO_IN;
-}
-
-OperatorStatus RNColumnarSourceOp::executeIOImpl()
-{
-    if (unlikely(done || t_block.has_value()))
-    {
-        return OperatorStatus::HAS_OUTPUT;
-    }
-
-    if (!current_input_stream)
-    {
-        auto next_reader_work = task->tryAcquireReaderWork();
-        if (!next_reader_work.has_value())
-        {
-            done = true;
-            return OperatorStatus::HAS_OUTPUT;
-        }
-        current_input_stream = task->createInputStream(next_reader_work.value());
-        ++total_streams;
-    }
-
-    FilterPtr filter_ignored = nullptr;
-    Stopwatch w{CLOCK_MONOTONIC_COARSE};
-    Block block = current_input_stream->read(filter_ignored, false);
-    duration_read_sec += w.elapsedSeconds();
-    if likely (block && block.rows() > 0)
-    {
-        total_rows += block.rows();
-        total_bytes += block.bytes();
-        t_block.emplace(std::move(block));
-        return OperatorStatus::HAS_OUTPUT;
-    }
-    else
-    {
-        current_input_stream.reset();
-        return awaitImpl();
     }
 }
 
