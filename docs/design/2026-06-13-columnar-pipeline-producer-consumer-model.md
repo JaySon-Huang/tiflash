@@ -14,9 +14,11 @@
 
 ## Context
 
-### 当前模型（Commit 4 之后）
+### 当前模型（lost wakeup race 修复后）
 
-reader materialize 已经是异步的（`startAsyncMaterializeReader` + `WAIT_FOR_NOTIFY`），但 **block 读取仍然是串行的**：
+reader materialize 已改为在 IO pool 中内联执行（`awaitImpl()` 对 NotStarted/Creating 均返回 `IO_IN`，由 `executeIOImpl()` 内联 materialize）。详见[设计文档 §Observed Issue](./2026-06-09-storage-disaggregated-columnar-pipeline.md#observed-issue-notstarted-async-materialize-lost-wakeup-race)。
+
+但 **block 读取仍然是串行的**：
 
 ```text
 同一个 Pipeline Task:
@@ -212,6 +214,22 @@ SharedQueue::build(
   RNColumnarSourceOp::tryPop → FINISHED → 发空 block → 下游正常结束
 ```
 
+### SharedQueue WAIT_FOR_NOTIFY 的安全性
+
+本方案中 producer（`ColumnarReadOp`）和 consumer（`RNColumnarSourceOp`）都使用了 `WAIT_FOR_NOTIFY`，但其安全性条件与 columnar detached thread 的 `WAIT_FOR_NOTIFY` 有根本区别。
+
+[设计文档 §Observed Issue](./2026-06-09-storage-disaggregated-columnar-pipeline.md#observed-issue-notstarted-async-materialize-lost-wakeup-race) 详细分析了 columnar reader materialize 中 `WAIT_FOR_NOTIFY` 的 lost wakeup race：因为 producer（detached Prefetch thread）是一次性的——每个 reader work 只 materialize 一次，`notifyAll` 只调用一次——如果这次调用时 waiter 尚未注册到 `pipe_cv`，wakeup 永久丢失。
+
+`SharedQueue` 的 `WAIT_FOR_NOTIFY` 不会产生此 race，原因有两个：
+
+1. **Producer 和 consumer 都是持久运行的 pipeline task**。`ColumnarReadOp` 作为一个 SinkOp，只要还有 reader work 可读，就会继续 push block。`RNColumnarSourceOp` 作为 SourceOp，只要下游还需要数据，就会继续 pop。它们不会像 detached thread 那样执行完一次 materialize 后消失。
+
+2. **每次 push/pop 都可能触发新的 `notifyAll`**。`SharedQueue` 内基于 `LooseBoundedMPMCQueue`，每次 `tryPop`（释放一个 slot）或 `tryPush`（写入一个 block）后，另一方若在等待，会在后续 pop/push 时被唤醒。Wakeup 是**可重入的**——即使某次 `notifyAll` 时 waiter 尚未注册，下一次 push/pop 操作会再次触发通知。
+
+这与 `ExchangeReceiver` 的安全性保证相同：gRPC 持续收包 → 持续 push → 持续 `notifyAll`。SharedQueue 的 IO 侧（ColumnarReadOp 持续读 block）和 CPU 侧（RNColumnarSourceOp 持续消费）构成同样的可重入模式。
+
+**约束**：如果 producer（ColumnarReadOp）读完所有 reader work 后退出（调用 `producerFinish()`），此后 `SharedQueue` 不会再接受新的 push。此时若 consumer 尚未从 `EMPTY` 状态恢复，`SharedQueueSourceOp::readImpl()` 中 `tryPop` 返回 `FINISHED` 而非 `EMPTY`，consumer 直接收到 EOF，不会陷入 `WAIT_FOR_NOTIFY`。因此 EOF 场景也是安全的。
+
 ### Profile 归档
 
 profile 记录时机需要调整。`addColumnarTableScanProfileInfos` 应在 pipeline group 1 的 source 之后记录，指向 `ColumnarReadOp` 而非 `RNColumnarSourceOp`：
@@ -314,6 +332,7 @@ stream 路径（`StorageDisaggregated::readThroughColumnar(const Context&, unsig
 | profile 从 SourceOp 改为 SinkOp 后 EXPLAIN ANALYZE 统计丢失 | 观测盲区 | 确保 `DAGContext::addInboundIOProfileInfos` 记录到 `ColumnarReadOp` 的 IO profile |
 | `ColumnarReadOp` 并发度 > 1 导致列数据错乱 | 查询结果错误 | 强制并发度为 1；添加 `RUNTIME_CHECK(source_num == 1)` 在 producer group |
 | SharedQueue 带来额外的 block 拷贝开销 | 吞吐略降 | `LooseBoundedMPMCQueue` 使用 `std::move` 语义，block 是 move 的，无额外深拷贝 |
+| SharedQueue 的 WAIT_FOR_NOTIFY 可能产生 lost wakeup | task 永久等待 | ✅ 已分析并排除。与 columnar detached thread 的单次 notifyAll 不同，SharedQueue 的 producer/consumer 都是持久 pipeline task，每次 push/pop 都可能触发新的 notifyAll，wakeup 可重入。详见[安全性分析](#sharedqueue-wait_for_notify-的安全性) |
 
 ## Alternatives Considered
 
@@ -323,7 +342,7 @@ stream 路径（`StorageDisaggregated::readThroughColumnar(const Context&, unsig
 
 ### 方案 C: 用 detached thread 做生产者
 
-类似于当前的 `PrefetchRNColumnarReader`，用自定义线程从 columnar reader 读取 block 并写入一个自定义队列。问题：detached thread 绕过 TaskScheduler，无法享受统一的公平性、取消和指标。
+用自定义线程从 columnar reader 读取 block 并写入一个自定义队列。**已否决**：基于 [lost wakeup race 实测结论](./2026-06-09-storage-disaggregated-columnar-pipeline.md#observed-issue-notstarted-async-materialize-lost-wakeup-race)，detached thread + 自定义队列的 `WAIT_FOR_NOTIFY` 模式在 producer 为一次性执行时会产生不可恢复的 missed wakeup。此外 detached thread 绕过 TaskScheduler，无法享受统一的公平性、取消和指标。
 
 **选择当前方案 A 的理由**：复用已有 `SharedQueue` + `PipelineExecGroupBuilder::addGroup()` 基础设施，改动最小，符合 pipeline model 的调度边界，且 IO/CPU 并行收益明确。
 
