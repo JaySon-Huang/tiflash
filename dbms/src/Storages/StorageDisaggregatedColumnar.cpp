@@ -38,6 +38,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SharedContexts/Disagg.h>
 #include <Operators/NullSourceOp.h>
+#include <Operators/SharedQueue.h>
+#include <Storages/Columnar/ColumnarReadSourceOp.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/DeltaMerge/ScanContext.h>
 #include <Storages/KVStore/KVStore.h>
@@ -730,16 +732,45 @@ void StorageDisaggregated::readThroughColumnar(
     {
         auto & task_pool = read_columnar_tasks.front();
         const size_t source_num = task_pool->getSourceNum();
+        const size_t producer_num = source_num;
         LOG_INFO(
             log,
-            "use shared columnar reader task pool, reader_num={}, source_num={}",
+            "use shared columnar reader task pool, reader_num={}, producer_num={}, source_num={}",
             task_pool->getReaderCount(),
+            producer_num,
             source_num);
+        SharedQueueSinkHolderPtr shared_queue_sink_holder;
+        SharedQueueSourceHolderPtr shared_queue_source_holder;
+        std::tie(shared_queue_sink_holder, shared_queue_source_holder) = SharedQueue::build(
+            exec_context,
+            producer_num,
+            source_num,
+            /*max_buffered_bytes=*/-1,
+            /*max_queue_size=*/4);
+
+        for (size_t i = 0; i < producer_num; ++i)
+        {
+            group_builder.addConcurrency(ColumnarReadSourceOp::create({
+                .exec_context = exec_context,
+                .task = task_pool,
+            }));
+        }
+
+        addColumnarTableScanProfileInfos(context, group_builder, table_scan);
+
+        group_builder.transform([&](auto & builder) {
+            builder.setSinkOp(
+                std::make_unique<SharedQueueSinkOp>(exec_context, log->identifier(), shared_queue_sink_holder));
+        });
+        auto source_header = group_builder.getCurrentHeader();
+        group_builder.addGroup();
         for (size_t i = 0; i < source_num; ++i)
         {
             group_builder.addConcurrency(RNColumnarSourceOp::create({
                 .exec_context = exec_context,
-                .task = task_pool,
+                .req_id = log->identifier(),
+                .header = source_header,
+                .shared_queue = shared_queue_source_holder,
             }));
         }
         has_columnar_source = true;
@@ -749,8 +780,8 @@ void StorageDisaggregated::readThroughColumnar(
         // Keep the pipeline group non-empty so downstream generated-column, cast and projection
         // transforms can still derive their input header for empty columnar ranges.
         addColumnarNullSource(exec_context, group_builder, table_scan, log);
+        addColumnarTableScanProfileInfos(context, group_builder, table_scan);
     }
-    addColumnarTableScanProfileInfos(context, group_builder, table_scan);
 
     executeGeneratedColumnPlaceholder(exec_context, group_builder, generated_column_infos, log);
 
@@ -1138,8 +1169,7 @@ ColumnarReaderPtr RNColumnarReadTask::getOrCreateReader(const RNColumnarReaderWo
     }
 }
 
-std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(
-    const RNColumnarReaderWorkPtr & reader_work)
+std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(const RNColumnarReaderWorkPtr & reader_work)
 {
     RUNTIME_CHECK(reader_work != nullptr);
 
@@ -1170,10 +1200,7 @@ std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(
 
 void RNColumnarReadTask::startAsyncMaterializeReader(const RNColumnarReaderWorkPtr & reader_work)
 {
-    LOG_INFO(
-        getLog(),
-        "startAsyncMaterializeReader triggered, region_id={}",
-        reader_work->plan.region_id);
+    LOG_INFO(getLog(), "startAsyncMaterializeReader triggered, region_id={}", reader_work->plan.region_id);
     prefetchReaderWork(reader_work);
 }
 
@@ -1203,43 +1230,53 @@ void RNColumnarReadTask::prefetchReaderWork(const RNColumnarReaderWorkPtr & read
 
     const auto region_id = reader_work->plan.region_id;
     LOG_INFO(getLog(), "materialize columnar reader asynchronously, region_id={}", region_id);
-    newThreadManager()->scheduleThenDetach(true, "PrefetchRNColumnarReader", [self = shared_from_this(), reader_work, region_id] {
-        try
-        {
-            auto reader = self->createColumnarReaderWithBackoff(reader_work);
+    newThreadManager()->scheduleThenDetach(
+        true,
+        "PrefetchRNColumnarReader",
+        [self = shared_from_this(), reader_work, region_id] {
+            try
             {
-                auto guard = std::lock_guard(reader_work->mutex);
-                if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
+                auto reader = self->createColumnarReaderWithBackoff(reader_work);
                 {
-                    LOG_INFO(self->getLog(), "[prefetch] region_id={} already consumed, skip", region_id);
-                    return;
+                    auto guard = std::lock_guard(reader_work->mutex);
+                    if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
+                    {
+                        LOG_INFO(self->getLog(), "[prefetch] region_id={} already consumed, skip", region_id);
+                        return;
+                    }
+                    reader_work->reader.emplace(std::move(reader));
+                    reader_work->exception = nullptr;
+                    reader_work->state = RNColumnarReaderMaterializeState::Ready;
                 }
-                reader_work->reader.emplace(std::move(reader));
-                reader_work->exception = nullptr;
-                reader_work->state = RNColumnarReaderMaterializeState::Ready;
             }
-        }
-        catch (...)
-        {
+            catch (...)
             {
-                auto guard = std::lock_guard(reader_work->mutex);
-                if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
                 {
-                    LOG_WARNING(self->getLog(), "[prefetch] region_id={} already consumed (error path), skip", region_id);
-                    return;
+                    auto guard = std::lock_guard(reader_work->mutex);
+                    if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
+                    {
+                        LOG_WARNING(
+                            self->getLog(),
+                            "[prefetch] region_id={} already consumed (error path), skip",
+                            region_id);
+                        return;
+                    }
+                    reader_work->reader.reset();
+                    reader_work->exception = std::current_exception();
+                    reader_work->state = RNColumnarReaderMaterializeState::Failed;
                 }
-                reader_work->reader.reset();
-                reader_work->exception = std::current_exception();
-                reader_work->state = RNColumnarReaderMaterializeState::Failed;
             }
-        }
-        LOG_INFO(self->getLog(), "[prefetch] region_id={} complete, state={}, notifying waiters", region_id, static_cast<int>(reader_work->state));
-        reader_work->cv.notify_all();
-        reader_work->notify_future.notifyAll();
-    });
+            LOG_INFO(
+                self->getLog(),
+                "[prefetch] region_id={} complete, state={}, notifying waiters",
+                region_id,
+                static_cast<int>(reader_work->state));
+            reader_work->cv.notify_all();
+            reader_work->notify_future.notifyAll();
+        });
 }
 
-std::optional<RNColumnarReaderWorkPtr> RNColumnarReadTask::tryAcquireReaderWork()
+std::optional<RNColumnarReaderWorkPtr> RNColumnarReadTask::tryAcquireReaderWork(bool enable_prefetch)
 {
     RNColumnarReaderWorkPtr reader_work;
     {
@@ -1249,7 +1286,8 @@ std::optional<RNColumnarReaderWorkPtr> RNColumnarReadTask::tryAcquireReaderWork(
         reader_work = pending_reader_works.front();
         pending_reader_works.pop_front();
     }
-    prefetchPendingWork();
+    if (enable_prefetch)
+        prefetchPendingWork();
     return reader_work;
 }
 

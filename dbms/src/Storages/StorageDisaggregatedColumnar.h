@@ -103,7 +103,8 @@ struct RNColumnarReaderWork
     std::mutex mutex;
     // cv is kept for the stream path (RNColumnarInputStream) which still uses blocking wait.
     std::condition_variable cv;
-    // notify_future is used by the pipeline path (RNColumnarSourceOp) for WAIT_FOR_NOTIFY.
+    // notify_future is kept for experimental one-shot/latch implementations; the current pipeline path
+    // does not wait on reader materialize with WAIT_FOR_NOTIFY.
     RNColumnarReaderNotifyFuture notify_future;
     RNColumnarReaderMaterializeState state = RNColumnarReaderMaterializeState::NotStarted;
     std::optional<ColumnarReaderPtr> reader;
@@ -161,7 +162,7 @@ public:
     /// Throws if state is Failed or Consumed (error state).
     std::optional<ColumnarReaderPtr> tryGetReadyReader(const RNColumnarReaderWorkPtr & reader_work);
 
-    std::optional<RNColumnarReaderWorkPtr> tryAcquireReaderWork();
+    std::optional<RNColumnarReaderWorkPtr> tryAcquireReaderWork(bool enable_prefetch = true);
 
 #ifdef DBMS_PUBLIC_GTEST
     void replaceReaderWorkForTest(

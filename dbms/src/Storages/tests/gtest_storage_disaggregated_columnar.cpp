@@ -19,8 +19,10 @@
 #include <Flash/Executor/PipelineExecutorContext.h>
 #include <Flash/Pipeline/Exec/PipelineExecBuilder.h>
 #include <Interpreters/Context.h>
+#include <Operators/SharedQueue.h>
 #include <Storages/Columnar/ColumnarSourceOp.h>
 #include <Storages/StorageDisaggregatedColumnar.h>
+#include <TestUtils/FunctionTestUtils.h>
 #include <TestUtils/TiFlashTestBasic.h>
 #include <TiDB/Schema/TiDB.h>
 #include <gtest/gtest.h>
@@ -92,6 +94,59 @@ TEST(StorageDisaggregatedColumnarTest, NullSourceRecordsTableScanProfiles)
     ASSERT_EQ(dag_context.getOperatorProfileInfosMap()["columnar_ts"].size(), 1);
     ASSERT_EQ(dag_context.getInboundIOProfileInfosMap().count("columnar_ts"), 1);
     ASSERT_EQ(dag_context.getInboundIOProfileInfosMap()["columnar_ts"].size(), 1);
+}
+
+TEST(StorageDisaggregatedColumnarTest, QueueSourceReadsSharedQueue)
+{
+    PipelineExecutorContext exec_context;
+    auto [sink_holder, source_holder] = SharedQueue::build(exec_context, 1, 1, -1, 4);
+    Block header{createColumn<Int64>({}, "col")};
+    Block block{createColumn<Int64>({1, 2}, "col")};
+
+    ASSERT_EQ(sink_holder->tryPush(std::move(block)), MPMCQueueResult::OK);
+
+    RNColumnarSourceOp source({
+        .exec_context = exec_context,
+        .req_id = "columnar_queue_source_test",
+        .header = header,
+        .shared_queue = source_holder,
+    });
+
+    Block output;
+    ASSERT_EQ(source.read(output), OperatorStatus::HAS_OUTPUT);
+    ASSERT_TRUE(output);
+    ASSERT_EQ(output.rows(), 2);
+    ASSERT_EQ(output.getByName("col").column->size(), 2);
+
+    sink_holder->finish();
+    Block eof;
+    ASSERT_EQ(source.read(eof), OperatorStatus::HAS_OUTPUT);
+    ASSERT_FALSE(eof);
+}
+
+TEST(StorageDisaggregatedColumnarTest, QueueSourceWaitsAndCancelsThroughSharedQueue)
+{
+    PipelineExecutorContext exec_context;
+    auto [sink_holder, source_holder] = SharedQueue::build(exec_context, 1, 1, -1, 4);
+    Block header{createColumn<Int64>({}, "col")};
+
+    RNColumnarSourceOp source({
+        .exec_context = exec_context,
+        .req_id = "columnar_queue_source_wait_test",
+        .header = header,
+        .shared_queue = source_holder,
+    });
+
+    Block output;
+    ASSERT_EQ(source.read(output), OperatorStatus::WAIT_FOR_NOTIFY);
+    ASSERT_FALSE(output);
+
+    // Cancellation is delivered through PipelineExecutorContext to registered shared queues.
+    exec_context.cancel();
+    ASSERT_EQ(source.read(output), OperatorStatus::CANCELLED);
+
+    // Balance the manually created producer holder because no SharedQueueSinkOp owns it in this unit test.
+    sink_holder->finish();
 }
 
 } // namespace DB::tests
