@@ -149,6 +149,12 @@ public:
 
     ColumnarReaderPtr getOrCreateReader(const RNColumnarReaderWorkPtr & reader_work);
 
+    /// Start asynchronous materialize for a given work on a detached thread.
+    /// Atomically transitions NotStarted → Creating and kicks off columnar reader
+    /// creation with backoff. No-op if the work is already in a later state.
+    /// Used by the pipeline path so the IO thread is never blocked on materialize.
+    void startAsyncMaterializeReader(const RNColumnarReaderWorkPtr & reader_work);
+
     /// Non-blocking read attempt for the pipeline path.
     /// Returns the reader if state is Ready (and transitions to Consumed).
     /// Returns std::nullopt if state is NotStarted or Creating.

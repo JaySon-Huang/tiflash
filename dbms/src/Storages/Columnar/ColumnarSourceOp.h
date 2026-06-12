@@ -27,6 +27,17 @@
 namespace DB
 {
 
+/// Explicit state machine for RNColumnarSourceOp.
+/// Replaces the implicit state encoded by t_block / current_input_stream / current_reader_work / done.
+enum class ColumnarSourceState : uint8_t
+{
+    NEED_READER,  // No current reader work; awaitImpl will acquire one.
+    WAIT_READER,  // Reader work is being materialized asynchronously (Creating state).
+    READING,      // Reader is ready and input stream created; ready to read a block.
+    READY_BLOCK,  // t_block has a cached block for downstream.
+    DONE,         // All reader works consumed.
+};
+
 class RNColumnarSourceOp : public SourceOp
 {
     static constexpr auto NAME = "RNProxy";
@@ -67,6 +78,9 @@ protected:
     OperatorStatus executeIOImpl() override;
 
 private:
+    /// Create an input stream from an already-materialized reader, then transition to READING.
+    void consumeReadyReader(ColumnarReaderPtr reader);
+
     const Context & context;
     const LoggerPtr log;
     RNColumnarReadTaskPtr task;
@@ -82,7 +96,7 @@ private:
     // The reader work currently being consumed (or waited on) by this source.
     RNColumnarReaderWorkPtr current_reader_work;
 
-    bool done = false;
+    ColumnarSourceState state = ColumnarSourceState::NEED_READER;
     Stopwatch total_cost_watch{CLOCK_MONOTONIC_COARSE};
 
     // Count the time consumed by reading blocks in the stream of reader works.

@@ -1168,6 +1168,11 @@ std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(
     return std::nullopt;
 }
 
+void RNColumnarReadTask::startAsyncMaterializeReader(const RNColumnarReaderWorkPtr & reader_work)
+{
+    prefetchReaderWork(reader_work);
+}
+
 void RNColumnarReadTask::prefetchPendingWork()
 {
     RNColumnarReaderWorkPtr reader_work;
