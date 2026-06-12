@@ -449,12 +449,91 @@ group_builder.addConcurrency(std::make_unique<NullSourceOp>(exec_context, header
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| reader materialize 改成 notify 后出现 missed wakeup | task 永久等待 | reader work 状态修改和 task 注册都必须在同一 mutex / condition protocol 下完成；注册后再次检查状态 |
+| reader materialize 改成 notify 后出现 missed wakeup | task 永久等待 | ❌ 实测确认：当 NotStarted 走 detached thread + WAIT_FOR_NOTIFY 时，在高并发下(>40 sources)稳定复现 lost wakeup race。详见 [Observed Issue](#observed-issue-notstarted-async-materialize-lost-wakeup-race)。根因是 producer（detached thread）为一次性执行，notifyAll 不可重入。修复方向：回退 NotStarted 的异步路径，改为 IO pool 内联 materialize（`IO_IN`）。 |
 | profile 归档时机不对 | EXPLAIN ANALYZE 表达错误 | 在 source 加入 builder 后立即记录 table scan source profile，并保持 `addOperatorProfileInfos` 的 first-write-wins 语义 |
 | cancel 与 prefetch thread 竞争 | Rust ptr 泄露或 double free | reader work 拥有 reader ptr，状态切换后只允许一个消费者 move reader；未返回 reader 用 scope guard / reader work 析构释放 |
 | region error replan 与 source 领取并发 | reader work 丢失、重复读取或漏唤醒 | `replaceReaderWork()` 只重写当前失败 work 并把新增 works 插回 `pending_reader_works`；队列修改和 work 状态修改使用清晰的锁顺序 |
 | `WAIT_FOR_NOTIFY` metrics 类型不精确 | 观测上无法区分 columnar reader 和普通 table scan | 第一阶段复用 `WAIT_ON_TABLE_SCAN_READ`；如需要更细粒度，再新增 notify type 和 metrics label |
 | stream path 与 pipeline path 行为漂移 | 两种执行模式结果不一致 | 保留 `RNColumnarInputStream` 对照测试，重点比较 block schema、rows、filters、casts 和 error path |
+
+## Observed Issue: NotStarted Async Materialize Lost Wakeup Race
+
+### 背景
+
+Commit 4（状态机收敛）将 NotStarted reader work 的处理从 IO pool 内联 materialize 改为通过 `startAsyncMaterializeReader()` → `newThreadManager()->scheduleThenDetach()` 在 detached thread 中异步 materialize，source 通过 `WAIT_FOR_NOTIFY` 等待。在 `readThroughColumnar` 的 pipeline overload 中执行大表扫描查询时，多次复现 TiFlash 进程全局死锁（所有 1179 个线程全部 IDLE 在 futex / condition_variable wait 上，0 个线程执行活跃工作）。
+
+### 复现场景
+
+| 查询 | 时间 | 卡住 tasks | async materialize | 进程状态 |
+|---|---|---|---|---|
+| start_ts: `...9419782` | 00:16:05 | 5, 6, 9, 10 | ~226 次 | 00:16:09 之后完全停日志，全局死锁 |
+| start_ts: `...46072578` | 00:25:05 | 3, 4, 5, 6, 9, 10 | 226 次 | 00:25:08 之后完全停日志，全局死锁 |
+| start_ts: `...4130378` (加日志) | 00:46:43 | 5, 6, 9, 10 | 226 次 | 127 source 启动，81 完成，**3 个永久丢失，38 个醒来但未完成** |
+
+### pstack 全景（第二次复现后抓取）
+
+```text
+1179 threads total:
+  ALL 1179 threads → futex / condition_variable wait → IDLE
+    0 threads doing any active work
+
+CPU pool (72+ threads): ResourceControlQueue::take() → queue empty, idle
+IO pool  (72+ threads): IOPriorityQueue::take()      → queue empty, idle
+WaitReactor (1 thread):  WaitingTaskList::take()      → list empty, idle
+PrefetchRNColumnarReader: 0 threads                  → all terminated
+```
+
+### Race Window 时序
+
+通过日志追踪，确认了精确的 missed wakeup race 时序。以 `region_id=357` 为例：
+
+```text
+时间轴 (精确到 ms):
+00:46:43.140  [thread 44]  startAsyncMaterializeReader 触发
+00:46:43.140  [thread 229] Prefetch 线程开始 materialize
+00:46:43.140  [thread 62]  startAsyncMaterializeReader 再次触发 (冗余调用)
+00:46:43.143  [thread 230] [prefetch] complete, state=Ready, notifying waiters
+              ↑ PipeConditionVariable::notifyAll() 在此刻执行
+              ↑ 队列为空 — 没有 task 注册在 pipe_cv 中
+
+00:46:43.150  [thread 62]  src=A NEED_READER acquired Creating, region_id=357
+00:46:43.151  [thread 62]  src=A -> WAIT_FOR_NOTIFY (prefetch), region_id=357
+              ↑ Task A 的 setNotifyFuture() 刚设置了 thread_local 指针
+              ↑ 但 scheduler 尚未调用 registerTaskToFuture()
+              ↑ 而 7ms 前 notifyAll 已经 swap 过队列 → 队列空
+              ↑ Task A 注册到 pipe_cv 后，不会再有新的 notifyAll
+              ↑ → Task A 永久丢失
+```
+
+### 根因
+
+`setNotifyFuture()` + `registerTaskToFuture()` 是两步协议：
+
+1. Operator 返回 `WAIT_FOR_NOTIFY` 前调用 `setNotifyFuture()` 设置 thread_local 指针
+2. Pipeline scheduler 在 task 返回后调用 `registerTaskToFuture()` 读取 thread_local 并调用 `pipe_cv.registerTask()`
+
+两步之间存在一个窗口：**prefetch 线程的 `notifyAll()` 可以在 step 1 和 step 2 之间执行**。此时 `pipe_cv` 队列为空，`notifyAll` 是 no-op。Task 随后注册到队列，但不会再有新的 wakeup。
+
+这与 `ExchangeReceiver` 的 `WAIT_FOR_NOTIFY` 模式有本质区别：
+
+- **ExchangeReceiver**：producer（gRPC 线程）持续运行，即使某次 `notifyAll` 时队列为空，后续到达的 packet 会再次触发 `notifyAll`。Wakeup 是**可重入的**。
+- **Columnar reader materialize**：producer（Prefetch detached thread）是**一次性**的——每个 reader work 只会 materialize 一次，`notifyAll` 只调用一次。如果这次调用时没有 waiter，wakeup 就永久丢失。
+
+### 连锁影响
+
+1. 丢失的 task 对应的 `RNColumnarSourceOp` 不再执行 → 该 source 永远不发送 EOF
+2. MPP task 的 `ExchangeSender` 等不到所有 source 的 EOF → task 不 FINISH
+3. 下游 task 的 `ExchangeReceiver` 等不到数据 → 下游 task 不启动
+4. 整个 MPP event DAG 连锁阻塞 → 所有 pipeline task 最终都进入 IDLE
+5. 没有新请求 → 线程池全部休眠 → 进程永久死锁
+
+### 结论
+
+Commit 4 的 "NotStarted → detached thread async materialize + WAIT_FOR_NOTIFY" 模式在并发度较高时会产生 missed wakeup race，因为 producer（detached thread）是单次执行的，无法像 gRPC 网络线程那样提供可重入的 wakeup。
+
+**修复方向**：回退 Commit 4，回到 Commit 3 的模型——NotStarted reader 在 IO pool 的 `executeIOImpl()` 中内联 materialize。内联 materialize 虽然阻塞 IO pool 数秒，但完全在 pipeline scheduler 的管控之内，不依赖外部 detached thread 的单次通知，从根本上消除了 race window。
+
+这也解释了设计文档 Propose Design §4 和 §5 中提到的约束："等待异步 reader materialize 或队列数据时，应优先使用 `WAIT_FOR_NOTIFY`" 和 "source 第一次领取 reader work 后，如果 work 是 `NotStarted`，可以返回 `IO_IN`，由 `executeIOImpl()` 同步 materialize 当前 reader"——原设计中 NotStarted 是走 `IO_IN` 路径的，Commit 4 将其改为 `WAIT_FOR_NOTIFY` 偏离了这一设计意图。
 
 ## Compatibility
 

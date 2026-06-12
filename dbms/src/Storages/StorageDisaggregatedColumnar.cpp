@@ -1170,6 +1170,10 @@ std::optional<ColumnarReaderPtr> RNColumnarReadTask::tryGetReadyReader(
 
 void RNColumnarReadTask::startAsyncMaterializeReader(const RNColumnarReaderWorkPtr & reader_work)
 {
+    LOG_INFO(
+        getLog(),
+        "startAsyncMaterializeReader triggered, region_id={}",
+        reader_work->plan.region_id);
     prefetchReaderWork(reader_work);
 }
 
@@ -1197,15 +1201,19 @@ void RNColumnarReadTask::prefetchReaderWork(const RNColumnarReaderWorkPtr & read
         reader_work->state = RNColumnarReaderMaterializeState::Creating;
     }
 
-    LOG_INFO(getLog(), "materialize columnar reader asynchronously, region_id={}", reader_work->plan.region_id);
-    newThreadManager()->scheduleThenDetach(true, "PrefetchRNColumnarReader", [self = shared_from_this(), reader_work] {
+    const auto region_id = reader_work->plan.region_id;
+    LOG_INFO(getLog(), "materialize columnar reader asynchronously, region_id={}", region_id);
+    newThreadManager()->scheduleThenDetach(true, "PrefetchRNColumnarReader", [self = shared_from_this(), reader_work, region_id] {
         try
         {
             auto reader = self->createColumnarReaderWithBackoff(reader_work);
             {
                 auto guard = std::lock_guard(reader_work->mutex);
                 if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
+                {
+                    LOG_INFO(self->getLog(), "[prefetch] region_id={} already consumed, skip", region_id);
                     return;
+                }
                 reader_work->reader.emplace(std::move(reader));
                 reader_work->exception = nullptr;
                 reader_work->state = RNColumnarReaderMaterializeState::Ready;
@@ -1216,12 +1224,16 @@ void RNColumnarReadTask::prefetchReaderWork(const RNColumnarReaderWorkPtr & read
             {
                 auto guard = std::lock_guard(reader_work->mutex);
                 if (reader_work->state == RNColumnarReaderMaterializeState::Consumed)
+                {
+                    LOG_WARNING(self->getLog(), "[prefetch] region_id={} already consumed (error path), skip", region_id);
                     return;
+                }
                 reader_work->reader.reset();
                 reader_work->exception = std::current_exception();
                 reader_work->state = RNColumnarReaderMaterializeState::Failed;
             }
         }
+        LOG_INFO(self->getLog(), "[prefetch] region_id={} complete, state={}, notifying waiters", region_id, static_cast<int>(reader_work->state));
         reader_work->cv.notify_all();
         reader_work->notify_future.notifyAll();
     });

@@ -112,6 +112,8 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         // We are waiting for a detached thread to finish materializing
         // current_reader_work. Check the state without blocking.
         assert(current_reader_work);
+        const auto region_id = current_reader_work->plan.region_id;
+        LOG_INFO(log, "[src={}] WAIT_READER re-check, region_id={}", fmt::ptr(this), region_id);
         std::optional<ColumnarReaderPtr> taken_reader;
         bool should_async = false;
         {
@@ -119,22 +121,26 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
             switch (current_reader_work->state)
             {
             case RNColumnarReaderMaterializeState::Ready:
+                LOG_INFO(log, "[src={}] WAIT_READER -> Ready, region_id={}", fmt::ptr(this), region_id);
                 taken_reader.emplace(std::move(current_reader_work->reader.value()));
                 current_reader_work->reader.reset();
                 current_reader_work->exception = nullptr;
                 current_reader_work->state = RNColumnarReaderMaterializeState::Consumed;
                 break;
             case RNColumnarReaderMaterializeState::Failed:
+                LOG_INFO(log, "[src={}] WAIT_READER -> Failed, region_id={}", fmt::ptr(this), region_id);
                 std::rethrow_exception(current_reader_work->exception);
             case RNColumnarReaderMaterializeState::Consumed:
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "columnar reader work for region {} is already consumed",
-                    current_reader_work->plan.region_id);
+                    region_id);
             case RNColumnarReaderMaterializeState::Creating:
+                LOG_INFO(log, "[src={}] WAIT_READER -> still Creating, region_id={}", fmt::ptr(this), region_id);
                 setNotifyFuture(&current_reader_work->notify_future);
                 return OperatorStatus::WAIT_FOR_NOTIFY;
             case RNColumnarReaderMaterializeState::NotStarted:
+                LOG_INFO(log, "[src={}] WAIT_READER -> NotStarted (unexpected), region_id={}", fmt::ptr(this), region_id);
                 should_async = true;
                 break;
             }
@@ -150,6 +156,7 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
             // notify_future captures the task even if the detached thread
             // finishes synchronously fast. Then re-check state: if already
             // Ready, withdraw the notify registration and proceed.
+            LOG_INFO(log, "[src={}] WAIT_READER triggering async, region_id={}", fmt::ptr(this), region_id);
             setNotifyFuture(&current_reader_work->notify_future);
             task->startAsyncMaterializeReader(current_reader_work);
             {
@@ -166,11 +173,13 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
                 }
                 if (fast_reader.has_value())
                 {
+                    LOG_INFO(log, "[src={}] async finished synchronously, region_id={}", fmt::ptr(this), region_id);
                     clearNotifyFuture();
                     consumeReadyReader(std::move(fast_reader.value()));
                     return OperatorStatus::IO_IN;
                 }
             }
+            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (async), region_id={}", fmt::ptr(this), region_id);
             return OperatorStatus::WAIT_FOR_NOTIFY;
         }
         return OperatorStatus::IO_IN; // unreachable
@@ -181,10 +190,12 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         auto next_work = task->tryAcquireReaderWork();
         if (!next_work.has_value())
         {
+            LOG_INFO(log, "[src={}] NEED_READER -> DONE (no more works)", fmt::ptr(this));
             state = ColumnarSourceState::DONE;
             return OperatorStatus::HAS_OUTPUT;
         }
         current_reader_work = std::move(next_work.value());
+        const auto region_id = current_reader_work->plan.region_id;
 
         // Single lock acquisition to atomically check state and decide next action,
         // avoiding a TOCTOU race with the prefetch thread.
@@ -196,6 +207,7 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
             switch (current_reader_work->state)
             {
             case RNColumnarReaderMaterializeState::Ready:
+                LOG_INFO(log, "[src={}] NEED_READER acquired Ready, region_id={}", fmt::ptr(this), region_id);
                 taken_reader.emplace(std::move(current_reader_work->reader.value()));
                 current_reader_work->reader.reset();
                 current_reader_work->exception = nullptr;
@@ -207,11 +219,13 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "columnar reader work for region {} is already consumed",
-                    current_reader_work->plan.region_id);
+                    region_id);
             case RNColumnarReaderMaterializeState::NotStarted:
+                LOG_INFO(log, "[src={}] NEED_READER acquired NotStarted, region_id={}", fmt::ptr(this), region_id);
                 should_async = true;
                 break;
             case RNColumnarReaderMaterializeState::Creating:
+                LOG_INFO(log, "[src={}] NEED_READER acquired Creating (prefetch), region_id={}", fmt::ptr(this), region_id);
                 should_wait = true;
                 break;
             }
@@ -225,6 +239,7 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
         if (should_async)
         {
             // Register for wakeup BEFORE starting async materialize (see WAIT_READER).
+            LOG_INFO(log, "[src={}] NEED_READER triggering async, region_id={}", fmt::ptr(this), region_id);
             setNotifyFuture(&current_reader_work->notify_future);
             task->startAsyncMaterializeReader(current_reader_work);
             {
@@ -241,16 +256,19 @@ OperatorStatus RNColumnarSourceOp::awaitImpl()
                 }
                 if (fast_reader.has_value())
                 {
+                    LOG_INFO(log, "[src={}] async finished synchronously, region_id={}", fmt::ptr(this), region_id);
                     clearNotifyFuture();
                     consumeReadyReader(std::move(fast_reader.value()));
                     return OperatorStatus::IO_IN;
                 }
             }
+            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (async), region_id={}", fmt::ptr(this), region_id);
             state = ColumnarSourceState::WAIT_READER;
             return OperatorStatus::WAIT_FOR_NOTIFY;
         }
         if (should_wait)
         {
+            LOG_INFO(log, "[src={}] -> WAIT_FOR_NOTIFY (prefetch), region_id={}", fmt::ptr(this), region_id);
             setNotifyFuture(&current_reader_work->notify_future);
             state = ColumnarSourceState::WAIT_READER;
             return OperatorStatus::WAIT_FOR_NOTIFY;
@@ -287,11 +305,13 @@ OperatorStatus RNColumnarSourceOp::executeIOImpl()
             total_bytes += block.bytes();
             t_block.emplace(std::move(block));
             state = ColumnarSourceState::READY_BLOCK;
+            LOG_DEBUG(log, "[src={}] read block rows={} bytes={}", fmt::ptr(this), t_block->rows(), t_block->bytes());
             return OperatorStatus::HAS_OUTPUT;
         }
         else
         {
             // This reader work is exhausted. Release it and loop to acquire the next.
+            LOG_INFO(log, "[src={}] reader exhausted, total_streams={}", fmt::ptr(this), total_streams);
             current_input_stream.reset();
             state = ColumnarSourceState::NEED_READER;
             return awaitImpl();
