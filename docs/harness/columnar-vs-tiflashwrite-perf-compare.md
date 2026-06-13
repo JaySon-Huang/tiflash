@@ -270,6 +270,141 @@ grep "$TSO" /data3/jaysonhuang/clusters/tiflash-5036/log/tiflash.log | grep "Seg
 | **反压** | SharedQueue cap + WAIT_FOR_NOTIFY | `block_slot_limit` + `active_segment_limit` |
 | **Prefetch** | `TaskScheduler::submit(PrefetchColumnarReaderTask)` | 不需要 (segment reader 持续驱动 IO) |
 
+## 单 Segment / 单 ColumnarReader 内部读取过程
+
+### TiFlashWrite: 单 Segment 读取
+
+```
+segment->getInputStream()
+  │
+  ├─ 1. prepareMVCCIndex()
+  │      预取 delta index / version chain 索引
+  │      加速后续 MVCC 判断
+  │
+  ├─ 2. getReadInfo()
+  │      确定需要读哪些列 (columns_to_read + handle + version)
+  │
+  ├─ 3. 构建 stream 链:
+  │     │
+  │     ├─ getPlacedStream()
+  │     │     ├─ StableValueSpace: DMFileBlockInputStream
+  │     │     │    读 DM 文件中指定列的 block (handle + version + data)
+  │     │     │    支持 Bitmap 模式下 pack 级跳过 (rs_pack_filter)
+  │     │     │
+  │     │     └─ DeltaValueSpace: DeltaMergeBlockInputStream
+  │     │          读 ColumnFiles (磁盘) + MemTable (内存) 的增量行
+  │     │          与 stable 的 block 按 (handle, version) 归并
+  │     │          同 handle 时 delta 行覆盖 stable 行
+  │     │
+  │     ├─ DMRowKeyFilterBlockInputStream
+  │     │     按 key range 过滤 (只保留 read_ranges 内的行)
+  │     │
+  │     └─ DMVersionFilterBlockInputStream<MVCC>
+  │           逐行判断:
+  │             version > start_ts  → 不可见, 跳过
+  │             is_deleted           → 已删除, 跳过
+  │             否则                 → 保留, 输出
+  │
+  └─ 4. 产出: Block (只含 columns_to_read 中的列)
+```
+
+| 步骤 | 工作内容 | 耗时分布 (以 lineitem 为例) |
+|---|---|---|
+| `tot_build_bitmap` | 构建 pack filter bitmap | 50ms |
+| `tot_build_inputstream` | 创建 segment stream chain | 2455ms |
+| `tot_rs_index_check` | pack 级 rough set 过滤 | 170ms |
+| `tot_read` (aggregate) | 实际 DM file IO | 36500ms (agg, 72-way → ~500ms/stream) |
+| MVCC 过滤 | DMVersionFilter 逐行过滤 | 在 stream read 内部, 不计入单独项 |
+
+### Columnar: 单 ColumnarReader 读取
+
+```
+ffi_read_block() → ColumnarMvccReader
+  │
+  ├─ 1. ColumnarTableReader::read(block, limit=1024)
+  │     │
+  │     │  while block 未填满:
+  │     │
+  │     ├─ Step 1: version 列 load_pack()
+  │     │     ColumnarColumnReader::load_pack(pack_idx)
+  │     │       → packs_filter[pack_idx] == None? → 整 pack 跳过 (Late Materialization)
+  │     │       → PackLoader::load_pack()
+  │     │            read_from_segment_cache() → S3/disk 读压缩 pack
+  │     │            decompress_pack()         → LZ4 解压
+  │     │            col_buf.parse()           → 列格式解析
+  │     │
+  │     ├─ Step 2: handle 列 load_pack()  (同一 pack_idx)
+  │     │     同上流程
+  │     │
+  │     └─ Step 3: 逐数据列 load_pack()  (同一 pack_idx)
+  │           对 columns_readers[] 中的每一列:
+  │             同上 load_pack 流程
+  │
+  ├─ 2. ColumnarMvccReader::try_read_block()   ← MVCC 后处理
+  │      逐行扫 version + handle:
+  │        version > read_ts          → skip (不可见)
+  │        handle == prev_handle (dup) → skip
+  │        version is null (deleted)   → skip
+  │        handle >= end_handle        → break
+  │        否则                        → start_range (可见)
+  │      → 构建 ColumnarFilter (bitset)
+  │      → 后续只在 visible 范围内迭代
+  │
+  ├─ 3. ffi_read_handle() → 返回 handle 列的数据 (TiFlash 侧用)
+  │
+  └─ 4. ffi_read_column(col_id) → 逐数据列返回
+        将 parse 后的列数据序列化为 TiFlash 格式:
+          serialize_for_tiflash → 写入返回 buffer
+```
+
+| 步骤 | 工作内容 | 火焰图占比 |
+|---|---|---|
+| `load_pack` | S3/disk 读 + LZ4 解压 + parse | 27.1% |
+| `decompress_pack` + LZ4 | LZ4 解压 | 27.7% (15.9+11.7) |
+| `ffi_read_block` (整体) | tokio block_on 等待异步完成 | 41.5% |
+| `serialize_for_tiflash` | 列数据序列化为 TiFlash 格式 | 7.8% |
+| MVCC 过滤 | 逐行扫 version + handle, 构建 bitset | 在 read_block 内部 |
+| `pack_filter` 跳过 | 整 pack 标记为 None (Late Materialization) | 在 load_pack 内部 |
+
+### MVCC & 数据流对比
+
+```
+TiFlashWrite:
+  Stable(DM file) ──┐
+                     ├─ merge(handle,version) ──► MVCC filter ──► output
+  Delta(ColumnFile) ─┘
+  
+  特点: merge-then-filter
+  - 先 merge stable + delta (归并行)
+  - 再对 merge 结果逐行 MVCC
+  - delta index cache 加速 version chain 查找
+  - 无需预先加载不可见行
+
+Columnar:
+  ┌─ version 列: load_pack ──┐
+  ├─ handle 列:  load_pack ──┤
+  └─ data 列:    load_pack ──┘
+                │
+                ▼
+      逐行扫 version + handle → MVCC bitset → 只在 visible rows 上输出 data
+      
+  特点: read-then-filter
+  - 先全量加载 version + handle + data (所有 pack)
+  - 再逐行扫 version/handle 判断可见性
+  - 无 delta 层 (快照读)
+  - 无 MVCC index 加速
+```
+
+| 差异维度 | TiFlashWrite | Columnar |
+|---|---|---|
+| **数据来源** | Stable (DM file) + Delta (ColumnFile/MemTable) | 纯列存 pack (快照) |
+| **MVCC 时机** | merge 后 `DMVersionFilter` 过滤 | 加载后 `ColumnarMvccReader` 逐行扫 |
+| **MVCC 索引** | `prepareMVCCIndex` delta index cache | 无 (必须扫 version 列) |
+| **Pack 跳过** | `DMFilePackFilterResults` (DM file 层) | `packs_filter` (Late Materialization) |
+| **不可见数据** | merge 阶段从 delta 判读, 减少 stable 读 | 必须全量加载 pack, 然后跳过 |
+| **列读取** | 一次性 block 读 (handle+version+data 在一起) | 逐列独立 load_pack (version→handle→col1→col2→...) |
+| **格式转换** | DM block 直接可用 | `serialize_for_tiflash` 逐列转换为 TiFlash 格式 |
+
 ## 示例：lineitem 300M 行 count(l_comment)
 
 | 指标 | Columnar | TiFlashWrite | 比值 |
