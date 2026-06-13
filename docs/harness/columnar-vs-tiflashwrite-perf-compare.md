@@ -435,6 +435,111 @@ Columnar:
 | **Pack 跳过** | `DMFilePackFilterResults` (DM file 层) | `packs_filter` (Late Materialization) |
 | **格式转换** | DM block 直接可用 | `serialize_for_tiflash` 逐列转换为 TiFlash 格式 |
 
+## 单列数据存储与读取模型
+
+### DMFile (TiFlashWrite) — "列连续" 布局
+
+```
+DMFile 目录结构:
+  dmf_<id>/
+    col_2.dat     ← 单列完整数据文件, 所有 pack 连续存储
+    col_2.mrk     ← 索引: pack_idx → {offset_in_compressed_file, offset_in_decompressed_block}
+    col_2.null.dat / col_2.size0.dat  ← nullable 列的子流文件
+
+pack 在文件内的布局:
+  [pack_0][pack_1][pack_2]...[pack_N]  ← 物理连续, 压缩块边界由 marks 索引描述
+  ↑ 整列所有 pack 在单个文件中顺序排列
+
+读取模型 (DMFileReader::readFromDisk):
+  ColReadStream::buf->seek(offset_in_file, offset_in_decompressed_block)  ← 1 次定位
+    → CompressedSeekableReaderBuffer 内部:
+        seek 到 pack 起始偏移
+        流式读取 + 解压后续的 N 个 pack
+        (pack 之间无额外 seek — 压缩块边界由 marks 索引驱动)
+  → deserializeBinaryBulkWithMultipleStreams(buf->get(), read_rows)  ← 反序列化
+
+  pack_count > 1 时仍然只需 1 次 seek:
+    buf->seek(pack_0_offset) → 顺序解压 pack_0, pack_1, ..., pack_{N-1}
+
+实测 (lineitem 300M 行, 4 列):
+  14,349 seeks / 4,783 blocks / 4 列 = 0.75 seeks/(列·block)
+  → CompressedSeekableReaderBuffer 内部缓冲, 跨 readImpl 调用也能命中
+```
+
+### Columnar (ColumnFile) — "pack 独立" 布局
+
+```
+ColumnFile 目录结构:
+  <file_id>_<col_id>    ← 每列的数据文件
+    pack 在文件内独立存储, 不保证连续性
+    每个 pack 有独立的偏移和长度 (由 ColumnMeta::pack_offsets 索引)
+
+pack 布局:
+  [pack_0]               ← 独立存储单元
+  ... 可能存在间隙 ...
+  [pack_1]               ← 下一个 pack
+  ... 可能存在间隙 ...
+  (pack 之间不保证物理连续)
+
+读取模型 (PackLoader::load_pack → read_from_segment_cache):
+  每个 pack 独立处理:
+    file.read_at_async(pack_offset, pack_length)  ← 1 次 seek + read
+    大 pack (>256KB):  直接 read_at_async, 不经过 segment cache
+    小 pack (≤ 256KB):  segment cache 预读 256KB region
+                        命中 → 从缓存拷贝, 0 seek
+                        miss → read_at_async 读取 256KB segment, 1 seek
+    decompress_pack(compressed_buf, uncompressed_buf)  ← 独立 LZ4 解压
+    col_buf.parse(uncompressed_buf)                     ← 独立列格式解析
+
+  每个 pack 都是独立 IO 单元, 互不共享
+
+实测 (lineitem 300M 行, 4 列):
+  330,837 seeks / ~4,658 blocks / 4 列 = 17.8 seeks/(列·block)
+  → 每列每个 block 平均跨越 ~18 个 pack, 每个 pack 1 次独立 seek
+```
+
+### 差异图解
+
+```
+DMFile (列连续):
+  buf->seek(pack_0_offset)
+  ┌──────┬──────┬──────┬──────┬──────┐
+  │pack_0│pack_1│pack_2│pack_3│pack_4│ → 顺序流式读出
+  └──────┴──────┴──────┴──────┴──────┘
+  1 次 seek, 顺序解压 N 个 pack
+
+Columnar (pack 独立):
+  load_pack(0)      load_pack(1)      load_pack(2)
+  ┌──────┐           ┌──────┐           ┌──────┐
+  │pack_0│           │pack_1│           │pack_2│
+  └──────┘           └──────┘           └──────┘
+  seek+read         seek+read         seek+read
+  LZ4 解压          LZ4 解压          LZ4 解压
+  col_buf.parse     col_buf.parse     col_buf.parse
+```
+
+### 差异根因
+
+| | DMFile (TiFlashWrite) | Columnar (ColumnFile) |
+|---|---|---|
+| **存储布局** | 单列单文件, pack 连续 | pack 独立存储, 不保证连续 |
+| **索引粒度** | `marks[]` 描述每个 pack 的偏移, 支持连续解压 | `pack_offsets` 给出每个 pack 起止, 每 pack 独立定位 |
+| **读取方式** | 1 次 seek, 顺序流式解压后续 pack | 每 pack 1 次 seek + 独立解压 |
+| **压缩方式** | DM file 整体压缩框架 (`CompressedSeekableReaderBuffer`) | 每 pack 独立 LZ4 压缩 |
+| **read_ahead** | `CompressedSeekableReaderBuffer` 内部缓冲, 跨 readImpl 共享 | `segment_cache` (256KB), 仅缓存小 pack 的周边 region |
+| **IO seeks/列/block** | 0.75 | 17.8 |
+| **总 seeks** | **14,349** | **~330,837** |
+
+### 可行性评估
+
+Columnar 是否可以实现类似 DMFile 的 "列连续读取" 优化？
+
+1. **pack 合并**：在 columnar compaction 时，将同一列的多个小 pack 合并为更大的连续块。但这影响写入路径。
+
+2. **pack 预读**：在 `read_from_segment_cache` 中，当加载 pack 时，可将其后续 N 个 pack 也一并预读（增大 segment cache 或添加 pack read-ahead buffer）。这是纯读取侧优化。
+
+3. **batch load_pack**：类似 DMFileReader 的 `readColumn` 一次读多个 pack (`pack_count > 1`)，可以将 `read_from_segment_cache` 的读取范围从单个 pack 扩展为连续多个 pack 的范围。
+
 ## 示例：lineitem 300M 行 count(l_comment)
 
 | 指标 | Columnar | TiFlashWrite | 比值 |
