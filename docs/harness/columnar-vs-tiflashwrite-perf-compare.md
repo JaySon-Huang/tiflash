@@ -150,29 +150,125 @@ grep "$TSO" /data3/jaysonhuang/clusters/tiflash-5036/log/tiflash.log | grep "Seg
   | grep -oP 'total_count=\d+ total_bytes=\S+ total_rows=\d+ avg_block_rows=\d+ avg_rows_bytes=\S+'
 ```
 
-## 正确的对照维度
+## 并发读模型
 
-| 层级 | Columnar (5035) | TiFlashWrite (5036) |
+### Columnar (readThroughColumnar)
+
+```
+                    Pipeline IO Pool (72 threads, TaskScheduler)
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+     ColumnarReadSourceOp (×48, producer_num)
+     │  SourceOp，但 awaitImpl() 返回 IO_IN → executeIOImpl() 在 IO pool 中执行
+     │
+     │  executeIOImpl():
+     │    1. acquire reader work (内联 materialize 或消费 prefetch 已完成的 reader)
+     │    2. fn_read_block → fn_read_handle → fn_read_column (FFI)
+     │    3. 列反序列化 → 填充 extra table id → 产出 1 个 Block
+     │  readImpl():
+     │    将缓存的 block 交给下游 SharedQueueSinkOp (CPU pool)
+     │
+     │  [prefetch — 也走 IO pool]
+     │  tryAcquireReaderWork(enable_prefetch=true)
+     │    → prefetchPendingWork()
+     │      → TaskScheduler::submit(PrefetchColumnarReaderTask)
+     │        → IO pool → fn_get_columnar_reader → 设 state=Ready → notify
+     │
+     └──────────────┬──────────────┘
+                    │ tryPush
+          ┌─────────▼─────────┐
+          │   SharedQueue     │  cap = producer_num × 2, LooseBoundedMPMCQueue<Block>
+          │  (反压: full → SharedQueueSinkOp → WAIT_FOR_NOTIFY)  │
+          │  (空:  → consumer → WAIT_FOR_NOTIFY)                 │
+          └─────────┬─────────┘
+                    │ tryPop
+     ┌──────────────┼──────────────┐
+     ▼              ▼              ▼
+  RNColumnarSourceOp (×72, source_num)
+  │  readImpl() → shared_queue->tryPop(block)
+  │    → EMPTY:   setNotifyFuture + WAIT_FOR_NOTIFY
+  │    → OK:      HAS_OUTPUT
+  │    → FINISHED: 空 block (EOF)
+  │  (无 executeIOImpl / awaitImpl — 纯 CPU pool 消费)
+  │
+  └──► GeneratedColumn → extraCast → filter → projection
+
+  Pipeline CPU Pool (72 threads)
+```
+
+| 组件 | 职责 | 执行位置 |
 |---|---|---|
-| **Reader 抽象** | 171 个 `ColumnarReader` (reader works) | 341 个 `Segment` (DM segments) |
-| **Block 读取** | 29,385 次 `fn_read_block` FFI 调用 | 4,782 次 `SegmentReadTask` block read |
-| **存储 IO 单元** | 208,734 次 `load_pack` (每 pack ~53KB 压缩) | `dmfile_read_time` (大块连续 IO) |
-| **存储读取量** | `total_compressed_bytes` (load_pack 日志汇总) | `query_read_bytes` (scan_details) |
-| **存储缓存** | 列存 segment cache (256KB 粒度) | `disagg_cache_hit_size` (S3 对象级) |
-| **并行度** | 48 (`producer_num`) | 72 (`num_streams`) |
-| **Pipeline 模型** | 双 group: 48 producer → SharedQueue → 72 consumer | 单 group: 72 source 直读 |
+| `ColumnarReadSourceOp` | reader materialize + fn_read_block + deserialize + push | **IO pool** (executeIOImpl) |
+| `SharedQueueSinkOp` | tryPush → full 时 WAIT_FOR_NOTIFY | CPU pool (writeImpl) |
+| `SharedQueue` | 有界 MPMC 队列，反压通道 | — |
+| `RNColumnarSourceOp` | tryPop → emit block | **CPU pool** (readImpl) |
+| `PrefetchColumnarReaderTask` | 异步 materialize reader | **IO pool** (via TaskScheduler) |
 
-### EXPLAIN ANALYZE 指标对照表
+### TiFlashWrite (readThroughTiFlashWrite)
 
-| 指标 | Columnar | TiFlashWrite |
+```
+     SegmentReadTaskScheduler (1 sched_thread, 全局单例)
+     │  schedule() → scheduleOneRound()
+     │    → scheduleMergedTask()              [合并同一 segment 的多个 pool 请求]
+     │      → push to MergedTaskPool
+     │
+     └──► SegmentReaderPool (72 read threads, NUMA-aware, 独立于 Pipeline)
+          │
+          ├─ pop MergedTask from segment read queue
+          │
+          ├─ MergedTask::readBlock()
+          │    → initOnce()
+          │       → pool->buildInputStream(task)    [创建 DMFileReader stream]
+          │    → readOneBlock()
+          │       → stream->read()                  [DMFile 读一个 block]
+          │       → pool->readOneBlock()            [调用 SegmentReadTaskPool::readOneBlock]
+          │          → pool->pushBlock(block)       [push to WorkQueue<Block>]
+          │             → q.push(block)             [通知等待的 UnorderedSourceOp]
+          │
+          └──────────────┬──────────────┘
+                         │ push
+               ┌─────────▼──────────┐
+               │  WorkQueue<Block>  │  slot_limit × num_streams
+               │  (LooseBoundedMPMC)│  SegmentReadTaskPool 内部队列
+               │  (反压: 通过 block_slot_limit + active_segment_limit)  │
+               └─────────┬──────────┘
+                         │ tryPopBlock
+     ┌───────────────────┼───────────────────┐
+     ▼                   ▼                   ▼
+  UnorderedSourceOp (×72, num_streams)
+  │  readImpl() → task_pool->tryPopBlock(block)
+  │    → false (空):  setNotifyFuture(task_pool.get()) + WAIT_FOR_NOTIFY
+  │    → true, has block: HAS_OUTPUT
+  │    → true, null block: done (EOF)
+  │  (无 executeIOImpl / awaitImpl — 纯 CPU pool 消费)
+  │
+  └──► GeneratedColumn → extraCast → filter → projection
+
+  Pipeline CPU Pool (72 threads)
+```
+
+| 组件 | 职责 | 执行位置 |
 |---|---|---|
-| 总查询时间 | `time` on TableFullScan | `time` on TableFullScan |
-| Block 数量 | `loops` in tiflash_task | `loops` in tiflash_task |
-| 扫描行数 | `actRows` on TableFullScan | `dmfile_data_scanned_rows` in scan_details |
-| 管道并发 | `threads` in tiflash_task | `num_streams` in connection_details |
-| 队列等待 | `pipeline_queue_wait` | N/A |
-| 读字节量 | Rust log `load_pack` 汇总 | `query_read_bytes` in scan_details |
-| S3 缓存 | 暂无 (Rust 侧 segment cache) | `disagg_cache_hit_size` |
+| `SegmentReadTaskScheduler` | 调度 segment 读请求，合并同 segment pool | 独立 sched_thread |
+| `SegmentReaderPool` | 驱动 MergedTask 读取 DM 文件 | **独立 read thread pool** (非 Pipeline) |
+| `MergedTask` | 合并多个 pool 对同一 segment 的读，共享 stream->read() | SegmentReaderPool 线程内 |
+| `stream` (DMFileReader) | 实际执行 DM 文件 IO 和 block 产出 | SegmentReaderPool 线程内 |
+| `SegmentReadTaskPool` / `WorkQueue<Block>` | 接收 IO 产出的 block，通知 consumer | — |
+| `UnorderedSourceOp` | tryPop → emit block | **CPU pool** (readImpl) |
+
+### 关键差异
+
+| 维度 | Columnar | TiFlashWrite |
+|---|---|---|
+| **IO 线程** | Pipeline **IO pool** (72 threads, TaskScheduler 管理) | **SegmentReaderPool** (72 threads, 独立 NUMA-aware, 非 Pipeline) |
+| **CPU 线程** | Pipeline **CPU pool** → `RNColumnarSourceOp` | Pipeline **CPU pool** → `UnorderedSourceOp` |
+| **中间队列** | `SharedQueue` (跨 group 连接) | `WorkQueue<Block>` (SegmentReadTaskPool 内部) |
+| **IO 执行者** | `ColumnarReadSourceOp` (Pipeline SourceOp) | `MergedTask` → `DMFileReader` stream (非 Pipeline) |
+| **调度器** | Pipeline TaskScheduler | `SegmentReadTaskScheduler` + `SegmentReaderPool` |
+| **IO 工作** | fn_read_block FFI → load_pack → LZ4 解压 → 列反序列化 | DMFileReader → 本地磁盘/S3 读 DM block |
+| **反压** | SharedQueue cap + WAIT_FOR_NOTIFY | `block_slot_limit` + `active_segment_limit` |
+| **Prefetch** | `TaskScheduler::submit(PrefetchColumnarReaderTask)` | 不需要 (segment reader 持续驱动 IO) |
 
 ## 示例：lineitem 300M 行 count(l_comment)
 
