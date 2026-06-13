@@ -1476,6 +1476,20 @@ void RNColumnarInputStream::releaseReader()
     current_reader_work.reset();
 }
 
+RNColumnarInputStream::RNColumnarInputStream(const Options & options)
+    : context(options.context)
+    , log(options.log)
+    , task(options.task)
+    , fixed_reader_work(options.reader_work)
+    , action(options.columns_to_read, options.extra_table_id_index)
+    , table_id(options.table_id)
+    , executor_id(options.executor_id)
+    , batch_size(options.context.getSettingsRef().max_block_size)
+{
+    // Keep header aligned with genNamesAndTypesForTableScan when TiDB requests _tidb_tid on partition scans.
+    setHeader(action.getHeader());
+}
+
 RNColumnarInputStream::~RNColumnarInputStream()
 {
     SCOPE_EXIT({

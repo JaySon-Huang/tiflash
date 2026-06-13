@@ -241,18 +241,7 @@ public:
         const String & executor_id;
     };
 
-    explicit RNColumnarInputStream(const Options & options)
-        : context(options.context)
-        , log(options.log)
-        , task(options.task)
-        , fixed_reader_work(options.reader_work)
-        , action(options.columns_to_read, options.extra_table_id_index)
-        , table_id(options.table_id)
-        , executor_id(options.executor_id)
-    {
-        // Keep header aligned with genNamesAndTypesForTableScan when TiDB requests _tidb_tid on partition scans.
-        setHeader(action.getHeader());
-    }
+    explicit RNColumnarInputStream(const Options & options);
 
     static BlockInputStreamPtr create(const Options & options)
     {
