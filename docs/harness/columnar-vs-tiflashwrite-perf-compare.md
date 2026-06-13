@@ -366,43 +366,73 @@ ffi_read_block() → ColumnarMvccReader
 | MVCC 过滤 | 逐行扫 version + handle, 构建 bitset | 在 read_block 内部 |
 | `pack_filter` 跳过 | 整 pack 标记为 None (Late Materialization) | 在 load_pack 内部 |
 
+### 存储层级 & 多文件 merge 对比
+
+两边都有多层存储结构和 merge 过程。Columnar 同样需要 merge，不是"纯快照读"。
+
+```
+TiFlashWrite 存储层级:
+  DeltaValueSpace:
+    ├─ MemTable (内存增量, SKL)         → DeltaMergeBlockInputStream
+    └─ ColumnFile (磁盘增量, DM 行格式)   → (stable 与 delta 按 handle 归并)
+  StableValueSpace:
+    └─ DMFile (已压缩到 S3, 列式布局)    → DMFileBlockInputStream
+
+  merge: DeltaMergeBlockInputStream 逐 block merge stable + delta
+         按 (handle, version) 归并, delta 的同 handle 行覆盖 stable
+  MVCC:  DMVersionFilterBlockInputStream (merge 后逐行过滤)
+
+Columnar 存储层级:
+  增量层 (行格式):
+    ├─ MemTables (内存 SKL)             → RowMvccReader (行格式, 自带 MVCC)
+    └─ Unconverted L0 (SSTable, 未转列存) → TableIterator (行格式读取)
+  列存层:
+    ├─ Columnar Level 1: ColumnarTableReader × N (已转列存的单文件)
+    └─ Columnar Level 2: ColumnarConcatReader (多文件合并读取)
+
+  全部 readers → ColumnarMergeReader (heap merge, 按 handle 归并)
+               → ColumnarMvccReader (merge 后逐行 MVCC)
+```
+
+**两边都：有增量层 + 有 merge + merge 后 MVCC。** 差异在于 merge 和 IO 的方式。
+
 ### MVCC & 数据流对比
 
 ```
 TiFlashWrite:
-  Stable(DM file) ──┐
-                     ├─ merge(handle,version) ──► MVCC filter ──► output
-  Delta(ColumnFile) ─┘
-  
+  Stable(DM file, 列式) ──┐
+                           ├─ DeltaMergeBlockInputStream ──► DMVersionFilter ──► output
+  Delta(ColumnFile, 行式) ─┘  (逐 block merge 归并行)         (逐行 MVCC)
+
   特点: merge-then-filter
-  - 先 merge stable + delta (归并行)
-  - 再对 merge 结果逐行 MVCC
+  - stable (列式 block) 和 delta (行式 block) 逐 block 归并
+  - merge 后 DMVersionFilter 逐行 MVCC
   - delta index cache 加速 version chain 查找
-  - 无需预先加载不可见行
+  - handle + version + data 在同一次 block read 中一起读出
 
 Columnar:
-  ┌─ version 列: load_pack ──┐
-  ├─ handle 列:  load_pack ──┤
-  └─ data 列:    load_pack ──┘
-                │
-                ▼
-      逐行扫 version + handle → MVCC bitset → 只在 visible rows 上输出 data
-      
-  特点: read-then-filter
-  - 先全量加载 version + handle + data (所有 pack)
-  - 再逐行扫 version/handle 判断可见性
-  - 无 delta 层 (快照读)
-  - 无 MVCC index 加速
+  MemTable (行) ──┐
+  Unconv L0 (行) ─┤
+  Col L1 (列)   ──┼─ ColumnarMergeReader ──► ColumnarMvccReader ──► serialize ──► output
+  Col L2 (列)   ──┘  (heap merge 归并行)      (逐行 bitset MVCC)     (转 TiFlash 格式)
+
+  特点: 行列混合 merge-then-filter
+  - 行格式 reader (RowMvccReader) 和列格式 reader (ColumnarTableReader) 混合
+  - ColumnarMergeReader heap merge 归并行
+  - merge 后 ColumnarMvccReader 逐行扫 version+handle 构建 bitset
+  - version/handle/data 逐列独立 load_pack (S3/disk → LZ4 解压 → parse)
 ```
 
 | 差异维度 | TiFlashWrite | Columnar |
 |---|---|---|
-| **数据来源** | Stable (DM file) + Delta (ColumnFile/MemTable) | 纯列存 pack (快照) |
-| **MVCC 时机** | merge 后 `DMVersionFilter` 过滤 | 加载后 `ColumnarMvccReader` 逐行扫 |
-| **MVCC 索引** | `prepareMVCCIndex` delta index cache | 无 (必须扫 version 列) |
+| **增量层格式** | ColumnFile (DM 行格式) + MemTable (SKL) | Unconverted L0 (SSTable) + MemTable (SKL) |
+| **稳定层格式** | DMFile (列式压缩) | Columnar Level 1/2 (列式压缩) |
+| **行/列混合** | delta 行格式, stable 列格式，逐 block merge | 增量行格式 (RowMvccReader), 列存层列格式，heap merge |
+| **merge 方式** | `DeltaMergeBlockInputStream` 逐 block 归并 | `ColumnarMergeReader` heap merge 逐 batch |
+| **MVCC 方式** | `DMVersionFilter` merge 后逐行过滤 | `ColumnarMvccReader` merge 后逐行构建 bitset |
+| **MVCC 索引** | `prepareMVCCIndex` delta index cache | 无专用 cache (逐行扫 version) |
+| **列 IO 粒度** | handle+version+data 在同一 block 中一次性读出 | 逐列独立 load_pack (version→handle→col1→col2→...) |
 | **Pack 跳过** | `DMFilePackFilterResults` (DM file 层) | `packs_filter` (Late Materialization) |
-| **不可见数据** | merge 阶段从 delta 判读, 减少 stable 读 | 必须全量加载 pack, 然后跳过 |
-| **列读取** | 一次性 block 读 (handle+version+data 在一起) | 逐列独立 load_pack (version→handle→col1→col2→...) |
 | **格式转换** | DM block 直接可用 | `serialize_for_tiflash` 逐列转换为 TiFlash 格式 |
 
 ## 示例：lineitem 300M 行 count(l_comment)
