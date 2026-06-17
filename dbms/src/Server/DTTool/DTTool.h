@@ -82,6 +82,11 @@ struct MigrateArgs
 int migrateEntry(const std::vector<std::string> & opts, RaftStoreFFIFunc ffi_function);
 } // namespace DTTool::Migrate
 
+namespace DTTool::Generate
+{
+int generateEntry(const std::vector<std::string> & opts);
+} // namespace DTTool::Generate
+
 namespace DTTool
 {
 namespace detail

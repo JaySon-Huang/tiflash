@@ -38,6 +38,7 @@
 
 #include <boost/program_options/errors.hpp>
 #include <boost/throw_exception.hpp>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -88,7 +89,7 @@ DB::Block createBlock(
     size_t column_number,
     size_t start,
     size_t row_number,
-    std::size_t limit,
+    std::size_t str_len_limit,
     double sparse_ratio,
     std::mt19937_64 & eng,
     size_t & acc,
@@ -191,7 +192,14 @@ DB::Block createBlock(
             }
             else
             {
-                Field field = DB::random::randomString(limit);
+                // Use eng for random string generation so that the output is
+                // deterministic when a fixed --random seed is provided.
+                static const std::string charset{
+                    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()|[]{}:;',<.>`~"};
+                std::uniform_int_distribution<size_t> char_dist(0, charset.size() - 1);
+                String str(str_len_limit, '\x00');
+                std::generate_n(str.begin(), str.size(), [&]() { return charset[char_dist(eng)]; });
+                Field field = str;
                 m_col->insert(field);
             }
         }
@@ -217,7 +225,7 @@ genBlocks(
     size_t random,
     const size_t num_rows,
     const size_t num_column,
-    size_t field,
+    size_t str_len,
     double sparse_ratio,
     const LoggerPtr & logger)
 {
@@ -235,7 +243,7 @@ genBlocks(
             num_column,
             start_handle,
             block_size,
-            field,
+            str_len,
             sparse_ratio,
             engine,
             effective_size,
@@ -272,7 +280,7 @@ int benchEntry(const std::vector<std::string> & opts)
         ("rows", bpo::value<size_t>()->default_value(131072), "Row number.")
         ("columns", bpo::value<size_t>()->default_value(100), "Column number.")
         ("sparse-ratio", bpo::value<double>()->default_value(0.0), "Sparse ratio. Null ratio for string columns.")
-        ("field", bpo::value<size_t>()->default_value(1024), "Field length limit.")
+        ("str-len", bpo::value<size_t>()->default_value(1024), "Maximum length of generated random string values.")
         ("repeat", bpo::value<size_t>()->default_value(5), "Repeat times.")
         ("write-repeat", bpo::value<size_t>()->default_value(5), "Write repeat times, 0 means no write operation.")
         ("random", bpo::value<size_t>(), "Random seed. If not set, a random seed will be generated.")
@@ -340,7 +348,7 @@ int benchEntry(const std::vector<std::string> & opts)
         auto num_rows = vm["rows"].as<size_t>();
         auto num_cols = vm["columns"].as<size_t>();
         auto sparse_ratio = vm["sparse-ratio"].as<double>();
-        auto field = vm["field"].as<size_t>();
+        auto str_len = vm["str-len"].as<size_t>();
         auto repeat = vm["repeat"].as<size_t>();
         auto write_repeat = vm["write-repeat"].as<size_t>();
         size_t random_seed;
@@ -378,7 +386,7 @@ int benchEntry(const std::vector<std::string> & opts)
         static constexpr char SUMMARY_TEMPLATE_V2[] = "version: {} "
                                                       "column: {} "
                                                       "num_rows: {} "
-                                                      "field: {} "
+                                                      "str_len: {} "
                                                       "random: {} "
                                                       "encryption: {} "
                                                       "workdir: {} "
@@ -393,7 +401,7 @@ int benchEntry(const std::vector<std::string> & opts)
                 version,
                 num_cols,
                 num_rows,
-                field,
+                str_len,
                 random_seed,
                 encryption,
                 workdir,
@@ -409,7 +417,7 @@ int benchEntry(const std::vector<std::string> & opts)
                 version,
                 num_cols,
                 num_rows,
-                field,
+                str_len,
                 random_seed,
                 encryption,
                 workdir,
@@ -441,7 +449,7 @@ int benchEntry(const std::vector<std::string> & opts)
         if (write_repeat > 0)
         {
             std::tie(blocks, properties, effective_size)
-                = genBlocks(random_seed, num_rows, num_cols, field, sparse_ratio, logger);
+                = genBlocks(random_seed, num_rows, num_cols, str_len, sparse_ratio, logger);
         }
 
         TableID table_id = 1;

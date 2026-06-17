@@ -357,3 +357,351 @@ TEST_F(DTToolTest, BlockwiseInvariant)
         stream->readSuffix();
     }
 }
+
+namespace DTTool::Generate
+{
+int generateEntry(const std::vector<std::string> & opts);
+} // namespace DTTool::Generate
+
+struct DTToolGenerateTest : public ::testing::Test
+{
+    std::string tmp_dir;
+
+    void SetUp() override
+    {
+        static int counter = 0;
+        tmp_dir = ::testing::TempDir() + "dttool_generate_test_" + std::to_string(++counter);
+        Poco::File(tmp_dir).createDirectory();
+    }
+
+    void TearDown() override
+    {
+        if (Poco::File tmp(tmp_dir); tmp.exists())
+            tmp.remove(true);
+    }
+
+    std::string tsvPath() const { return tmp_dir + "/data.tsv"; }
+    std::string schemaPath() const { return tmp_dir + "/schema.json"; }
+};
+
+TEST_F(DTToolGenerateTest, HelpText)
+{
+    std::vector<std::string> opts = {"--help"};
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+}
+
+TEST_F(DTToolGenerateTest, ValidRowCountMultipleOf8192)
+{
+    std::vector<std::string> opts = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    // Verify TSV file exists and has exactly 8192 rows (no header).
+    std::ifstream tsv(tsvPath());
+    ASSERT_TRUE(tsv.is_open());
+    std::string line;
+    size_t line_count = 0;
+    while (std::getline(tsv, line))
+        ++line_count;
+    EXPECT_EQ(line_count, 8192);
+
+    // Verify schema JSON exists.
+    EXPECT_TRUE(Poco::File(schemaPath()).exists());
+}
+
+TEST_F(DTToolGenerateTest, LargeRowCount)
+{
+    std::vector<std::string> opts = {
+        "--rows", "65536", // 8 * 8192
+        "--columns", "2",
+        "--random", "12345",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    std::ifstream tsv(tsvPath());
+    ASSERT_TRUE(tsv.is_open());
+    size_t line_count = 0;
+    std::string line;
+    while (std::getline(tsv, line))
+        ++line_count;
+    EXPECT_EQ(line_count, 65536);
+}
+
+TEST_F(DTToolGenerateTest, InvalidRowCountNotMultipleOf8192)
+{
+    // Ensure the output file does not exist before the call.
+    ASSERT_FALSE(Poco::File(tsvPath()).exists());
+
+    std::vector<std::string> opts = {
+        "--rows", "100", // Not a multiple of 8192
+        "--columns", "4",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), -EINVAL);
+
+    // Verify no partial TSV output was written.
+    EXPECT_FALSE(Poco::File(tsvPath()).exists());
+}
+
+TEST_F(DTToolGenerateTest, NoHeaderRow)
+{
+    std::vector<std::string> opts = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    // The first line of the TSV must not contain known column names.
+    std::ifstream tsv(tsvPath());
+    ASSERT_TRUE(tsv.is_open());
+    std::string first_line;
+    ASSERT_TRUE(std::getline(tsv, first_line));
+
+    // Column names that would appear in a header row if one were mistakenly written.
+    EXPECT_FALSE(first_line.starts_with("_tidb_rowid"));
+    EXPECT_FALSE(first_line.starts_with("_INTERNAL_VERSION"));
+    EXPECT_FALSE(first_line.starts_with("_INTERNAL_DELMARK"));
+    EXPECT_FALSE(first_line.starts_with("int_"));
+    EXPECT_FALSE(first_line.starts_with("str_"));
+    // The first field should be a numeric handle value.
+    // Check that the first character is a digit or minus sign, not a letter.
+    EXPECT_TRUE(std::isdigit(first_line[0]) || first_line[0] == '-')
+        << "First line starts with unexpected character: " << first_line[0];
+}
+
+TEST_F(DTToolGenerateTest, NullEncoding)
+{
+    // With sparse_ratio = 1.0, all 3 string columns should be null → encoded as \N.
+    // Column layout: handle, version, delmark, int_0, int_1, int_2, str_0, str_1, str_2
+    // The last 3 fields on each line should be \N.
+    std::vector<std::string> opts = {
+        "--rows", "8192",
+        "--columns", "6", // 3 int + 3 string columns
+        "--sparse-ratio", "1.0",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    std::ifstream tsv(tsvPath());
+    ASSERT_TRUE(tsv.is_open());
+    std::string line;
+    for (size_t row = 0; row < 10 && std::getline(tsv, line); ++row)
+    {
+        // Each line should end with \t\N\t\N\t\N (three null string fields).
+        const std::string expected_suffix = "\t\\N\t\\N\t\\N";
+        EXPECT_TRUE(line.ends_with(expected_suffix))
+            << "Row " << row << " should end with three null-encoded string fields";
+    }
+}
+
+TEST_F(DTToolGenerateTest, SchemaJsonStructure)
+{
+    std::vector<std::string> opts = {
+        "--rows", "8192",
+        "--columns", "2",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    // Read and validate the schema JSON structure.
+    std::ifstream schema_file(schemaPath(), std::ios::binary);
+    ASSERT_TRUE(schema_file.is_open());
+    schema_file.seekg(0, std::ios::end);
+    std::string schema_content;
+    schema_content.resize(static_cast<size_t>(schema_file.tellg()));
+    schema_file.seekg(0, std::ios::beg);
+    schema_file.read(&schema_content[0], static_cast<std::streamsize>(schema_content.size()));
+
+    // Basic structural checks: should contain "columns" and known column names.
+    EXPECT_TRUE(schema_content.find("\"columns\"") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("\"name\"") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("\"type\"") != std::string::npos);
+    // Should contain the known hidden column names.
+    EXPECT_TRUE(schema_content.find("_tidb_rowid") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("_INTERNAL_VERSION") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("_INTERNAL_DELMARK") != std::string::npos);
+    // User columns for 2 columns: 1 int + 1 string.
+    EXPECT_TRUE(schema_content.find("int_0") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("str_0") != std::string::npos);
+
+    // Schema JSON must not contain internal metadata fields.
+    EXPECT_FALSE(schema_content.find("\"rows\"") != std::string::npos);
+    EXPECT_FALSE(schema_content.find("\"random\"") != std::string::npos);
+    EXPECT_FALSE(schema_content.find("\"field\"") != std::string::npos);
+    EXPECT_FALSE(schema_content.find("\"col_id\"") != std::string::npos);
+}
+
+TEST_F(DTToolGenerateTest, DeterministicOutputWithFixedSeed)
+{
+    std::vector<std::string> opts1 = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "12345",
+        "--output", tmp_dir + "/run1.tsv",
+        "--schema", tmp_dir + "/run1.json",
+    };
+    std::vector<std::string> opts2 = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "12345",
+        "--output", tmp_dir + "/run2.tsv",
+        "--schema", tmp_dir + "/run2.json",
+    };
+
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts1), 0);
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts2), 0);
+
+    // Both runs with the same seed should produce identical TSV output.
+    auto readFile = [](const std::string & path) -> std::string {
+        std::ifstream f(path, std::ios::binary);
+        std::string content;
+        f.seekg(0, std::ios::end);
+        content.resize(static_cast<size_t>(f.tellg()));
+        f.seekg(0, std::ios::beg);
+        f.read(&content[0], static_cast<std::streamsize>(content.size()));
+        return content;
+    };
+
+    EXPECT_EQ(readFile(tmp_dir + "/run1.tsv"), readFile(tmp_dir + "/run2.tsv"));
+    EXPECT_EQ(readFile(tmp_dir + "/run1.json"), readFile(tmp_dir + "/run2.json"));
+}
+
+TEST_F(DTToolGenerateTest, DifferentSeedsProduceDifferentOutput)
+{
+    std::vector<std::string> opts1 = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "12345",
+        "--output", tmp_dir + "/seed1.tsv",
+        "--schema", tmp_dir + "/seed1.json",
+    };
+    std::vector<std::string> opts2 = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "54321",
+        "--output", tmp_dir + "/seed2.tsv",
+        "--schema", tmp_dir + "/seed2.json",
+    };
+
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts1), 0);
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts2), 0);
+
+    auto readFile = [](const std::string & path) -> std::string {
+        std::ifstream f(path, std::ios::binary);
+        std::string content;
+        f.seekg(0, std::ios::end);
+        content.resize(static_cast<size_t>(f.tellg()));
+        f.seekg(0, std::ios::beg);
+        f.read(&content[0], static_cast<std::streamsize>(content.size()));
+        return content;
+    };
+
+    // Different seeds should produce different TSV content.
+    EXPECT_NE(readFile(tmp_dir + "/seed1.tsv"), readFile(tmp_dir + "/seed2.tsv"));
+    // But the schema JSON should still match (same columns, same types).
+    EXPECT_EQ(readFile(tmp_dir + "/seed1.json"), readFile(tmp_dir + "/seed2.json"));
+}
+
+TEST_F(DTToolGenerateTest, MissingRequiredOptions)
+{
+    // Missing --rows
+    {
+        std::vector<std::string> opts = {
+            "--columns", "4",
+            "--output", tsvPath(),
+            "--schema", schemaPath(),
+        };
+        EXPECT_EQ(DTTool::Generate::generateEntry(opts), -EINVAL);
+    }
+    // Missing --columns
+    {
+        std::vector<std::string> opts = {
+            "--rows", "8192",
+            "--output", tsvPath(),
+            "--schema", schemaPath(),
+        };
+        EXPECT_EQ(DTTool::Generate::generateEntry(opts), -EINVAL);
+    }
+    // Missing --output
+    {
+        std::vector<std::string> opts = {
+            "--rows", "8192",
+            "--columns", "4",
+            "--schema", schemaPath(),
+        };
+        EXPECT_EQ(DTTool::Generate::generateEntry(opts), -EINVAL);
+    }
+    // Missing --schema
+    {
+        std::vector<std::string> opts = {
+            "--rows", "8192",
+            "--columns", "4",
+            "--output", tsvPath(),
+        };
+        EXPECT_EQ(DTTool::Generate::generateEntry(opts), -EINVAL);
+    }
+}
+
+TEST_F(DTToolGenerateTest, ZeroColumns)
+{
+    // --columns 0 means no user data columns, only the 3 hidden columns.
+    std::vector<std::string> opts = {
+        "--rows", "8192",
+        "--columns", "0",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    EXPECT_EQ(DTTool::Generate::generateEntry(opts), 0);
+
+    // Verify TSV has 8192 rows.
+    std::ifstream tsv(tsvPath());
+    ASSERT_TRUE(tsv.is_open());
+    size_t line_count = 0;
+    std::string first_line;
+    while (std::getline(tsv, first_line))
+    {
+        if (line_count == 0)
+        {
+            // First line should have exactly 3 tab-separated fields (handle, version, delmark).
+            size_t tab_count = 0;
+            for (char c : first_line)
+            {
+                if (c == '\t')
+                    ++tab_count;
+            }
+            EXPECT_EQ(tab_count, 2) << "Expected 3 columns (2 tabs), got " << tab_count << " tabs";
+        }
+        ++line_count;
+    }
+    EXPECT_EQ(line_count, 8192);
+
+    // Schema should have exactly 3 columns (the hidden columns only).
+    std::ifstream schema_file(schemaPath(), std::ios::binary);
+    ASSERT_TRUE(schema_file.is_open());
+    schema_file.seekg(0, std::ios::end);
+    std::string schema_content;
+    schema_content.resize(static_cast<size_t>(schema_file.tellg()));
+    schema_file.seekg(0, std::ios::beg);
+    schema_file.read(&schema_content[0], static_cast<std::streamsize>(schema_content.size()));
+    EXPECT_TRUE(schema_content.find("_tidb_rowid") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("_INTERNAL_VERSION") != std::string::npos);
+    EXPECT_TRUE(schema_content.find("_INTERNAL_DELMARK") != std::string::npos);
+    EXPECT_FALSE(schema_content.find("int_") != std::string::npos);
+    EXPECT_FALSE(schema_content.find("str_") != std::string::npos);
+}

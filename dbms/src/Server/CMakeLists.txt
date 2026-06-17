@@ -59,7 +59,7 @@ add_library (tiflash-client-lib Client.cpp)
 target_link_libraries (tiflash-client-lib tiflash_functions tiflash_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (tiflash-client-lib PRIVATE ${READLINE_INCLUDE_DIR})
 
-add_library(tiflash-dttool-lib ${SPLIT_SHARED} DTTool/DTToolBench.cpp DTTool/DTToolMigrate.cpp DTTool/DTToolInspect.cpp)
+add_library(tiflash-dttool-lib ${SPLIT_SHARED} DTTool/DTToolBench.cpp DTTool/DTToolMigrate.cpp DTTool/DTToolInspect.cpp DTTool/DTToolGenerate.cpp)
 target_link_libraries(tiflash-dttool-lib PUBLIC dbms daemon tiflash_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories(tiflash-dttool-lib PUBLIC ${TiFlash_SOURCE_DIR}/libs/libdaemon/include)
 

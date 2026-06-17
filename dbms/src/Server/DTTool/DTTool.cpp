@@ -28,7 +28,8 @@ static constexpr char MAIN_HELP[] =
     "  help        Print help message and exit.\n"
     "  migrate     Migrate dtfile version.\n"
     "  inspect     Inspect dtfile info.\n"
-    "  bench       Benchmark dtfile IO performance.";
+    "  bench       Benchmark dtfile IO performance.\n"
+    "  generate    Generate TSV data for performance tests.";
 // clang-format on
 
 extern "C" {
@@ -82,6 +83,12 @@ int mainEntryTiFlashDTTool(int argc, char ** argv)
             std::vector<std::string> opts = bpo::collect_unrecognized(parsed.options, bpo::include_positional);
             opts.erase(opts.begin());
             return Inspect::inspectEntry(opts, run_raftstore_proxy_ffi);
+        }
+        else if (command == "generate")
+        {
+            std::vector<std::string> opts = bpo::collect_unrecognized(parsed.options, bpo::include_positional);
+            opts.erase(opts.begin());
+            return Generate::generateEntry(opts);
         }
         else
         {
