@@ -16,8 +16,14 @@
 #include <Common/Logger.h>
 #include <Common/RandomData.h>
 #include <Common/TiFlashMetrics.h>
+#include <DataStreams/materializeBlock.h>
+#include <IO/Buffer/ReadBufferFromFile.h>
 #include <IO/Checksum/ChecksumBuffer.h>
 #include <IO/Encryption/MockKeyManager.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#include <Poco/JSON/Parser.h>
+#pragma clang diagnostic pop
 #include <Poco/Path.h>
 #include <Server/DTTool/DTTool.h>
 #include <Server/RaftConfigParser.h>
@@ -265,6 +271,199 @@ genBlocks(
 }
 
 
+/// Load column definitions from the schema JSON file produced by `dttool generate`.
+/// Returns nullptr on any parse error, missing fields, or unsupported type.
+ColumnDefinesPtr loadSchemaFromJson(const std::string & schema_path)
+{
+    std::ifstream file(schema_path);
+    if (!file.is_open())
+    {
+        std::cerr << "Failed to open schema file: " << schema_path << std::endl;
+        return nullptr;
+    }
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var result;
+    try
+    {
+        result = parser.parse(file);
+    }
+    catch (const Poco::Exception & e)
+    {
+        std::cerr << "Failed to parse schema JSON: " << e.displayText() << std::endl;
+        return nullptr;
+    }
+
+    auto root = result.extract<Poco::JSON::Object::Ptr>();
+    auto columns_array = root->getArray("columns");
+    if (!columns_array || columns_array->size() == 0)
+    {
+        std::cerr << "Schema JSON missing or empty 'columns' array" << std::endl;
+        return nullptr;
+    }
+
+    auto defines = std::make_shared<ColumnDefines>();
+    ColId user_col_id = 3; // User columns start from ID 3, matching createColumnDefines.
+
+    for (size_t i = 0; i < columns_array->size(); ++i)
+    {
+        auto col_obj = columns_array->getObject(static_cast<unsigned int>(i));
+        auto name = col_obj->getValue<std::string>("name");
+        auto type_name = col_obj->getValue<std::string>("type");
+
+        ColId col_id;
+        if (name == MutSup::extra_handle_column_name)
+            col_id = MutSup::extra_handle_id;
+        else if (name == MutSup::version_column_name)
+            col_id = MutSup::version_col_id;
+        else if (name == MutSup::delmark_column_name)
+            col_id = MutSup::delmark_col_id;
+        else
+            col_id = user_col_id++;
+
+        DataTypePtr type;
+        try
+        {
+            type = DataTypeFactory::instance().get(type_name);
+        }
+        catch (const Exception & e)
+        {
+            std::cerr << "Unsupported type in schema: " << type_name << " (" << e.message() << ")" << std::endl;
+            return nullptr;
+        }
+
+        defines->emplace_back(col_id, name, std::move(type));
+    }
+
+    // Validate that the three hidden columns are present at positions 0–2 with
+    // the expected names.
+    if (defines->size() < 3 || (*defines)[0].name != MutSup::extra_handle_column_name
+        || (*defines)[1].name != MutSup::version_column_name
+        || (*defines)[2].name != MutSup::delmark_column_name)
+    {
+        std::cerr << "Schema must contain _tidb_rowid, _INTERNAL_VERSION, and _INTERNAL_DELMARK "
+                     "as the first three columns"
+                  << std::endl;
+        return nullptr;
+    }
+
+    return defines;
+}
+
+
+/// Load blocks from the TSV data file produced by `dttool generate`.
+/// Uses the existing TabSeparated input format to parse rows.
+/// Returns empty blocks vector on any load error.
+std::tuple<std::vector<Block>, std::vector<DMFileBlockOutputStream::BlockProperty>, size_t>
+loadBlocksFromTSV(const std::string & tsv_path, const ColumnDefinesPtr & defines, Context & context)
+{
+    // Build a sample block from the column definitions so that the input format
+    // knows the expected schema. Each column must carry a valid (non-null) empty
+    // column pointer — materializeBlock and assertBlocksHaveEqualStructure
+    // dereference the column pointer unconditionally.
+    Block sample;
+    for (const auto & cd : *defines)
+    {
+        auto empty_col = cd.type->createColumn();
+        ColumnWithTypeAndName col(std::move(empty_col), cd.type, cd.name, cd.id);
+        sample.insert(std::move(col));
+    }
+
+    // Materialize the sample block so that columns have valid (empty) data
+    // pointers, which are required by assertBlocksHaveEqualStructure during read.
+    Block sample_materialized = materializeBlock(sample);
+
+    ReadBufferFromFile buffer(tsv_path);
+
+    BlockInputStreamPtr stream;
+    try
+    {
+        stream = context.getInputFormat("TabSeparated", buffer, sample_materialized, DEFAULT_MERGE_BLOCK_SIZE);
+        stream->readPrefix();
+    }
+    catch (const Exception & e)
+    {
+        std::cerr << "Failed to create TSV input stream: " << e.message() << std::endl;
+        return {};
+    }
+
+    std::vector<Block> blocks;
+    size_t effective_size = 0;
+    size_t total_rows = 0;
+
+    try
+    {
+        while (true)
+        {
+            auto block = stream->read();
+            if (!block)
+                break;
+
+            size_t rows = block.rows();
+            if (rows != DEFAULT_MERGE_BLOCK_SIZE)
+            {
+                std::cerr << fmt::format(
+                    "Each block must have exactly {} rows (DEFAULT_MERGE_BLOCK_SIZE), got block with {} rows",
+                    DEFAULT_MERGE_BLOCK_SIZE,
+                    rows)
+                          << std::endl;
+                return {};
+            }
+
+            // Verify column count matches schema.
+            if (block.columns() != sample.columns())
+            {
+                std::cerr << fmt::format(
+                    "TSV column count ({}) does not match schema column count ({})",
+                    block.columns(),
+                    sample.columns())
+                          << std::endl;
+                return {};
+            }
+
+            total_rows += rows;
+            effective_size += block.bytes();
+            blocks.push_back(std::move(block));
+        }
+        stream->readSuffix();
+    }
+    catch (const Exception & e)
+    {
+        std::cerr << "Error reading TSV data: " << e.message() << std::endl;
+        return {};
+    }
+
+    if (total_rows == 0)
+    {
+        std::cerr << "TSV file contains no data rows" << std::endl;
+        return {};
+    }
+
+    if (total_rows % DEFAULT_MERGE_BLOCK_SIZE != 0)
+    {
+        std::cerr << fmt::format(
+            "Loaded row count ({}) is not a multiple of {} (DEFAULT_MERGE_BLOCK_SIZE)",
+            total_rows,
+            DEFAULT_MERGE_BLOCK_SIZE)
+                  << std::endl;
+        return {};
+    }
+
+    // Build matching block properties for each loaded block.
+    std::vector<DMFileBlockOutputStream::BlockProperty> properties;
+    properties.reserve(blocks.size());
+    for (size_t i = 0; i < blocks.size(); ++i)
+    {
+        DMFileBlockOutputStream::BlockProperty prop{};
+        prop.gc_hint_version = static_cast<UInt64>(i + 1);
+        prop.effective_num_rows = blocks[i].rows();
+        properties.push_back(prop);
+    }
+
+    return {std::move(blocks), std::move(properties), effective_size};
+}
+
+
 int benchEntry(const std::vector<std::string> & opts)
 {
     bpo::options_description options{"Delta Merge IO Bench"};
@@ -286,7 +485,9 @@ int benchEntry(const std::vector<std::string> & opts)
         ("random", bpo::value<size_t>(), "Random seed. If not set, a random seed will be generated.")
         ("encryption", bpo::bool_switch(&encryption), "Enable encryption.")
         ("workdir", bpo::value<String>()->default_value("/tmp/test"), "Directory to create temporary data storage.")
-        ("clean", bpo::bool_switch(), "Clean up the workdir after the bench is done. If false, the workdir will not be cleaned up, please clean it manually if needed.");
+        ("clean", bpo::bool_switch(), "Clean up the workdir after the bench is done. If false, the workdir will not be cleaned up, please clean it manually if needed.")
+        ("input", bpo::value<std::string>(), "Path to TSV data file generated by dttool generate (enables file-backed mode).")
+        ("schema", bpo::value<std::string>(), "Path to schema JSON file generated by dttool generate (enables file-backed mode).");
     ;
     // clang-format on
 
@@ -351,7 +552,7 @@ int benchEntry(const std::vector<std::string> & opts)
         auto str_len = vm["str-len"].as<size_t>();
         auto repeat = vm["repeat"].as<size_t>();
         auto write_repeat = vm["write-repeat"].as<size_t>();
-        size_t random_seed;
+        size_t random_seed = 0;
         if (vm.count("random"))
         {
             random_seed = vm["random"].as<size_t>();
@@ -359,6 +560,25 @@ int benchEntry(const std::vector<std::string> & opts)
         else
         {
             random_seed = std::random_device{}();
+        }
+
+        // File-backed mode: read data from TSV and schema JSON produced by
+        // `dttool generate` instead of generating random data in memory.
+        bool has_input = vm.count("input") != 0;
+        bool has_schema = vm.count("schema") != 0;
+        if (has_input != has_schema)
+        {
+            std::cerr << "Both --input and --schema must be provided together for file-backed mode"
+                      << std::endl;
+            return -EINVAL;
+        }
+        const bool file_backed_mode = has_input && has_schema;
+        std::string input_path;
+        std::string schema_path;
+        if (file_backed_mode)
+        {
+            input_path = vm["input"].as<std::string>();
+            schema_path = vm["schema"].as<std::string>();
         }
         auto workdir = vm["workdir"].as<std::string>() + "/.tmp";
         bool clean = vm["clean"].as<bool>();
@@ -443,18 +663,61 @@ int benchEntry(const std::vector<std::string> & opts)
 
         // start initialization
         size_t effective_size = 0;
-        auto defines = DTTool::Bench::createColumnDefines(num_cols);
+        ColumnDefinesPtr defines;
         std::vector<DB::Block> blocks;
         std::vector<DB::DM::DMFileBlockOutputStream::BlockProperty> properties;
-        if (write_repeat > 0)
-        {
-            std::tie(blocks, properties, effective_size)
-                = genBlocks(random_seed, num_rows, num_cols, str_len, sparse_ratio, logger);
-        }
 
         TableID table_id = 1;
         auto settings = DB::Settings();
         auto db_context = env.getContext();
+
+        if (file_backed_mode)
+        {
+            // --- File-backed mode ---
+            defines = loadSchemaFromJson(schema_path);
+            if (!defines)
+            {
+                std::cerr << "Failed to load schema from: " << schema_path << std::endl;
+                return -EINVAL;
+            }
+
+            if (write_repeat > 0)
+            {
+                std::tie(blocks, properties, effective_size)
+                    = loadBlocksFromTSV(input_path, defines, *db_context);
+                if (blocks.empty())
+                {
+                    std::cerr << "Failed to load TSV data from: " << input_path << std::endl;
+                    return -EINVAL;
+                }
+            }
+
+            // Update num_rows / num_cols from the loaded data for logging.
+            num_cols = defines->size();
+            num_rows = 0;
+            for (const auto & b : blocks)
+                num_rows += b.rows();
+
+            LOG_INFO(
+                logger,
+                "File-backed mode: input={} schema={} loaded_rows={} loaded_blocks={} num_columns={} effective_size={}",
+                input_path,
+                schema_path,
+                num_rows,
+                blocks.size(),
+                num_cols,
+                effective_size);
+        }
+        else
+        {
+            // --- Random generation mode (existing behaviour) ---
+            defines = DTTool::Bench::createColumnDefines(num_cols);
+            if (write_repeat > 0)
+            {
+                std::tie(blocks, properties, effective_size)
+                    = genBlocks(random_seed, num_rows, num_cols, str_len, sparse_ratio, logger);
+            }
+        }
         auto path_pool
             = std::make_shared<DB::StoragePathPool>(db_context->getPathPool().withTable("test", "t1", false));
         auto storage_pool

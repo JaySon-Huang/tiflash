@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <Common/FieldVisitors.h>
 #include <Common/Logger.h>
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <IO/Buffer/WriteBufferFromOStream.h>
+#include <IO/WriteHelpers.h>
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #include <Poco/JSON/Array.h>
@@ -96,23 +96,19 @@ void writeSchemaJson(const DB::DM::ColumnDefinesPtr & defines, const std::string
     root->stringify(schema_file, /*indent=*/2);
 }
 
-/// Write a single cell value to the TSV output stream.
-/// Null values are encoded as \N.
-void writeTsvCell(std::ostream & out, const DB::ColumnPtr & column, size_t row)
+/// Write a single cell value to the TSV output stream using the
+/// serialization format expected by TabSeparatedRowInputStream, so that
+/// dttool bench can round-trip the data.
+void writeTsvCell(
+    WriteBuffer & wb,
+    const DB::IDataType & type,
+    const DB::IColumn & column,
+    size_t row)
 {
-    // For nullable columns, check the null bitmap first.
-    if (column->isColumnNullable())
-    {
-        if (column->isNullAt(row))
-        {
-            out << "\\N";
-            return;
-        }
-    }
-
-    // Convert the cell to a Field and serialize it as text.
-    auto field = (*column)[row];
-    out << applyVisitor(FieldVisitorToString(), field);
+    // serializeTextEscaped handles null encoding (\N) for nullable types
+    // and proper backslash escaping for strings, matching what
+    // TabSeparatedRowInputStream / deserializeTextEscaped expects.
+    type.serializeTextEscaped(column, row, wb);
 }
 } // namespace
 
@@ -243,6 +239,7 @@ int generateEntry(const std::vector<std::string> & opts)
                 return -EINVAL;
             }
 
+            WriteBufferFromOStream tsv_buf(tsv_file);
             size_t rows_written = 0;
             for (const auto & block : blocks)
             {
@@ -252,13 +249,15 @@ int generateEntry(const std::vector<std::string> & opts)
                     for (size_t col = 0; col < block.columns(); ++col)
                     {
                         if (col > 0)
-                            tsv_file << '\t';
-                        writeTsvCell(tsv_file, block.getByPosition(col).column, row);
+                            writeChar('\t', tsv_buf);
+                        const auto & col_with_type = block.getByPosition(col);
+                        writeTsvCell(tsv_buf, *col_with_type.type, *col_with_type.column, row);
                     }
-                    tsv_file << '\n';
+                    writeChar('\n', tsv_buf);
                     ++rows_written;
                 }
             }
+            tsv_buf.next();
 
             if (!tsv_file)
             {

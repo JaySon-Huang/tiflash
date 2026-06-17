@@ -705,3 +705,322 @@ TEST_F(DTToolGenerateTest, ZeroColumns)
     EXPECT_FALSE(schema_content.find("int_") != std::string::npos);
     EXPECT_FALSE(schema_content.find("str_") != std::string::npos);
 }
+
+
+// Forward-declare new bench functions for testing.
+namespace DTTool::Bench
+{
+using namespace DB::DM;
+using namespace DB;
+
+ColumnDefinesPtr loadSchemaFromJson(const std::string & schema_path);
+
+std::tuple<std::vector<Block>, std::vector<DMFileBlockOutputStream::BlockProperty>, size_t>
+loadBlocksFromTSV(const std::string & tsv_path, const ColumnDefinesPtr & defines, Context & context);
+} // namespace DTTool::Bench
+
+
+struct DTToolBenchFileBackedTest : public DB::base::TiFlashStorageTestBasic
+{
+    std::string tmp_dir;
+
+    void SetUp() override
+    {
+        TiFlashStorageTestBasic::SetUp();
+        static int counter = 0;
+        tmp_dir = ::testing::TempDir() + "dttool_bench_fb_test_" + std::to_string(++counter);
+        Poco::File(tmp_dir).createDirectory();
+    }
+
+    void TearDown() override
+    {
+        if (Poco::File tmp(tmp_dir); tmp.exists())
+            tmp.remove(true);
+        TiFlashStorageTestBasic::TearDown();
+    }
+
+    std::string tsvPath() const { return tmp_dir + "/data.tsv"; }
+    std::string schemaPath() const { return tmp_dir + "/schema.json"; }
+};
+
+
+TEST_F(DTToolBenchFileBackedTest, SchemaLoadBasic)
+{
+    // Generate a TSV/schema pair, then load the schema and verify.
+    std::vector<std::string> gen_opts = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    auto defines = DTTool::Bench::loadSchemaFromJson(schemaPath());
+    ASSERT_NE(defines, nullptr);
+    ASSERT_GE(defines->size(), 3);
+
+    // Hidden columns
+    EXPECT_EQ((*defines)[0].name, "_tidb_rowid");
+    EXPECT_EQ((*defines)[1].name, "_INTERNAL_VERSION");
+    EXPECT_EQ((*defines)[2].name, "_INTERNAL_DELMARK");
+
+    // User columns (columns=4 → 2 int + 2 str)
+    EXPECT_EQ((*defines)[3].name, "int_0");
+    EXPECT_EQ((*defines)[4].name, "int_1");
+    EXPECT_EQ((*defines)[5].name, "str_0");
+    EXPECT_EQ((*defines)[6].name, "str_1");
+
+    // Column IDs
+    EXPECT_EQ((*defines)[0].id, DB::MutSup::extra_handle_id);
+    EXPECT_EQ((*defines)[1].id, DB::MutSup::version_col_id);
+    EXPECT_EQ((*defines)[2].id, DB::MutSup::delmark_col_id);
+    EXPECT_EQ((*defines)[3].id, 3);
+    EXPECT_EQ((*defines)[4].id, 4);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, SchemaLoadMissingColumns)
+{
+    // Schema JSON with no "columns" key → nullptr
+    {
+        std::ofstream f(schemaPath());
+        f << "{}";
+        f.close();
+        EXPECT_EQ(DTTool::Bench::loadSchemaFromJson(schemaPath()), nullptr);
+    }
+
+    // Schema JSON with empty "columns" → nullptr
+    {
+        std::ofstream f(schemaPath());
+        f << R"({"columns": []})";
+        f.close();
+        EXPECT_EQ(DTTool::Bench::loadSchemaFromJson(schemaPath()), nullptr);
+    }
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, SchemaLoadMissingHiddenColumns)
+{
+    // Schema without the required hidden columns → nullptr
+    std::ofstream f(schemaPath());
+    f << R"({
+      "columns": [
+        {"name": "col_a", "type": "Int64"},
+        {"name": "col_b", "type": "Int64"}
+      ]
+    })";
+    f.close();
+    EXPECT_EQ(DTTool::Bench::loadSchemaFromJson(schemaPath()), nullptr);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, SchemaLoadUnsupportedType)
+{
+    // Schema with an unknown type name → nullptr
+    std::ofstream f(schemaPath());
+    f << R"({
+      "columns": [
+        {"name": "_tidb_rowid", "type": "Int64"},
+        {"name": "_INTERNAL_VERSION", "type": "UInt64"},
+        {"name": "_INTERNAL_DELMARK", "type": "UInt8"},
+        {"name": "bad_col", "type": "NonExistentType"}
+      ]
+    })";
+    f.close();
+    EXPECT_EQ(DTTool::Bench::loadSchemaFromJson(schemaPath()), nullptr);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, MalformedSchemaJson)
+{
+    // Invalid JSON → nullptr
+    std::ofstream f(schemaPath());
+    f << "{ not valid json }";
+    f.close();
+    EXPECT_EQ(DTTool::Bench::loadSchemaFromJson(schemaPath()), nullptr);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, LoadBlocksRoundTrip)
+{
+    // Generate data, load it back, verify row count and block structure.
+    std::vector<std::string> gen_opts = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    auto defines = DTTool::Bench::loadSchemaFromJson(schemaPath());
+    ASSERT_NE(defines, nullptr);
+
+    auto [blocks, properties, effective_size] = DTTool::Bench::loadBlocksFromTSV(
+        tsvPath(), defines, *db_context);
+    ASSERT_FALSE(blocks.empty());
+
+    // 8192 rows → 1 block of 8192
+    EXPECT_EQ(blocks.size(), 1);
+    EXPECT_EQ(blocks[0].rows(), 8192);
+    // columns=4 → 3 hidden + 2 int + 2 str = 7 columns
+    EXPECT_EQ(blocks[0].columns(), 7);
+
+    // Verify block properties
+    ASSERT_EQ(properties.size(), 1);
+    EXPECT_EQ(properties[0].effective_num_rows, 8192);
+    EXPECT_EQ(properties[0].gc_hint_version, 1);
+
+    // effective_size should be > 0
+    EXPECT_GT(effective_size, 0);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, LoadBlocksMultiBlock)
+{
+    // Generate 3 * 8192 = 24576 rows → 3 blocks
+    std::vector<std::string> gen_opts = {
+        "--rows", "24576",
+        "--columns", "2",
+        "--random", "12345",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    auto defines = DTTool::Bench::loadSchemaFromJson(schemaPath());
+    ASSERT_NE(defines, nullptr);
+
+    auto [blocks, properties, effective_size] = DTTool::Bench::loadBlocksFromTSV(
+        tsvPath(), defines, *db_context);
+    ASSERT_FALSE(blocks.empty());
+
+    EXPECT_EQ(blocks.size(), 3);
+    EXPECT_EQ(properties.size(), 3);
+    for (const auto & b : blocks)
+        EXPECT_EQ(b.rows(), 8192);
+    // gc_hint_version should be monotonically increasing
+    for (size_t i = 0; i < properties.size(); ++i)
+        EXPECT_EQ(properties[i].gc_hint_version, i + 1);
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, NullRoundTrip)
+{
+    // Generate with sparse_ratio=1.0 (all strings null), load back, verify \N → null
+    std::vector<std::string> gen_opts = {
+        "--rows", "8192",
+        "--columns", "6", // 3 int + 3 string columns
+        "--sparse-ratio", "1.0",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    // Verify TSV has \N markers
+    {
+        std::ifstream tsv(tsvPath());
+        std::string line;
+        ASSERT_TRUE(std::getline(tsv, line));
+        EXPECT_TRUE(line.find("\\N") != std::string::npos);
+    }
+
+    auto defines = DTTool::Bench::loadSchemaFromJson(schemaPath());
+    ASSERT_NE(defines, nullptr);
+
+    auto [blocks, properties, effective_size] = DTTool::Bench::loadBlocksFromTSV(
+        tsvPath(), defines, *db_context);
+    ASSERT_FALSE(blocks.empty());
+
+    // The last 3 columns should be Nullable(String) and all values should be null.
+    const auto & block = blocks[0];
+    // columns: handle, version, delmark, int_0, int_1, int_2, str_0, str_1, str_2
+    for (size_t col = 6; col < 9; ++col)
+    {
+        const auto & col_with_type = block.getByPosition(col);
+        EXPECT_TRUE(col_with_type.type->isNullable())
+            << "Column " << col << " should be Nullable";
+        for (size_t row = 0; row < block.rows(); ++row)
+        {
+            EXPECT_TRUE(col_with_type.column->isNullAt(row))
+                << "Column " << col << " row " << row << " should be null";
+        }
+    }
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, MissingEitherInputOrSchema)
+{
+    // Generate test data, verify that providing only one flag returns -EINVAL.
+    std::vector<std::string> gen_opts = {
+        "--rows", "8192",
+        "--columns", "4",
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    // Only --input (no --schema)
+    {
+        std::vector<std::string> opts = {
+            "bench",
+            "--input", tsvPath(),
+            "--rows", "8192",
+            "--columns", "4",
+            "--write-repeat", "0",
+            "--workdir", tmp_dir + "/.tmp",
+        };
+        EXPECT_EQ(DTTool::Bench::benchEntry(opts), -EINVAL);
+    }
+
+    // Only --schema (no --input)
+    {
+        std::vector<std::string> opts = {
+            "bench",
+            "--schema", schemaPath(),
+            "--rows", "8192",
+            "--columns", "4",
+            "--write-repeat", "0",
+            "--workdir", tmp_dir + "/.tmp",
+        };
+        EXPECT_EQ(DTTool::Bench::benchEntry(opts), -EINVAL);
+    }
+}
+
+
+TEST_F(DTToolBenchFileBackedTest, FileBackedBenchEndToEnd)
+{
+    // Full end-to-end: generate → bench file-backed → verify DMFile written.
+    static constexpr size_t test_rows = 8192;
+    static constexpr size_t test_cols = 4;
+
+    std::vector<std::string> gen_opts = {
+        "--rows", std::to_string(test_rows),
+        "--columns", std::to_string(test_cols),
+        "--random", "42",
+        "--output", tsvPath(),
+        "--schema", schemaPath(),
+    };
+    ASSERT_EQ(DTTool::Generate::generateEntry(gen_opts), 0);
+
+    // Run bench in file-backed mode with a single write+read iteration.
+    std::string workdir = tmp_dir + "/.tmp";
+    std::vector<std::string> bench_opts = {
+        "bench",
+        "--input", tsvPath(),
+        "--schema", schemaPath(),
+        "--version", "2",
+        "--write-repeat", "1",
+        "--repeat", "1",
+        "--workdir", tmp_dir,
+    };
+    // This should create a DMFile, write the blocks, and read them back.
+    EXPECT_EQ(DTTool::Bench::benchEntry(bench_opts), 0);
+
+    // Verify that a DMFile was written.
+    Poco::File dm_dir(workdir + "/dmf_1");
+    EXPECT_TRUE(dm_dir.exists());
+}
