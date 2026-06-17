@@ -203,6 +203,15 @@ int generateEntry(const std::vector<std::string> & opts)
             return -EINVAL;
         }
 
+        // Ensure parent directories exist so the user doesn't have to create
+        // them manually before running the command.
+        for (const auto & path : {output_path, schema_path})
+        {
+            Poco::File parent_dir(Poco::Path(path).parent());
+            if (!parent_dir.exists())
+                parent_dir.createDirectories();
+        }
+
         // Generate column definitions (used for both block generation and schema JSON).
         auto defines = DTTool::Bench::createColumnDefines(num_cols);
 
