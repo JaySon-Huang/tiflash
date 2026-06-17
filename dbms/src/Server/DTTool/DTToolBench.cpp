@@ -536,10 +536,11 @@ int benchEntry(const std::vector<std::string> & opts)
     try
     {
         auto version = vm["version"].as<size_t>();
-        auto algorithm_config = parseChecksumAlgo(vm["algorithm"].as<std::string>());
+        auto algorithm_str = vm["algorithm"].as<std::string>();
+        auto algorithm_config = parseChecksumAlgo(algorithm_str);
         if (!algorithm_config.has_value())
         {
-            std::cerr << "invalid algorithm: " << vm["algorithm"].as<std::string>() << std::endl;
+            std::cerr << "invalid algorithm: " << algorithm_str << std::endl;
             return -EINVAL;
         }
         DB::ChecksumAlgo algorithm = algorithm_config.value();
@@ -640,7 +641,7 @@ int benchEntry(const std::vector<std::string> & opts)
                 encryption,
                 workdir,
                 frame,
-                algorithm_config);
+                algorithm_str);
             opt.emplace(std::map<std::string, std::string>{}, frame, algorithm);
             if (version == 2)
             {
