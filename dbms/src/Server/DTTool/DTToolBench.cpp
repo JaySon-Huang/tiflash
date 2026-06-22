@@ -498,7 +498,7 @@ int benchEntry(const std::vector<std::string> & opts)
         ("str-len", bpo::value<size_t>()->default_value(1024), "Maximum length of generated random string values.")
         ("random", bpo::value<size_t>(), "Random seed. If not set, a random seed will be generated.")
         // Other parameters
-        ("version", bpo::value<size_t>()->default_value(2), "DTFile version. [available: 1, 2, 3]")
+        ("version", bpo::value<size_t>()->default_value(3), "DTFile version. [available: 1, 2, 3]")
         ("algorithm", bpo::value<std::string>()->default_value("xxh3"), "Checksum algorithm. [available: xxh3, city128, crc32, crc64, none]")
         ("frame", bpo::value<size_t>()->default_value(TIFLASH_DEFAULT_CHECKSUM_FRAME_SIZE), "Checksum frame length.")
         ("repeat", bpo::value<size_t>()->default_value(5), "Repeat times.")
@@ -765,13 +765,13 @@ int benchEntry(const std::vector<std::string> & opts)
             LOG_INFO(
                 logger,
                 "average write time: {} ms",
-                (static_cast<double>(write_cost_ms) / static_cast<double>(repeat)));
+                (static_cast<double>(write_cost_ms) / static_cast<double>(write_repeat)));
             LOG_INFO(
                 logger,
                 "write throughput by uncompressed size: {:.3f}MiB/s;"
                 " write throughput by compressed size: {:.3f}MiB/s",
-                (effective_size * 1'000.0 * repeat / write_cost_ms / 1024 / 1024),
-                (effective_size_on_disk * 1'000.0 * repeat / write_cost_ms / 1024 / 1024));
+                (effective_size * 1'000.0 * write_repeat / write_cost_ms / 1024 / 1024),
+                (effective_size_on_disk * 1'000.0 * write_repeat / write_cost_ms / 1024 / 1024));
         }
 
         // Read
