@@ -11,11 +11,12 @@
 
 1. 有效日期区间定义为半开区间 `[1900-01-01 00:00:00, 2100-01-01 00:00:00)`。
 2. `trim_minmax` 保存区间内值的 min/max；普通 min-max 保持不变，继续服务于不满足 trim 使用条件的查询。
-3. 每个 trim 索引实际使用的上下界、格式版本、pack 数量、索引位置，以及每列每 pack 的 `UInt8 has_trimmed_value`，都持久化在 DMFileMetaV2 的独立元数据块中。其 bit 0 表示存在低于下界的值，bit 1 表示存在不低于上界的值。
+3. 每个 trim 索引实际使用的上下界、格式版本、pack 数量和索引位置持久化在 DMFileMetaV2 的独立元数据块中；per-pack low/high flags 合并到 trim index 已有的 `has_null_marks` 字节数组中，磁盘语义统一为 `pack_marks`。
 4. Reader 只能依据 DMFile 中保存的实际区间选择 trim 索引，不能依据当前版本的全局默认区间解释历史索引。
 5. 只有能证明区间外低端值和高端值对谓词分别具有一致的匹配结果时，才能用 trim 索引替代该列的普通 min-max；第一版支持匹配集合位于有效区间内的 equality、IN、bounded range，以及有限边界位于有效区间内的单边 range。
 6. Reader 根据 `has_trimmed_low` 和 `has_trimmed_high` 修正 trim rough check：区间外存在匹配值时不能保留 `None`，存在不匹配值时不能保留 `All`。
-7. 第一版仅为 DMFile V3 / MetaV2 写入 trim 索引；旧 DMFile 或不支持的谓词始终回退普通 min-max。
+7. 代码复用 `MinMaxIndex` payload、serializer 和原始 rough check，通过组合式 trim wrapper 修正结果，不让 `TrimMinMaxIndex` 继承 `MinMaxIndex`。
+8. 第一版仅为 DMFile V3 / MetaV2 写入 trim 索引；旧 DMFile 或不支持的谓词始终回退普通 min-max。
 
 该设计不改变 SQL 语义，不要求 DDL，也不重写历史 DMFile。新旧 DMFile 可以同时存在，并在同一个查询中按文件独立选择 trim 或普通 min-max。
 
@@ -121,9 +122,9 @@ pack.min > U
 | 有效日期区间 `E` | 构建某一份 trim 索引时使用并持久化的半开区间 `[lower, upper)` |
 | trim value | 位于 `E` 内、参与 trim min/max 计算的值 |
 | trimmed value | 位于 `E` 外、未参与 trim min/max 计算的非 NULL、非删除值 |
-| `has_trimmed_value` | 某列某 pack 的一个 `UInt8` flags；bit 0 为 `has_trimmed_low`，bit 1 为 `has_trimmed_high` |
-| `has_trimmed_low` | `has_trimmed_value & 0x01`，表示存在 `< lower_bound` 的非 NULL、非删除值 |
-| `has_trimmed_high` | `has_trimmed_value & 0x02`，表示存在 `>= upper_bound` 的非 NULL、非删除值 |
+| `pack_marks` | min-max index 中原 `has_null_marks` 对应的每 pack `UInt8` 数组；bit 0 为 NULL，trim index 额外使用 bit 1/2 |
+| `has_trimmed_low` | `pack_marks & 0x02`，表示存在 `< lower_bound` 的非 NULL、非删除值 |
+| `has_trimmed_high` | `pack_marks & 0x04`，表示存在 `>= upper_bound` 的非 NULL、非删除值 |
 | 查询域 `Q` | 某个列谓词可能匹配的全部非 NULL 时间值集合 |
 | trim eligible | 已证明 low/high 两类 trimmed value 对该谓词各自具有一致匹配语义，能够结合 flags 安全修正 trim RSResult |
 
@@ -192,7 +193,7 @@ predicate = col >= 2020-01-01
 
 literal 2020 位于 `E` 内，但谓词的查询域为 `[2020, +∞)`，包含 2100。若使用空的 trim min-max 直接返回 `None`，将错误漏行。本设计通过 `has_trimmed_high` 识别必定匹配的高端值，把 `None` 修正为 `Some`，从而安全支持该单边比较。
 
-另一个反例说明 `has_trimmed_value` 的必要性：
+另一个反例说明 low/high pack marks 的必要性：
 
 ```text
 E = [1900, 2100)
@@ -215,7 +216,10 @@ DMFile write path
        - per-column encoded lower/upper bound
        - pack count
        - trim index subfile descriptor
-       - has_trimmed_value[pack_count] UInt8 flags
+  -> trim index pack_marks[pack_count]:
+       - bit 0: has_null
+       - bit 1: has_trimmed_low
+       - bit 2: has_trimmed_high
 
 Query DAG
   -> FilterParser
@@ -255,17 +259,43 @@ Query DAG
 trim min-max 复用普通 `MinMaxIndex` 的核心表示：
 
 ```text
-has_null_marks[pack_count]
+pack_marks[pack_count]       // 物理位置与现有 has_null_marks 相同
 has_value_marks[pack_count]
 minmaxes[pack_count * 2]
 ```
 
-语义调整为：
+`pack_marks` 的 V1 bit layout 为：
 
-- `has_null_marks`：该 pack 是否存在非删除 NULL，统计范围与普通 min-max 一致；
+| bit | mask | ordinary min-max | trim min-max |
+| --- | --- | --- | --- |
+| 0 | `0x01` | `has_null` | `has_null` |
+| 1 | `0x02` | 必须为 0 | `has_trimmed_low` |
+| 2 | `0x04` | 必须为 0 | `has_trimmed_high` |
+| 3..7 | `0xf8` | 必须为 0 | 必须为 0，保留 |
+
+其他字段语义为：
+
 - `has_value_marks`：该 pack 是否存在至少一个位于 `E` 内的非 NULL、非删除值；
 - `minmaxes`：只对 `E` 内值计算；
-- `has_trimmed_value` 不放入 `TrimMinMaxIndex` payload，而是按每 pack 一个 `UInt8` 放入 DMFileMetaV2 的 trim 元数据块。
+- NULL、low/high flags 和 trim min/max 使用相同 pack 顺序，全部位于同一个 trim index payload。
+
+普通 `.idx` 的字节布局和已有内容不变：历史文件的 mark 本来就是 `0x00` 或 `0x01`。代码中把成员概念从 `has_null_marks` 泛化为 `pack_marks` 后，所有 NULL 判断必须使用 `(pack_marks[i] & 0x01) != 0`，不能继续把整个 byte 当作 bool，否则 low/high bit 会被误判为 NULL。建议只通过 `hasNull()`、`hasTrimmedLow()` 和 `hasTrimmedHigh()` accessor 读取。
+
+`TrimMinMaxIndex` 不定义为 `MinMaxIndex` 的子类。当前 `MinMaxIndex` 的状态是 private，`read()` 固定构造基类，`checkCmp` 是非虚模板方法，查询路径又通过 `MinMaxIndexPtr` 调用；为继承引入虚接口和专用工厂不会简化磁盘格式。第一版使用组合：
+
+```cpp
+struct TrimMinMaxIndex
+{
+    MinMaxIndexPtr minmax;
+
+    RSResults roughCheck(
+        TrimPredicateClass predicate_class,
+        size_t start_pack,
+        size_t pack_count) const;
+};
+```
+
+`MinMaxIndex` 负责通用序列化和原始 min-max check，trim wrapper 或 `DateRange` Operator 读取 pack mark accessor 并修正 `None` / `All`。wrapper 不保存额外 per-pack 数组。
 
 trim index 使用独立 subfile 名称，逻辑形式为：
 
@@ -299,12 +329,6 @@ message TrimMinMaxColumnMeta {
     optional uint64 pack_count = 5;
     optional string index_file_name = 6;
     optional uint64 index_file_size = 7;
-
-    // 长度必须等于 pack_count，pack_id 与 DMFile pack_stats 一一对应。
-    // bit 0 (0x01): has_trimmed_low，存在 value < lower_bound。
-    // bit 1 (0x02): has_trimmed_high，存在 value >= upper_bound。
-    // bit 2..7: reserved，format_version = 1 中必须为 0。
-    optional bytes has_trimmed_value = 8;
 }
 
 message TrimMinMaxMeta {
@@ -319,14 +343,14 @@ message TrimMinMaxMeta {
 1. `format_version = 1` 固定使用半开区间 `[lower_bound, upper_bound)`；未来改变边界语义必须升级版本，Reader 遇到未知版本时回退 ordinary min-max。
 2. bounds 必须能按列的 nested type 解码，并满足 `lower_bound < upper_bound`。
 3. `pack_count` 必须等于 DMFile 的 pack 数量。
-4. `has_trimmed_value` 长度必须严格等于 `pack_count`；每个 byte 的 bit 2..7 必须为 0。
-5. `index_file_size` 必须与 `MergedSubFileInfo` 或独立 subfile 实际大小一致。
-6. trim index 解码出的 pack 数量必须等于 `pack_count`。
-7. trim metadata、flags array 和 index subfile 必须由同一个 immutable DMFile generation 原子生成和发布；Reader 不得跨 DMFile 复用或组合它们。
+4. `index_file_size` 必须与 `MergedSubFileInfo` 或独立 subfile 实际大小一致。
+5. trim index 解码出的 `pack_marks`、`has_value_marks` 和 min/max cell 数量必须一致，并等于 `pack_count`。
+6. trim index 的 `pack_marks` bit 3..7 必须为 0。
+7. trim metadata 和 index subfile 必须由同一个 immutable DMFile generation 原子生成和发布；Reader 不得跨 DMFile 复用或组合它们。
 8. 同一 DMFile 的不同时间列可以有不同 metadata；Reader 不能假设 file 级全局区间。
 9. metadata 缺失、版本未知或任一结构校验失败时，不使用 trim 索引。
 
-TrimMinMaxMeta block 由 DMFileMetaV2 checksum 保护，trim index subfile 使用现有 DMFile checksum 机制；两者再结合 pack 数量、flags 长度、subfile 位置和大小等结构校验处理物理损坏。
+TrimMinMaxMeta block 由 DMFileMetaV2 checksum 保护，trim index subfile 使用现有 DMFile checksum 机制；两者再结合 pack 数量、pack mark 合法性、subfile 位置和大小等结构校验处理物理损坏。Meta block 不保存任何 per-pack trim flags。
 
 不直接给 `PackStat` 或 `PackProperty` 增加字段。MetaV2 当前以 POD 原始布局序列化这两个结构，修改 `sizeof` 会破坏旧格式。新增独立 block 允许旧 Reader 按当前逻辑忽略未知 block，并继续读取 ordinary min-max。
 
@@ -334,12 +358,12 @@ TrimMinMaxMeta block 由 DMFileMetaV2 checksum 保护，trim index subfile 使�
 
 ### 写入路径
 
-`DMFileWriter::Stream` 为支持日期时间类型的列增加可选 `TrimMinMaxIndex` builder。普通和 trim min-max 在同一次 pack 遍历中计算，避免对列执行两次完整扫描。
+`DMFileWriter::Stream` 为支持日期时间类型的列增加可选 trim `MinMaxIndex` builder。普通和 trim min-max 在同一次 pack 遍历中计算，避免对列执行两次完整扫描；这里复用 builder 和 serializer，不通过继承扩展 `MinMaxIndex`。
 
 伪代码：
 
 ```cpp
-UInt8 has_trimmed_value = 0;
+UInt8 trim_pack_mark = 0;
 
 for (row : pack)
 {
@@ -349,7 +373,7 @@ for (row : pack)
     if (isNull(row))
     {
         ordinary.has_null = true;
-        trim.has_null = true;
+        trim_pack_mark |= 0x01; // has_null
         continue;
     }
 
@@ -358,9 +382,9 @@ for (row : pack)
     if (lower <= row.value && row.value < upper)
         trim.updateMinMax(row.value);
     else if (row.value < lower)
-        has_trimmed_value |= 0x01; // has_trimmed_low
+        trim_pack_mark |= 0x02; // has_trimmed_low
     else
-        has_trimmed_value |= 0x02; // has_trimmed_high
+        trim_pack_mark |= 0x04; // has_trimmed_high
 }
 ```
 
@@ -368,8 +392,10 @@ for (row : pack)
 
 1. ordinary min-max 按现有流程追加一个 cell；
 2. trim min-max 追加一个 cell；若没有有效值，则 `has_value=false`；
-3. 向该列 flags array 追加一个 `UInt8 has_trimmed_value`；
+3. 把 `trim_pack_mark` 追加到 trim index 的 `pack_marks`；
 4. finalize 时写 trim subfile 和 `TrimMinMaxMeta` block。
+
+实现上为 `MinMaxIndex` 增加内部 `appendPack(pack_mark, has_value, min, max)` 或等价 builder API，由 ordinary 和 trim Writer 共用。ordinary 路径只允许 `pack_mark & ~0x01 == 0`；trim 路径允许 `0x01 | 0x02 | 0x04`。反序列化仍复用通用 payload reader，trim loader 随后校验 mark mask 和 pack count。
 
 以下列不生成 trim 索引：
 
@@ -379,7 +405,7 @@ for (row : pack)
 - 空 DMFile；
 - 写入开关关闭时的所有列。
 
-可以在 finalize 时检测整个 DMFile 某列是否存在任何 trimmed value。若 flags array 全为 0，普通 min-max 与 trim min-max 对非 NULL 值等价，可以不持久化 trim subfile 和 metadata，从而避免对无异常值文件增加存储开销。
+可以在 finalize 时检测整个 DMFile 某列是否存在任何 trimmed value。若所有 `pack_marks & 0x06` 都为 0，普通 min-max 与 trim min-max 对非 NULL 值等价，可以不持久化 trim subfile 和 metadata，从而避免对无异常值文件增加存储开销。bit 0 的 NULL 标记不影响该判断。
 
 ### 查询域分析
 
@@ -409,7 +435,7 @@ time_col < U
 - 若同一列出现多个上下界，选择语义上最强的下界和上界；
 - 任何涉及 OR、NOT、NotEqual、NotIn、IsNull、函数或 cast 的分支，第一版不生成 trim 查询域。
 
-建议新增 `DateRange` RSOperator 表示已经归一化的有界日期范围。该 Operator 只影响 rough check；真实行级 filter 仍由原始 DAG expression 构建，不修改 SQL 执行表达式。
+建议新增 `DateRange` RSOperator 表示已经归一化的日期范围，包括 bounded 和单边范围。该 Operator 只影响 rough check；真实行级 filter 仍由原始 DAG expression 构建，不修改 SQL 执行表达式。
 
 为了让 `DMFilePackFilter` 按 DMFile 选择 normal 或 trim index，扩展索引请求接口，使 Operator 能声明：
 
@@ -428,12 +454,12 @@ struct RSIndexRequest
 struct RSCheckParam
 {
     ColumnIndexes normal_indexes;
-    ColumnIndexes trim_indexes;
+    TrimColumnIndexes trim_indexes; // value 内含组合式 TrimMinMaxIndex wrapper
     TrimMinMaxMetas trim_metas;
 };
 ```
 
-若一个 temporal Operator 的查询域在某个 DMFile 上满足 trim 条件，优先只加载 trim index；同一列还有其他需要普通 min-max 的 Operator 时，允许两类索引同时存在。索引 cache 使用不同 key，至少包含稳定的 DMFile identity、列 ID 和索引种类。由于 DMFile 是 immutable generation，同一 identity 下的 bounds、flags array 和 index payload 不会独立变化。
+若一个 temporal Operator 的查询域在某个 DMFile 上满足 trim 条件，优先只加载 trim index；同一列还有其他需要普通 min-max 的 Operator 时，允许两类索引同时存在。索引 cache 使用不同 key，至少包含稳定的 DMFile identity、列 ID 和索引种类。由于 DMFile 是 immutable generation，同一 identity 下的 bounds 和包含 pack marks 的 index payload 不会独立变化。
 
 ### 按 DMFile 选择索引
 
@@ -466,13 +492,15 @@ DMFile C: 未来版本 E=[1800, 2200)，按 C 的 metadata 决定
 
 Reader 不支持 metadata 版本或校验失败时，行为是回退 ordinary min-max，而不是返回 `Some` 之外的推测结果。若底层 index payload checksum 已明确损坏，仍沿用 DMFile 的数据损坏处理策略，不静默掩盖物理损坏。
 
-### Trim rough check 和 `has_trimmed_value`
+### Trim rough check 和 `pack_marks`
 
 Reader 对每个 pack 解码：
 
 ```cpp
-const bool has_trimmed_low = (has_trimmed_value & 0x01) != 0;
-const bool has_trimmed_high = (has_trimmed_value & 0x02) != 0;
+const UInt8 pack_mark = trim_index.minmax->packMark(pack_id);
+const bool has_null = (pack_mark & 0x01) != 0;
+const bool has_trimmed_low = (pack_mark & 0x02) != 0;
+const bool has_trimmed_high = (pack_mark & 0x04) != 0;
 ```
 
 根据谓词类型计算 trimmed value 是否包含必定匹配或必定不匹配的值：
@@ -506,7 +534,7 @@ trim index 延续当前普通 min-max 的规则：
 - NULL 不参与 min/max；
 - 非删除 NULL 会设置 trim 的 `has_null`；
 - NULL 不设置 `has_trimmed_low` 或 `has_trimmed_high`；
-- delete mark 对应值不参与 normal、trim 或 `has_trimmed_value`；
+- delete mark 对应值不参与 normal、trim，也不设置 `pack_marks` 的 low/high bit；
 - pack 中没有非删除有效值时设置 `has_value=false`。
 
 这保证 trim 与普通 min-max 的 RS 三值语义一致。若未来普通 min-max 对 MVCC 可见值集合的定义发生变化，trim 生成必须同步变化，不能形成两套不同的行集合。
@@ -569,10 +597,12 @@ Debug 日志记录 DMFile、列 ID、stored range、query domain、选择的索�
 4. Reader 无法验证 metadata 与 index payload 一致时不得使用 trim。
 5. 行级 filter 始终保留；只有最终 RSResult 为严格正确的 `All` 时才允许跳过。
 6. `format_version = 1` 的边界语义始终为 `[lower_bound, upper_bound)`；不能由运行时配置重新解释。
+7. NULL 语义只读取 `pack_marks & 0x01`；low/high bit 不能影响普通 min-max 的 NULL 判断。
 
 ### 磁盘格式兼容
 
 - 普通 `.idx` 格式不变；旧 Reader 继续读取普通 min-max。
+- 普通 `.idx` 的 pack mark 仍只能为 `0x00` / `0x01`；trim 扩展 bit 只出现在独立 `.trim.idx`。
 - trim 使用独立 subfile，旧 Reader 不会把额外字节解释成普通索引。
 - trim metadata 使用独立 MetaV2 block；当前 MetaV2 读取逻辑会忽略未知 block。
 - 新 Reader 读取不含 trim block 的旧 DMFile 时回退 normal。
@@ -598,9 +628,9 @@ Debug 日志记录 DMFile、列 ID、stored range、query domain、选择的索�
 对于 `MyDateTime`，每 pack 的 trim min/max 约包含：
 
 ```text
-min + max       16 bytes
-has_null         1 bit 或现有序列化表示
-has_value        1 bit 或现有序列化表示
+min + max        16 bytes
+pack_marks        1 byte
+has_value_marks   1 byte
 ```
 
 按当前 `MinMaxIndex` 的字节数组表示，未压缩量级约为每 pack 每列 18 bytes，8192 行一个 pack 时约为：
@@ -609,13 +639,7 @@ has_value        1 bit 或现有序列化表示
 18 / 8192 ≈ 0.0022 bytes/row/column
 ```
 
-`has_trimmed_value` 固定为每 pack 每列 1 byte，其中只使用低 2 bit，其余 6 bit 为后续格式演进保留。8192 行一个 pack 时约为：
-
-```text
-1 / 8192 ≈ 0.00012 bytes/row/column
-```
-
-默认 segment 约 100 万行，即约 123 个 pack；5 个时间列的 flags array 约 615 bytes/DMFile。该表示比两个独立 bitmap 略大，但解码直接、长度校验简单，并保留 6 个扩展 bit。MetaV2 当前会整体读取 meta 文件，因此需要持续监控列数和 pack 数较大时的 meta 大小与解析成本。
+low/high flags 复用 trim min-max 已有的每 pack `has_null_marks` byte，因此相对于一份 trim min-max payload 不再增加额外字节，也不会让 MetaV2 随 pack 数增长。一个默认约 100 万行、123 个 pack、5 个时间列的 DMFile，相比把 flags 单独存放在 metadata 的方案，可减少约 `123 × 5 = 615` bytes MetaV2 内容。
 
 ### 写入 CPU
 
@@ -626,7 +650,7 @@ has_value        1 bit 或现有序列化表示
 - trim eligible 且该列没有其他 normal index 请求时，只加载 trim，不加载 ordinary min-max；
 - fallback 查询只加载 ordinary；
 - 同一列同时存在 trim eligible 和其他普通谓词时可能加载两份索引；
-- trim cache key 与 ordinary 分离，cache weight 必须包含 flags array 和 min/max 的真实内存大小；
+- trim cache key 与 ordinary 分离；pack marks 已包含在 `MinMaxIndex::byteSize()` 对应的第一个 byte array 中，不单独计算 cache weight；
 - 无 trimmed value 的 DMFile 不持久化 trim，可避免无收益开销。
 
 ## 分阶段实施与发布
@@ -635,19 +659,21 @@ has_value        1 bit 或现有序列化表示
 
 - 增加 `TrimMinMaxMeta` 的 protobuf、MetaV2 block 和解析校验。
 - 增加 trim subfile 命名、merged file 定位和 cache key。
+- 将 `has_null_marks` 的内部读取收敛到 pack mark accessor，验证 ordinary min-max 只解释 bit 0。
 - 新 Reader 能读取旧文件，并在所有 trim 异常情况下回退 normal。
 - read/write 开关默认关闭。
 - 完成新写旧读、旧写新读、CN/存算分离文件路径和 checksum 测试。
 
 ### 阶段 B：写入索引
 
-- 在 `DMFileWriter` 中一次遍历生成 normal、trim 和 `UInt8` flags array。
+- 在 `DMFileWriter` 中一次遍历生成 normal、trim 和 trim `pack_marks`。
 - 仅为 V3 的 `MyDate` / `MyDateTime` 用户列生成。
 - write canary，观察写吞吐、CPU、DMFile 大小和 meta 大小。
 
 ### 阶段 C：查询域和读路径
 
 - 增加 top-level AND 时间范围归一化和 `DateRange` Operator。
+- 使用组合式 trim wrapper 调用通用 `MinMaxIndex`，不引入基类虚接口或派生类反序列化。
 - 支持 equality、IN、bounded range 和单边 range 的 trim eligibility。
 - 按 DMFile stored range 选择索引。
 - 根据 low/high flags 实现 `None -> Some`、`NoneNull -> SomeNull`、`All -> Some` 和 `AllNull -> SomeNull` 的保守修正。
@@ -680,7 +706,7 @@ delete mark + 正常值 + outlier
 没有任何有效值
 ```
 
-验证 min/max、`has_null`、`has_value`、`has_trimmed_value` 的 bit 语义和序列化往返，包括 `0x00`、`0x01`、`0x02`、`0x03`，并拒绝 bit 2..7 非 0 的 V1 metadata。
+验证 min/max、`has_value`、pack mark accessor 和序列化往返，至少覆盖 `0x00`、`0x01`（NULL）、`0x02`（low）、`0x04`（high）、`0x06`（low + high）和 `0x07`（NULL + low + high）。trim V1 Reader 必须拒绝 bit 3..7 非 0 的 index payload；普通历史 `.idx` 的 `0x00` / `0x01` 必须保持兼容。
 
 #### RSResult
 
@@ -736,8 +762,9 @@ CAST(col AS ...) = ...
 
 - 旧 DMFile -> 新 Reader；
 - 新 DMFile -> 兼容范围内旧 Reader；
-- trim metadata 缺失、未知版本、错误 pack_count、flags array 长度不等于 pack_count、保留 bit 非 0；
-- bounds 无法解码、`lower_bound >= upper_bound`、index pack 数量不匹配；
+- trim metadata 缺失、未知版本、错误 pack_count；
+- trim index 的 pack marks 数量不等于 pack_count、bit 3..7 非 0；
+- bounds 无法解码、`lower_bound >= upper_bound`；
 - metadata 或 index subfile checksum 不匹配；
 - local disk 和 disaggregated storage；
 - merged subfile reopen、clone、restore、GC 和 segment replacement；
@@ -790,7 +817,7 @@ trim enabled
 
 风险：有效区间在产品迭代中改变，新 Reader 对旧 trim 索引产生 false negative。
 
-缓解：每列每 DMFile 持久化实际上下界；eligibility 只使用 stored range；V1 格式固定使用半开区间。metadata、flags array 和 payload 随同一个 immutable DMFile generation 原子发布，并通过现有 checksum 和结构校验发现损坏或错误组合。
+缓解：每列每 DMFile 持久化实际上下界；eligibility 只使用 stored range；V1 格式固定使用半开区间。metadata 和包含 pack marks 的 index payload 随同一个 immutable DMFile generation 原子发布，并通过现有 checksum 和结构校验发现损坏或错误组合。
 
 ### `None` 或 `All` 未按方向 flags 修正
 
@@ -822,11 +849,11 @@ trim enabled
 
 缓解：metadata 保存 typed packed bounds；Reader 在现有 timezone conversion 后判断查询域；覆盖 FSP、UTC、offset 和 DST 测试。
 
-### MetaV2 元数据增长
+### Trim index 和 MetaV2 空间增长
 
-风险：MetaV2 当前整体读取 meta 文件，大量列和每 pack 一个 byte 的 flags array 增加 restore 成本。
+风险：额外 trim index 增加 DMFile 大小；大量时间列仍会为 MetaV2 增加固定大小的 column metadata。
 
-缓解：无 outlier 列不写 trim metadata；增加 meta 大小和 parse 时间指标。若未来规模证明主 meta block 成为瓶颈，再压缩 flags array 或将其移入 lazy-loaded trim subfile，同时保持每 pack low/high 两类逻辑语义。
+缓解：low/high flags 复用 trim index 已有的 pack mark byte，MetaV2 不保存 per-pack 数据；无 outlier 列不写 trim index 和 metadata；增加 index/meta 大小及 parse 时间指标。
 
 ## 备选方案
 
@@ -844,18 +871,24 @@ trim enabled
 
 ### 只把 trim 作为额外的 None gate
 
-该方案最容易保证正确性：trim 只排除 pack，其他结果完全沿用普通 min-max。但它需要同时加载普通和 trim，并且不能恢复正确的 `All`。本设计通过持久化 `has_trimmed_value`，允许 trim 在 eligible 查询中安全替代 ordinary min-max，因此选择完整 RSResult 方案。
+该方案最容易保证正确性：trim 只排除 pack，其他结果完全沿用普通 min-max。但它需要同时加载普通和 trim，并且不能恢复正确的 `All`。本设计通过在 trim index pack marks 中持久化 low/high flags，允许 trim 在 eligible 查询中安全替代 ordinary min-max，因此选择完整 RSResult 方案。
 
 ### 保存两个独立 bitmap
 
-分别保存 `has_trimmed_low_bitmap` 和 `has_trimmed_high_bitmap` 可以把空间压缩到每 pack 每列 2 bit，但需要维护两份长度、尾部 bit 和寻址逻辑。第一版选择每 pack 一个 `UInt8 has_trimmed_value`：bit 0/1 分别表达 low/high，其余 bit 保留，以更简单的解码和校验换取每 pack 6 bit 的额外空间。
+分别保存 `has_trimmed_low_bitmap` 和 `has_trimmed_high_bitmap` 需要维护两份长度、尾部 bit、寻址和独立存储位置。第一版复用 trim min-max 已有的 `has_null_marks` byte：bit 0 保持 NULL 语义，bit 1/2 表达 low/high；不新增 per-pack byte，也不把 bitmap 放入 MetaV2。
+
+### 让 `TrimMinMaxIndex` 继承 `MinMaxIndex`
+
+当前 `MinMaxIndex` 的状态是 private，`read()` 固定构造基类，`checkCmp` 是非虚模板方法，查询路径通过 `MinMaxIndexPtr` 静态调用。为了继承而增加虚析构、虚接口、protected 状态和派生类工厂，会扩大普通 min-max 热路径和 cache 的改动面，却不改变磁盘布局。因此第一版拒绝继承，使用 `MinMaxIndex` payload 加轻量 trim wrapper 的组合方式。
 
 ## 已确定的设计边界
 
 - 有效区间使用半开区间 `[1900-01-01, 2100-01-01)`。
 - 实际 bounds 按列、按 DMFile 持久化，Reader 不依赖当前默认配置解释旧索引。
-- `has_trimmed_value` 是 column × pack 的 `UInt8` flags array：bit 0 为 low、bit 1 为 high、bit 2..7 在 V1 中必须为 0，并存放在独立 MetaV2 trim block。
+- trim index 将原 `has_null_marks` 字节数组定义为 `pack_marks`：bit 0 为 NULL、bit 1 为 low、bit 2 为 high、bit 3..7 在 V1 中必须为 0。
+- `TrimMinMaxColumnMeta` 不保存任何 per-pack flags；low/high flags 与 min/max 一起位于 trim index payload。
 - trim min/max 使用独立 subfile，不扩展普通 `.idx`。
+- `TrimMinMaxIndex` 采用组合而非继承；通用 `MinMaxIndex` 产生原始结果，trim wrapper/Operator 负责方向修正。
 - 第一版只写 DMFile V3 / MetaV2。
 - 第一版对白名单 equality、IN、bounded range 和边界位于 `E` 内的单边 range 使用 trim；其他谓词 fallback。
 - low/high flags 用于判断 trimmed value 是必定匹配还是必定不匹配，并保守修正 `None` 和 `All`。
