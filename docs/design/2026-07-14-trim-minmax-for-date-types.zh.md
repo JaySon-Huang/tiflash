@@ -11,7 +11,7 @@
 
 1. 有效日期区间定义为半开区间 `[1900-01-01 00:00:00, 2100-01-01 00:00:00)`。
 2. `trim_minmax` 保存区间内值的 min/max；普通 min-max 保持不变，继续服务于不满足 trim 使用条件的查询。
-3. 每个 trim 索引实际使用的上下界、格式版本、pack 数量和索引位置持久化在 DMFileMetaV2 的独立元数据块中；per-pack low/high flags 合并到 trim index 已有的 `has_null_marks` 字节数组中，磁盘语义统一为 `pack_marks`。
+3. 每个 trim 索引实际使用的上下界、格式版本和 pack 数量直接通过 `ColumnStat.trim_minmax_index: TrimMinMaxIndexProps` 持久化；文件位置和大小以确定性文件名对应的 `MergedSubFileInfo` 为唯一来源。per-pack low/high flags 合并到 trim index 已有的 `has_null_marks` 字节数组中，磁盘语义统一为 `pack_marks`。
 4. Reader 只能依据 DMFile 中保存的实际区间选择 trim 索引，不能依据当前版本的全局默认区间解释历史索引。
 5. 只有能证明区间外低端值和高端值对谓词分别具有一致的匹配结果时，才能用 trim 索引替代该列的普通 min-max；第一版支持匹配集合位于有效区间内的 equality、IN、bounded range，以及有限边界位于有效区间内的单边 range。
 6. Reader 根据 `has_trimmed_low` 和 `has_trimmed_high` 修正 trim rough check：区间外存在匹配值时不能保留 `None`，存在不匹配值时不能保留 `All`。
@@ -211,11 +211,10 @@ trim 后 `min=max=2021-01-01`，但 pack 中的 2100 不匹配。trim rough chec
 DMFile write path
   -> ordinary MinMaxIndex: 所有非 NULL、非删除值
   -> TrimMinMaxIndex: E 内的非 NULL、非删除值
-  -> TrimMinMaxMetaBlock:
-       - format version
-       - per-column encoded lower/upper bound
-       - pack count
-       - trim index subfile descriptor
+  -> ColumnStat.trim_minmax_index:
+       - TrimMinMaxIndexProps: format version + encoded bounds + pack count
+  -> MergedSubFileInfo[<column-stream>.trim.idx]:
+       - merged file number + offset + size
   -> trim index pack_marks[pack_count]:
        - bit 0: has_null
        - bit 1: has_trimmed_low
@@ -307,54 +306,58 @@ trim index 使用独立 subfile 名称，逻辑形式为：
 
 不把 trim 数据追加到现有 `.idx`。当前 `MinMaxIndex::read` 要求实际消费字节数与普通 `index_bytes` 完全一致，直接扩展现有文件会破坏旧 Reader。
 
-### DMFileMetaV2 元数据
+### `ColumnStat.trim_minmax_index` 元数据
 
-第一版新增独立 MetaV2 block：
-
-```text
-BlockType::TrimMinMaxMeta
-```
-
-逻辑 protobuf 结构如下：
+第一版不新增独立 MetaV2 block，也不把 trim 追加到现有 `ColumnStat.indexes = 104`。在 `dmfile.proto` 中为 `ColumnStat` 增加一个类型直接为 `TrimMinMaxIndexProps` 的独立可选字段：
 
 ```protobuf
-message TrimMinMaxColumnMeta {
-    optional int64 col_id = 1;
-    optional uint32 format_version = 2;
+message ColumnStat {
+    // existing fields...
+    repeated DMFileIndexInfo indexes = 104;
 
-    // 与列 nested type 相同的内部编码。
-    optional bytes lower_bound = 3;
-    optional bytes upper_bound = 4;
-
-    optional uint64 pack_count = 5;
-    optional string index_file_name = 6;
-    optional uint64 index_file_size = 7;
+    // DMFile 内部 trim min-max；每列最多一份。
+    optional TrimMinMaxIndexProps trim_minmax_index = 105;
 }
 
-message TrimMinMaxMeta {
-    repeated TrimMinMaxColumnMeta columns = 1;
+message TrimMinMaxIndexProps {
+    optional uint32 format_version = 1;
+
+    // 与所属 ColumnStat 的 nested type 相同的内部编码。
+    optional bytes lower_bound = 2;
+    optional bytes upper_bound = 3;
+
+    optional uint64 pack_count = 4;
 }
 ```
 
-实际字段编号在实现时按 protobuf 兼容规则分配；以上结构定义的是数据契约。
+实际字段编号在实现时按 protobuf 兼容规则分配；以上结构定义的是数据契约。`TrimMinMaxIndexProps` 是 DMFile pack index 专属信息，不复用 `DMFileIndexInfo`、`IndexFilePropsV2`、`IndexFileKind` 或 DDL local-index 生命周期。
+
+字段来源和省略规则：
+
+- 列 ID 由外层 `ColumnStat.col_id` 提供，不重复保存；
+- 文件名由列 ID 确定性推导为 `<column-stream>.trim.idx`；
+- 物理 merged file number、offset 和 size 只保存在该文件名对应的 `MergedSubFileInfo` 中，`TrimMinMaxIndexProps` 不重复保存 file size；
+- trim 是内部索引，不对应 TiDB DDL index，不设置 kind 或 index ID，也不进入按 index ID 查询的 local-index API；
+- per-pack flags 只存在于 trim index payload 的 `pack_marks`，protobuf 不保存 per-pack 数组。
 
 元数据约束：
 
 1. `format_version = 1` 固定使用半开区间 `[lower_bound, upper_bound)`；未来改变边界语义必须升级版本，Reader 遇到未知版本时回退 ordinary min-max。
-2. bounds 必须能按列的 nested type 解码，并满足 `lower_bound < upper_bound`。
+2. bounds 必须能按所属列的 nested type 解码，并满足 `lower_bound < upper_bound`。
 3. `pack_count` 必须等于 DMFile 的 pack 数量。
-4. `index_file_size` 必须与 `MergedSubFileInfo` 或独立 subfile 实际大小一致。
+4. 根据所属列推导出的 `.trim.idx` 文件名必须存在于 `MergedSubFileInfo`，且其 number、offset 和 size 合法；该 size 是加载和 checksum frame 计算的唯一文件大小来源。
 5. trim index 解码出的 `pack_marks`、`has_value_marks` 和 min/max cell 数量必须一致，并等于 `pack_count`。
 6. trim index 的 `pack_marks` bit 3..7 必须为 0。
-7. trim metadata 和 index subfile 必须由同一个 immutable DMFile generation 原子生成和发布；Reader 不得跨 DMFile 复用或组合它们。
-8. 同一 DMFile 的不同时间列可以有不同 metadata；Reader 不能假设 file 级全局区间。
-9. metadata 缺失、版本未知或任一结构校验失败时，不使用 trim 索引。
+7. `ColumnStat` metadata、`MergedSubFileInfo` 和 index payload 必须由同一个 immutable DMFile generation 原子生成和发布；Reader 不得跨 DMFile 复用或组合它们。
+8. metadata、`MergedSubFileInfo` 或 subfile 任一缺失，版本未知，或任一结构校验失败时，不使用 trim 索引。
 
-TrimMinMaxMeta block 由 DMFileMetaV2 checksum 保护，trim index subfile 使用现有 DMFile checksum 机制；两者再结合 pack 数量、pack mark 合法性、subfile 位置和大小等结构校验处理物理损坏。Meta block 不保存任何 per-pack trim flags。
+ColumnStat protobuf 由 DMFileMetaV2 checksum 保护，trim index subfile 使用现有 DMFile checksum 机制；两者再结合 pack 数量、pack mark 合法性、subfile 位置和大小等结构校验处理物理损坏。
 
-不直接给 `PackStat` 或 `PackProperty` 增加字段。MetaV2 当前以 POD 原始布局序列化这两个结构，修改 `sizeof` 会破坏旧格式。新增独立 block 允许旧 Reader 按当前逻辑忽略未知 block，并继续读取 ordinary min-max。
+兼容性的关键是 field 105 不属于旧版本会遍历和严格校验的 `indexes = 104`。旧 Reader 把整个 field 105 当作 protobuf unknown field，不会触发 `ColumnStat::integrityCheckIndexInfoV2`，也不需要识别新的 `IndexFileKind`。旧 Reader 继续读取 ordinary min-max。
 
-第一版不复用 `DMFileIndexInfo.indexes` 的 `IndexFileKind` 扩展点。当前旧代码会在 `ColumnStat::integrityCheckIndexInfoV2` 中拒绝未知 index kind，直接增加枚举不满足滚动降级要求。后续如果通用本地索引框架支持“忽略未知 index kind”，可以再迁移 metadata 表达方式。
+该兼容性只保证安全读取。旧版本将 protobuf 转换为旧 C++ `ColumnStat` 后不会保存 field 105；如果旧节点随后重写 ColumnStat metadata，例如为 DMFile 增加 local index，它可能丢弃 trim metadata。此时新 Reader 必须把 `.trim.idx` 视为不可用并回退 ordinary min-max，遗留 subfile 作为空间问题随 DMFile 后续重写回收，不能影响查询正确性。
+
+不直接给 `PackStat` 或 `PackProperty` 增加字段。MetaV2 当前以 POD 原始布局序列化这两个结构，修改 `sizeof` 会破坏旧格式。
 
 ### 写入路径
 
@@ -393,7 +396,7 @@ for (row : pack)
 1. ordinary min-max 按现有流程追加一个 cell；
 2. trim min-max 追加一个 cell；若没有有效值，则 `has_value=false`；
 3. 把 `trim_pack_mark` 追加到 trim index 的 `pack_marks`；
-4. finalize 时写 trim subfile 和 `TrimMinMaxMeta` block。
+4. finalize 时写 trim subfile、登记对应 `MergedSubFileInfo`，并把 `TrimMinMaxIndexProps` 写入所属 `ColumnStat.trim_minmax_index`。
 
 实现上为 `MinMaxIndex` 增加内部 `appendPack(pack_mark, has_value, min, max)` 或等价 builder API，由 ordinary 和 trim Writer 共用。ordinary 路径只允许 `pack_mark & ~0x01 == 0`；trim 路径允许 `0x01 | 0x02 | 0x04`。反序列化仍复用通用 payload reader，trim loader 随后校验 mark mask 和 pack count。
 
@@ -455,7 +458,7 @@ struct RSCheckParam
 {
     ColumnIndexes normal_indexes;
     TrimColumnIndexes trim_indexes; // value 内含组合式 TrimMinMaxIndex wrapper
-    TrimMinMaxMetas trim_metas;
+    TrimMinMaxInfos trim_infos; // 从 ColumnStat.trim_minmax_index 解析
 };
 ```
 
@@ -569,6 +572,8 @@ trim_minmax_all_packs
 trim_minmax_none_downgraded_packs
 trim_minmax_all_downgraded_packs
 trim_minmax_fallback_count{reason}
+trim_minmax_metadata_lost_count
+trim_minmax_orphan_subfile_count
 trim_minmax_write_bytes
 trim_minmax_write_time
 ```
@@ -604,8 +609,8 @@ Debug 日志记录 DMFile、列 ID、stored range、query domain、选择的索�
 - 普通 `.idx` 格式不变；旧 Reader 继续读取普通 min-max。
 - 普通 `.idx` 的 pack mark 仍只能为 `0x00` / `0x01`；trim 扩展 bit 只出现在独立 `.trim.idx`。
 - trim 使用独立 subfile，旧 Reader 不会把额外字节解释成普通索引。
-- trim metadata 使用独立 MetaV2 block；当前 MetaV2 读取逻辑会忽略未知 block。
-- 新 Reader 读取不含 trim block 的旧 DMFile 时回退 normal。
+- trim metadata 使用 `ColumnStat` 的独立 optional field 105，不加入旧 Reader 会严格遍历的 `indexes = 104`。
+- 旧 Reader 忽略 field 105；新 Reader 读取不含该字段的旧 DMFile 时回退 normal。
 - `format_version` 同时版本化序列化结构和边界语义；不支持的版本回退 normal。
 - 第一版不修改 raw `PackStat` / `PackProperty` 布局。
 - 第一版只在 V3 / MetaV2 写入，避免同时扩展 V1/V2 metadata 格式。
@@ -614,12 +619,12 @@ Debug 日志记录 DMFile、列 ID、stored range、query domain、选择的索�
 
 推荐顺序：
 
-1. 先部署能够识别或忽略 trim metadata 的新 Reader，read/write 均关闭。
+1. 先部署能够解析 `ColumnStat.trim_minmax_index` 的新 Reader，read/write 均关闭。
 2. 开启少量节点 write，生成新 DMFile；read 仍关闭。
-3. 验证新 DMFile 能被旧版本安全忽略后，再 canary 开启 read。
+3. 验证旧 Reader 能忽略 field 105 并读取 ordinary min-max；同时验证旧节点重写 metadata 后 trim 信息丢失时，新 Reader 会安全 fallback，再 canary 开启 read。
 4. 扩大 read/write 范围。
 
-降级时先关闭 read，再关闭 write。已经存在的 trim subfile 和 metadata 不影响普通 min-max。必须在兼容测试中验证“新写旧读”；若目标旧版本无法安全忽略新的 merged subfile 或 Meta block，则 write 开关不能在混部阶段开启。
+降级时先关闭 read，再关闭 write。已经存在的 trim subfile 和 field 105 不影响普通 min-max。必须在兼容测试中验证“新写旧读”和“旧版本 metadata rewrite”；若目标旧版本无法安全忽略 field 105 或额外 merged subfile，则 write 开关不能在混部阶段开启。旧版本 rewrite 丢失 trim metadata 是允许的安全退化，但需要记录指标并接受对应 DMFile 的 trim 收益消失。
 
 ## 性能和资源开销
 
@@ -657,12 +662,12 @@ low/high flags 复用 trim min-max 已有的每 pack `has_null_marks` byte，因
 
 ### 阶段 A：格式和兼容性
 
-- 增加 `TrimMinMaxMeta` 的 protobuf、MetaV2 block 和解析校验。
+- 增加 `TrimMinMaxIndexProps` 和 `ColumnStat.trim_minmax_index = 105`，实现 trim 专用解析校验；不修改 `DMFileIndexInfo`、`IndexFilePropsV2` 或 `IndexFileKind`。
 - 增加 trim subfile 命名、merged file 定位和 cache key。
 - 将 `has_null_marks` 的内部读取收敛到 pack mark accessor，验证 ordinary min-max 只解释 bit 0。
 - 新 Reader 能读取旧文件，并在所有 trim 异常情况下回退 normal。
 - read/write 开关默认关闭。
-- 完成新写旧读、旧写新读、CN/存算分离文件路径和 checksum 测试。
+- 完成新写旧读、旧写新读、旧版本 metadata rewrite、CN/存算分离文件路径和 checksum 测试。
 
 ### 阶段 B：写入索引
 
@@ -762,7 +767,11 @@ CAST(col AS ...) = ...
 
 - 旧 DMFile -> 新 Reader；
 - 新 DMFile -> 兼容范围内旧 Reader；
-- trim metadata 缺失、未知版本、错误 pack_count；
+- `ColumnStat.trim_minmax_index` 缺失、未知版本、错误 pack_count；
+- field 105 不得出现在 `indexes = 104`，旧 Reader 不得进入 `integrityCheckIndexInfoV2`；
+- 确定性 `.trim.idx` 文件名对应的 `MergedSubFileInfo` 缺失，或 number/offset/size 非法；
+- 旧 Reader 读取后重写 ColumnStat 导致 field 105 丢失，新 Reader reopen 必须 fallback normal；
+- trim metadata 丢失后残留 `.trim.idx` 不得被误用，DMFile 自然重写后应能回收其空间；
 - trim index 的 pack marks 数量不等于 pack_count、bit 3..7 非 0；
 - bounds 无法解码、`lower_bound >= upper_bound`；
 - metadata 或 index subfile checksum 不匹配；
@@ -833,9 +842,21 @@ trim enabled
 
 ### mixed-version 读取失败
 
-风险：旧 Reader 无法忽略新 metadata 或 merged subfile。
+风险：旧 Reader 无法忽略 field 105 或额外 merged subfile，导致整个 DMFile 无法打开。
 
-缓解：独立 Meta block 和 subfile，不修改普通 `.idx` 或 raw PackStat；write 在新写旧读验证通过前保持关闭。
+缓解：trim 不加入 `indexes = 104`，旧 Reader 只需忽略新的 optional field；不修改普通 `.idx` 或 raw PackStat；write 在新写旧读和 mixed-version reopen 验证通过前保持关闭。
+
+### 旧版本重写 metadata 丢失 trim
+
+风险：旧节点把 protobuf 转换成不包含 field 105 的旧 C++ `ColumnStat`，随后因 local index build 等操作重写 metadata，导致 trim metadata 丢失并留下不可达 `.trim.idx`。
+
+缓解：metadata 缺失时新 Reader 必须 fallback ordinary min-max；记录 trim metadata lost/orphan 指标；clone、restore、local index bump 和 GC 测试覆盖该路径；孤立空间随 DMFile 后续 merge/compact/GC 重写回收。该情况只允许损失性能，不能影响结果。
+
+### 独立字段与通用 index registry 分叉
+
+风险：`trim_minmax_index = 105` 不在 `indexes = 104` 中，现有遍历 local index 的工具、诊断和通用生命周期 API 不会自动看到 trim。
+
+缓解：提供 trim 专用的 ColumnStat accessor、校验和诊断输出；明确 trim 不参与 DDL index ID、异步 local-index scheduler 或 `getLocalIndex(index_id)`。未来只有在最低 Reader 版本已能忽略未知 kind 后，才评估迁移到统一 registry。
 
 ### 写入 CPU 或 cache 开销
 
@@ -881,12 +902,18 @@ trim enabled
 
 当前 `MinMaxIndex` 的状态是 private，`read()` 固定构造基类，`checkCmp` 是非虚模板方法，查询路径通过 `MinMaxIndexPtr` 静态调用。为了继承而增加虚析构、虚接口、protected 状态和派生类工厂，会扩大普通 min-max 热路径和 cache 的改动面，却不改变磁盘布局。因此第一版拒绝继承，使用 `MinMaxIndex` payload 加轻量 trim wrapper 的组合方式。
 
+### 把 trim 直接追加到 `ColumnStat.indexes`
+
+该方案让 trim 与 vector/inverted/fulltext 共享统一 registry，但需要新增 index kind；当前旧 Reader 会对 `indexes = 104` 中的每个元素调用 `integrityCheckIndexInfoV2`，未知 kind 会导致 DMFile restore 失败。除非先发布一代能够忽略并保留未知 kind 的 Reader，并放弃回滚到更老版本，否则第一版不采用。方案 B 的 field 105 直接使用自包含 `TrimMinMaxIndexProps`，既绕开旧 Reader 的严格遍历，也避免引入 DDL local-index 元数据依赖。
+
 ## 已确定的设计边界
 
 - 有效区间使用半开区间 `[1900-01-01, 2100-01-01)`。
 - 实际 bounds 按列、按 DMFile 持久化，Reader 不依赖当前默认配置解释旧索引。
 - trim index 将原 `has_null_marks` 字节数组定义为 `pack_marks`：bit 0 为 NULL、bit 1 为 low、bit 2 为 high、bit 3..7 在 V1 中必须为 0。
-- `TrimMinMaxColumnMeta` 不保存任何 per-pack flags；low/high flags 与 min/max 一起位于 trim index payload。
+- trim metadata 使用 `ColumnStat.trim_minmax_index = 105`，字段类型直接为自包含的 `TrimMinMaxIndexProps`；不加入 `indexes = 104`，不修改 `DMFileIndexInfo`、`IndexFilePropsV2` 或 `IndexFileKind`。
+- `.trim.idx` 的位置和大小以确定性文件名对应的 `MergedSubFileInfo` 为唯一来源，props 不重复保存 file size。
+- field 105 不保存任何 per-pack flags；low/high flags 与 min/max 一起位于 trim index payload。
 - trim min/max 使用独立 subfile，不扩展普通 `.idx`。
 - `TrimMinMaxIndex` 采用组合而非继承；通用 `MinMaxIndex` 产生原始结果，trim wrapper/Operator 负责方向修正。
 - 第一版只写 DMFile V3 / MetaV2。
