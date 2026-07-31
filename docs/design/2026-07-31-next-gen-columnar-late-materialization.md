@@ -1524,6 +1524,21 @@ into independently reviewable workstreams. TopN and Join will use separate
 follow-up proposals because their logical-output contracts are materially
 different from Selection.
 
+The concrete implementation documents are:
+
+1. [Implementation overview and dependency graph](columnar-late-materialization/README.md)
+2. [Stage 1: source identity and MVCC RowSet foundation](columnar-late-materialization/01-foundation.md)
+3. [Stage 2: pure-columnar visibility-first materialization](columnar-late-materialization/02-pure-columnar.md)
+4. [Stage 3: end-to-end staged Selection](columnar-late-materialization/03-selection-e2e.md)
+5. [Stage 4: memtable and unconverted-L0 support](columnar-late-materialization/04-mixed-row-sources.md)
+6. [Stage 5: production hardening and GA rollout](columnar-late-materialization/05-ga-hardening.md)
+
+These stages refine the architectural phases below. In particular, they split
+the former pure-columnar Phase B into a storage-only implementation stage and
+an end-to-end Selection stage. This is an implementation dependency split, not
+a change to the target architecture or a proposal to ship Phase B as the final
+solution.
+
 ### Phase A: contracts and differential harness
 
 - Introduce SourceCatalog, RowLocator, RowSet, SourceMask, and GatherPlan.
