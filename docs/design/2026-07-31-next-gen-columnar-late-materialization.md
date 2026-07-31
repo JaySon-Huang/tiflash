@@ -50,11 +50,23 @@ The core decisions are:
    aggregation semantics for rows, bytes, columns, worker time, and wall time.
    Existing flat `ColumnarScanContext` fields remain during a compatibility
    period.
+9. A `keep_order = false` scan without Selection may also use a
+   visibility-first path: build the MVCC RowSet, then read requested payload
+   columns in physical order. This mode is independently gated and costed. It
+   must not unconditionally replace the existing pack-clean path, which can
+   avoid per-row handle/version work for clean packs.
+10. The first release does not introduce a general
+    `ColumnarMaterializeOp`. It implements the adjacent TableScan-to-Selection
+    token/filter protocol and reserves RowSet/GatherPlan materialization
+    interfaces for later operator-spanning TopN and Join designs.
 
-The initial production feature covers normal TableScan plus pushed-down
-Selection with `keep_order = false`. ANN, FTS, TopN, Join, and complex generated
-column predicates are outside the initial implementation, but the storage
-contracts introduced here must not prevent their later implementation.
+The initial production scope covers normal TableScan with
+`keep_order = false`. TableScan plus pushed-down Selection is the first rollout
+path. A projection-only scan without Selection is a separately controlled mode
+using the same visibility and payload materialization contracts. ANN, FTS,
+TopN, Join, and complex generated-column predicates are outside the initial
+implementation, but the storage contracts introduced here must not prevent
+their later implementation.
 
 ## Context
 
@@ -312,6 +324,9 @@ working when recent writes are still in memtables or unconverted L0.
    contains memtables, unconverted L0 row tables, and Blob references.
 9. Bound RowSet and row-value staging memory, expose fallback reasons, and
    retain an online rollback switch.
+10. For eligible projection-only scans without Selection, allow MVCC visibility
+    construction and payload materialization to be decoupled when that is
+    cheaper than the eager or pack-clean path.
 
 ## Non-goals
 
@@ -325,6 +340,9 @@ working when recent writes are still in memtables or unconverted L0.
 - Changing SQL ordering semantics.
 - Persisting RowSets across queries or snapshots.
 - Sharing a mutable RowSet between Region buckets in the first implementation.
+- Replacing pack-clean reads with visibility-first reads when pack-clean is
+  cheaper.
+- Introducing a general-purpose `ColumnarMaterializeOp` in the first release.
 
 ## Architecture overview
 
@@ -347,6 +365,7 @@ Region SnapAccess
           |     -> EarlyBatch + BatchToken
           |     -> TiFlash exact predicate
           |     -> retain(BatchToken, filter)
+          |     (omitted for a projection-only scan)
           |
           +-- Stage 3: build GatherPlan from retained RowSet
                 -> materialize deferred columns
@@ -418,6 +437,44 @@ Snapshot contains recent writes  -> not an allowed GA fallback
 
 The implementation must expose a fallback reason counter so that canary and GA
 reviews can verify that row-source presence is no longer a fallback cause.
+
+#### Projection-only visibility-first mode
+
+A normal TableScan with no pushed-down Selection can still separate visibility
+from payload reading:
+
+```text
+prepare_visibility()
+  -> build MVCC RowSet
+  -> build GatherPlan in physical source order
+  -> materialize all requested payload columns for the MVCC RowSet
+```
+
+In this mode there is no exact-predicate phase:
+
+```text
+final RowSet = MVCC RowSet
+```
+
+The mode is correct whenever `keep_order = false`, but correctness eligibility
+does not imply that it is profitable. In particular, the current pack-clean
+path can skip per-row handle/version processing for a clean pack and directly
+read its payload. Replacing it with mandatory MVCC RowSet construction can
+regress CPU, IO, and time to first row.
+
+The reader therefore chooses among these paths before output begins:
+
+| Condition | Preferred candidate |
+| --- | --- |
+| Clean columnar packs eligible for pack-clean | Existing pack-clean/eager path |
+| Overlapping versions or deletes, wide payload, unordered output | Visibility-first RowSet path |
+| Unsupported operator or excessive RowSet memory | Existing eager path |
+
+This is initially an independently controlled experimental mode. Benchmarks
+and canary data may later supply a cost model, but the behavioral contract does
+not require one particular heuristic. At GA, memtables or unconverted L0
+sources must not make this mode incorrect or force a source-type-only fallback;
+their estimated replay and decode cost may still make the eager path cheaper.
 
 ### 2. SourceCatalog
 
@@ -760,6 +817,18 @@ corresponding RowLocator. C++ must not decode or manufacture RowLocators.
 After validation, it clears RowSet entries for false positions and releases
 batch-specific state.
 
+#### Adjacent and operator-spanning row identity
+
+The first Selection implementation keeps RowLocators opaque to C++. An
+adjacent TableScan-to-Selection handoff uses `EarlyBatch + BatchToken`, and
+Selection returns only its filter mask. This avoids serializing and
+deserializing a physical locator column on the initial hot path.
+
+A future operator-spanning implementation may expose a hidden `RowRefColumn`
+whose values refer to RowLocators. Every such column must be bound to the
+reader's pinned snapshot through a `MaterializerHandle`; neither C++ nor another
+reader may reinterpret the locator independently.
+
 ### 8. Materializing columnar-file sources
 
 After MVCC, a columnar file is read in:
@@ -790,6 +859,31 @@ for IO and row-granular for decoded/serialized data.
 `ColumnarColumnReader::set_row_idx` already provides a lower-level positioning
 mechanism, but the public reader API must be extended to express selected
 ranges or runs rather than issuing one random seek per row.
+
+The public storage seam should be equivalent to:
+
+```text
+materialize_by_rowset(snapshot, rowset, column_ids, physical_order)
+materialize_by_gather_plan(snapshot, gather_plan, column_ids)
+```
+
+The concrete FFI may keep the RowSet inside the reader and expose incremental
+`read_deferred_block` calls. The contract matters more than transporting an
+explicit bitmap or RowLocator array across the ABI.
+
+#### Interaction with pack-clean
+
+Pack-clean and delayed materialization are complementary fast paths:
+
+- pack-clean proves that a pack does not require row-level MVCC work
+- delayed materialization uses an MVCC RowSet to avoid payload reads for
+  invisible or predicate-rejected rows
+
+For Selection, predicate selectivity can justify RowSet construction even when
+some packs are clean. For projection-only scans, clean-pack eligibility is a
+strong reason to preserve the current pack-clean read. The path selector must
+record which path was chosen and must never apply predicate rough check before
+MVCC merely to make RowSet construction cheaper.
 
 ### 9. Materializing memtable and unconverted L0 row sources
 
@@ -920,6 +1014,12 @@ struct ABI.
 The existing eager functions remain available during rollout. A reader is
 created in one mode and cannot switch snapshots or source catalogs mid-read.
 
+The first release does not need a standalone C++ `ColumnarMaterializeOp`.
+Selection is coordinated inside the columnar source using the state machine
+above. The RowSet/GatherPlan seam is nevertheless explicit so that later TopN
+and Join designs can add an operator boundary without replacing the storage
+protocol.
+
 ### 11. TiFlash execution integration
 
 TiFlash currently executes exact pushed filters after complete column
@@ -971,6 +1071,9 @@ After TopN candidate selection:
 This is why the storage contract includes optional scatter positions and does
 not define RowSet as only one output bitmap.
 
+The initial TopN extension is local to one task and pinned snapshot. Deferred
+columns must be materialized before candidates cross an Exchange boundary.
+
 TopN implementation and optimizer integration require a follow-up design.
 
 ### 13. Extensibility to Join
@@ -990,6 +1093,12 @@ Join therefore needs an ordered logical output containing:
 
 The gather step can deduplicate physical locators before reading deferred
 columns and then scatter values into all logical join output positions.
+
+This storage-level late materialization is distinct from the existing JoinV2
+late-materialization optimization. JoinV2 delays copying columns that are
+already present in in-memory Blocks; this proposal delays reading columns from
+snapshot sources. A future Join may compose both optimizations, but neither is
+a replacement for the other.
 
 The initial Selection design does not implement this pair representation, but
 the following contracts are deliberately reusable:
@@ -1042,6 +1151,20 @@ The eager and delayed paths therefore produce the same row multiset:
 The delayed path enumerates that set in physical source order instead of
 handle order. This is valid only because `keep_order = false`.
 
+### Projection-only equivalence
+
+For a scan without Selection:
+
+```text
+S(r) = M(r)
+```
+
+The delayed path therefore returns exactly the same visible row multiset as the
+eager path. It may enumerate that multiset in source/file/pack order because
+`keep_order = false`. Pack-clean and visibility-first execution are alternative
+physical proofs of the same MVCC-visible set; choosing between them cannot
+change SQL-visible results.
+
 ### Column alignment
 
 For every source:
@@ -1090,6 +1213,26 @@ Tests must verify:
 - eager and delayed values are equivalent
 - the selected locator is deterministic
 
+### Snapshot locality and Exchange boundary
+
+`SourceId`, source-local ordinals, RowSets, RowRefColumns, and
+MaterializerHandles are meaningful only within the Region snapshot and reader
+lifetime that created them.
+
+They must not cross an Exchange boundary. The safe execution order is:
+
+```text
+local scan
+  -> local Selection / future local TopN or Join candidate processing
+  -> materialize deferred columns with the pinned MaterializerHandle
+  -> Exchange fully materialized rows
+```
+
+Sending a physical RowLocator to another TiFlash task and reopening a new
+snapshot there is invalid. A future design that needs remote deferred
+materialization must define a stable logical identity and reattachment
+protocol; it cannot reuse the physical RowLocator contract directly.
+
 ### Upgrade and downgrade
 
 - New tipb fields are optional or repeated.
@@ -1137,6 +1280,7 @@ Add a repeated structured summary similar to:
 ```text
 ColumnarStageSummary {
     stage
+    read_mode
     source_kind
     task_count
     input_rows
@@ -1178,6 +1322,17 @@ MEMTABLE
 UNCONVERTED_L0
 ```
 
+`read_mode` distinguishes at least:
+
+```text
+EAGER
+PACK_CLEAN
+LATE_MATERIALIZATION_SELECTION
+VISIBILITY_FIRST_WITHOUT_FILTER
+```
+
+It is a grouping dimension, not a value merged across different modes.
+
 ### Aggregation semantics
 
 Every field has one defined merge operation:
@@ -1198,6 +1353,25 @@ Every field has one defined merge operation:
 presenting summed worker time as elapsed latency.
 
 The TiDB display must label them differently.
+
+### TiDB display projection
+
+Structured stage summaries are the authoritative representation. For concise
+EXPLAIN ANALYZE and compatibility output, TiFlash/TiDB may derive:
+
+| Display group | Structured stages | Suggested fields |
+| --- | --- | --- |
+| `mvcc_read` | `MVCC_KEY_READ`, `MVCC_MERGE_FILTER` | time, rows, physical bytes, columns |
+| `filter_read` | `ROUGH_CHECK`, `PREDICATE_COLUMN_READ`, `PREDICATE_EVAL`, `ROWSET_RETAIN` | time, rows, physical/decoded bytes, columns |
+| `late_read` | `PAYLOAD_COLUMN_READ`, `SERIALIZE`, `FFI_DESERIALIZE` | time, rows, physical/decoded/serialized bytes, columns |
+
+At minimum, the projection also exposes `rows_after_filter` and
+`late_materialized_rows`. A projection-only visibility-first scan has no
+`filter_read` group and reports `rows_after_filter` equal to the MVCC output
+rows.
+
+These display fields are derived views, not independent counters. This avoids
+double counting and preserves one merge rule for every underlying value.
 
 ### Required row-source metrics
 
@@ -1227,10 +1401,12 @@ FEATURE_DISABLED
 PROTOCOL_UNSUPPORTED
 INTERNAL_SAFETY_FALLBACK
 HAS_ROW_SOURCE_PREVIEW_ONLY
+PACK_CLEAN_PREFERRED
 ```
 
 `HAS_ROW_SOURCE_PREVIEW_ONLY` is allowed during preview but must be removed as
-a GA fallback reason.
+a GA fallback reason. `PACK_CLEAN_PREFERRED` records an intentional physical
+path choice for projection-only scans rather than a correctness limitation.
 
 ### Existing flat fields
 
@@ -1318,6 +1494,7 @@ At minimum:
 
 ```text
 columnar_enable_late_materialization
+columnar_enable_visibility_first_without_filter
 columnar_late_materialization_max_rowset_bytes
 columnar_late_materialization_row_batch_rows
 columnar_late_materialization_row_batch_bytes
@@ -1325,6 +1502,20 @@ columnar_late_materialization_row_batch_bytes
 
 The main enable switch is dynamic and rollbackable. Disabling it affects new
 readers; it does not mutate active reader state.
+
+The full deployment requires all of these layers to agree:
+
+| Layer | Control | Meaning |
+| --- | --- | --- |
+| Build | `ENABLE_NEXT_GEN_COLUMNAR` | Compiles the next-generation columnar path |
+| TiFlash runtime | `flash.use_columnar` | Selects the columnar storage path |
+| TiDB | `cse.columnar-store-type = "columnar"` | Enables the TiDB-side columnar-store mode used by this path |
+| Late materialization | `columnar_enable_late_materialization` | Enables staged Selection for new readers |
+| Projection-only experiment | `columnar_enable_visibility_first_without_filter` | Allows the no-Selection visibility-first candidate |
+
+The two late-materialization settings do not override the build, TiFlash, or
+TiDB controls. Rollout automation and diagnostics should report the effective
+state of every layer rather than only the final feature flag.
 
 ## Incremental delivery plan
 
@@ -1346,13 +1537,17 @@ Exit criteria:
 - RowLocator stability is verified for L0/L1/L2 files and Region buckets.
 - Differential tests can compare output multisets and error behavior.
 
-### Phase B: pure-columnar Selection preview
+### Phase B: pure-columnar preview
 
 - Build MVCC RowSets from handle/nullable-version columns.
 - Add early/deferred projections.
 - Add staged FFI and TiFlash exact predicate retain.
 - Materialize payload in file/pack order.
 - Add structured stage statistics and TiDB parsing.
+- Reserve RowSet/GatherPlan-based deferred materialization interfaces; do not
+  add a general `ColumnarMaterializeOp`.
+- Add the projection-only visibility-first path behind its independent setting
+  and retain pack-clean when selected by the path policy.
 - Enable only by explicit setting or canary configuration.
 
 Exit criteria:
@@ -1361,6 +1556,8 @@ Exit criteria:
 - no output-order assertion exists for `keep_order = false`
 - memory limit fallback is tested
 - canary metrics show expected payload-byte reduction
+- projection-only differential tests match the eager path
+- clean-pack benchmarks show no forced regression from bypassing pack-clean
 
 ### Phase C: row-source support
 
@@ -1397,6 +1594,8 @@ GA gates:
 4. No unbounded query-local row-value retention.
 5. Runtime details reach TiDB and preserve old-version compatibility.
 6. The online kill switch is verified.
+7. Projection-only path selection preserves pack-clean for workloads where it
+   is the faster candidate.
 
 ### Phase E: follow-up operators
 
@@ -1452,6 +1651,7 @@ reader.
 - invalid token and length mismatch
 - physical order without scatter
 - future-facing scatter property tests
+- RowLocator and MaterializerHandle rejection after reader/snapshot lifetime
 
 ### TiFlash unit tests
 
@@ -1484,6 +1684,8 @@ Compare:
 Test shapes:
 
 - projection-only wide table
+- projection-only clean L2 data with pack-clean eligible
+- projection-only overlapping versions and deletes
 - selective single-column predicate
 - multi-column predicate
 - selectivity near 0%, 50%, and 100%
@@ -1517,6 +1719,7 @@ Measure at least:
 - peak RowSet memory
 - peak DeferredRowValue memory
 - CPU time in MVCC merge, row decode, serialization, and predicate evaluation
+- selected physical path and pack-clean eligibility
 
 Workload dimensions:
 
@@ -1529,6 +1732,7 @@ Workload dimensions:
 - memtable/unconverted L0 ratio
 - inline versus BlobRef row values
 - bucket concurrency
+- pack-clean ratio
 
 The benchmark report must separately state benefits for columnar and row
 sources. A mixed-source query can be a net win even when the row portion saves
@@ -1585,6 +1789,16 @@ Mitigations:
 - cost-based TiDB predicate selection
 - benchmark and canary thresholds
 - retain eager path for non-beneficial cases
+
+### Projection-only mode regresses pack-clean scans
+
+Mitigations:
+
+- keep projection-only visibility-first behind an independent setting
+- evaluate pack-clean eligibility before choosing the path
+- record the selected path and relevant pack counts
+- benchmark clean L2 and overlapping-version workloads separately
+- fall back before output begins
 
 ### Row source replay loses locator alignment
 
@@ -1678,6 +1892,13 @@ Rejected as the default because sparse point seeks can destroy IO continuity.
 The selected source is replayed sequentially in source order and skips decode
 for zero mask bits.
 
+### Always build an MVCC RowSet for projection-only scans
+
+Rejected because clean packs can use pack-clean to avoid per-row
+handle/version work. Projection-only visibility-first reading remains a
+costed, independently controlled candidate rather than a universal
+replacement.
+
 ### Reuse DeltaMerge stream classes directly
 
 Rejected because DeltaMerge has one Segment-wide row ordinal and naturally
@@ -1697,6 +1918,12 @@ Implementation PRs should remain split along the phases above.
 TopN and Join require separate follow-up proposals before implementation. They
 will reuse this storage foundation but introduce independently reviewable
 logical-output and optimizer contracts.
+
+The first Selection and projection-only deliveries intentionally do not add a
+general `ColumnarMaterializeOp`. Such an operator is justified only when a
+future TopN or Join design needs RowRefColumns to survive across existing
+executor boundaries. Even then, materialization must occur before Exchange
+unless a separate logical reattachment protocol is designed.
 
 Concrete bitmap encoding thresholds, default memory limits, and batch sizes
 are implementation tuning values. They will be selected through benchmarks and
