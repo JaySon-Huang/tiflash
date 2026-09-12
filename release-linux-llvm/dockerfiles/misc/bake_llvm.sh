@@ -34,7 +34,7 @@ function bootstrap_llvm() {
         -GNinja \
         -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
         -DLLVM_ENABLE_PROJECTS="clang;lld" \
-        -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+        -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
         -DLLVM_TARGETS_TO_BUILD=Native \
         ../llvm
 
