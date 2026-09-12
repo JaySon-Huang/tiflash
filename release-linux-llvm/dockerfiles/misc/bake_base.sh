@@ -28,9 +28,13 @@ dnf install -y \
      libcurl-devel \
      bzip2 \
      chrpath
-dnf install -y curl git perl wget cmake3 gettext glibc-static zlib-devel diffutils ninja-build gcc-toolset-10
+dnf install -y curl git perl wget cmake3 gettext glibc-static zlib-devel diffutils ninja-build gcc-toolset-10 python39 python39-devel
 dnf install -y 'perl(Data::Dumper)'
 dnf clean all -y
+
+# LLVM >= 18 requires Python >= 3.8 for its build scripts, while Rocky 8 still
+# ships Python 3.6 as /usr/bin/python3. Point the default python3 at 3.9.
+alternatives --set python3 /usr/bin/python3.9
 
 
 # Install cmake for CI/CD.
