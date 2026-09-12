@@ -50,7 +50,7 @@ function bootstrap_llvm() {
         -GNinja \
         -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
         -DLLVM_ENABLE_PROJECTS="clang;lld;polly;clang-tools-extra;bolt" \
-        -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;openmp;compiler-rt" \
+        -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind;openmp;compiler-rt" \
         -DLLVM_TARGETS_TO_BUILD=Native \
         -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
         -DCLANG_DEFAULT_LINKER=lld \
