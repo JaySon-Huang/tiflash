@@ -27,8 +27,11 @@ install_rust "nightly-2024-12-12"
 source $HOME/.cargo/env
 
 # ccache
+# NOTE: keep this at a version that builds against the toolchain's default C++ standard
+# library. ccache <= 4.13 fails with libc++ 23, which no longer pulls in <exception> /
+# <algorithm> transitively ("no member named 'terminate'/'any_of' in namespace 'std'").
 source $SCRIPTPATH/install_ccache.sh
-install_ccache "4.10.2"
+install_ccache "4.14"
 
 # some other required devtools
 dnf upgrade-minimal -y
