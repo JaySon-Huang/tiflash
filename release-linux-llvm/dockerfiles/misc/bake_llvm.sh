@@ -20,7 +20,7 @@ INSTALL_PREFIX=${INSTALL_PREFIX:-"/usr/local"}
 
 # Boostrap LLVM envriroment for CI/CD.
 # Require: git, ninja, cmake, compiler(gcc-toolset-100)
-# LLVM License: https://releases.llvm.org/17.0.6/LICENSE.TXT
+# LLVM License: https://releases.llvm.org/23.1.1/LICENSE.TXT
 
 function bootstrap_llvm() {
     # $1: llvm_version
@@ -71,4 +71,4 @@ function bootstrap_llvm() {
     ldconfig
 }
 
-bootstrap_llvm "17.0.6"
+bootstrap_llvm "23.1.1"
