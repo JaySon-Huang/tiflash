@@ -19,7 +19,7 @@ set -ueox pipefail
 CMAKE_VERSION="3.24.2"
 ARCH=$(uname -m)
 LLVM_VERSION="23.1.1"
-CCACHE_VERSION="4.10.2"
+CCACHE_VERSION="4.14"
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 SYSROOT="${SCRIPTPATH}/sysroot"
 OPENSSL_VERSION="1_1_1w"
