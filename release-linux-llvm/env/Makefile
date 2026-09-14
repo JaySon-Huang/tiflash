@@ -19,6 +19,10 @@ SUFFIX ?= ""
 # The base image holding the toolchain. Depending on the target it is used either as
 # the build environment (prepare-sysroot.sh) or as the source to dump from.
 BUILDER_IMAGE ?= hub.pingcap.net/tiflash/tiflash-llvm-base:rocky8$(SUFFIX)
+# Let xz use all cores: single-threaded it needs ~20 minutes for the ~3.6G sysroot,
+# with -T0 it is under a minute. Override it if you want to trade cpu for size,
+# e.g. `make ... XZ_OPT=-6T4`.
+XZ_OPT ?= -T0
 
 # make the shell scripts as phony so that always replace with newer one
 .PHONY: scripts clean dump-tiflash-env
@@ -36,7 +40,7 @@ tiflash-env-$(ARCH).tar.xz: scripts
 	# Add the z to modify the selinux label of the host file or directory being mounted into the container.
 	# Reference: https://docs.docker.com/storage/bind-mounts/#configure-the-selinux-label
 	$(DOCKER) run --rm -v $(MOUNT):/tiflash-env:z $(BUILDER_IMAGE) /tiflash-env/prepare-sysroot.sh
-	tar -cvaf tiflash-env-$(ARCH).tar.xz tiflash-env
+	XZ_OPT=$(XZ_OPT) tar -cvaf tiflash-env-$(ARCH).tar.xz tiflash-env
 
 # Dump a ready-to-use toolchain out of an EXISTING builder image, without rebuilding
 # LLVM (seconds instead of hours). The result has the same layout as
@@ -53,7 +57,7 @@ tiflash-env-$(ARCH).tar.xz: scripts
 #   ./loader-env-dump > ~/.tiflash_env && source ~/.tiflash_env
 dump-tiflash-env:
 	./dump-from-image.sh "$(BUILDER_IMAGE)" tiflash-env $(ARCH)
-	tar -cvaf tiflash-env-$(ARCH).tar.xz tiflash-env
+	XZ_OPT=$(XZ_OPT) tar -cvaf tiflash-env-$(ARCH).tar.xz tiflash-env
 
 clean:
 	rm -rf tiflash-env tiflash-env-$(ARCH).tar.xz
