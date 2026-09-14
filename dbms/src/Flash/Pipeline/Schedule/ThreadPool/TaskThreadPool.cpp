@@ -102,10 +102,12 @@ void TaskThreadPool<Impl>::handleTask(TaskPtr & task)
         if (keyspace_cpu_limiter && !reservation_released)
             keyspace_cpu_limiter->release(task_ptr);
     });
+    const bool need_cpu_time = keyspace_cpu_limiter && keyspace_cpu_limiter->hasCPUQuota();
     TaskTimer timer{task->profile_info};
-    timer.startCPUTime();
+    if (need_cpu_time)
+        timer.startCPUTime();
     task->beforeExec(&timer);
-    if (keyspace_cpu_limiter)
+    if (need_cpu_time)
         keyspace_cpu_limiter->consumeCPUTime(task.get(), timer.updateCPUExecutingTime());
 
     metrics.incExecutingTask();
@@ -119,7 +121,7 @@ void TaskThreadPool<Impl>::handleTask(TaskPtr & task)
         status_after_exec = Impl::exec(task);
         auto total_time_spent = timer.updateExecutingTime();
         const bool cpu_quota_exhausted
-            = keyspace_cpu_limiter && keyspace_cpu_limiter->consumeCPUTime(task.get(), timer.updateCPUExecutingTime());
+            = need_cpu_time && keyspace_cpu_limiter->consumeCPUTime(task.get(), timer.updateCPUExecutingTime());
         // The executing task should yield if it takes more than `YIELD_MAX_TIME_SPENT_NS`.
         if (!Impl::isTargetStatus(status_after_exec) || total_time_spent >= YIELD_MAX_TIME_SPENT_NS
             || cpu_quota_exhausted)

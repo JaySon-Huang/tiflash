@@ -21,8 +21,13 @@
 #include <Flash/ResourceControl/MockLocalAdmissionController.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <future>
 #include <random>
+#include <thread>
 #include <vector>
+
+#include <ext/scope_guard.h>
 
 namespace DB::tests
 {
@@ -49,8 +54,72 @@ TEST(KeyspaceCpuLimiterTest, ZeroLimitDisablesLimiter)
     KeyspaceCpuLimiter limiter(0);
 
     ASSERT_FALSE(limiter.isEnabled());
+    ASSERT_FALSE(limiter.hasCPUQuota());
     for (size_t i = 0; i < 10; ++i)
         ASSERT_TRUE(limiter.tryAcquire(1));
+}
+
+TEST(KeyspaceCpuLimiterTest, PoolOnlyWaitBlocksUntilNotify)
+{
+    KeyspaceCpuLimiter limiter(1);
+    ASSERT_TRUE(limiter.isEnabled());
+    ASSERT_FALSE(limiter.hasCPUQuota());
+
+    const auto previous_change_id = limiter.getChangeId();
+    std::atomic_bool waiter_started = false;
+    std::promise<void> waiter_done;
+    auto waiter_finished = waiter_done.get_future();
+    std::thread waiter([&] {
+        waiter_started.store(true, std::memory_order_release);
+        limiter.waitForProgress(previous_change_id);
+        waiter_done.set_value();
+    });
+    SCOPE_EXIT({
+        if (waiter.joinable())
+        {
+            limiter.notifyAll();
+            waiter.join();
+        }
+    });
+
+    while (!waiter_started.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_EQ(waiter_finished.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+
+    limiter.notifyAll();
+    ASSERT_EQ(waiter_finished.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    waiter.join();
+}
+
+TEST(KeyspaceCpuLimiterTest, WaitForChangeMaxTimeoutDoesNotReturnImmediately)
+{
+    KeyspaceCpuLimiter limiter(1);
+    const auto previous_change_id = limiter.getChangeId();
+    std::atomic_bool waiter_started = false;
+    std::promise<void> waiter_done;
+    auto waiter_finished = waiter_done.get_future();
+    std::thread waiter([&] {
+        waiter_started.store(true, std::memory_order_release);
+        limiter.waitForChange(previous_change_id, std::chrono::milliseconds::max());
+        waiter_done.set_value();
+    });
+    SCOPE_EXIT({
+        if (waiter.joinable())
+        {
+            limiter.notifyAll();
+            waiter.join();
+        }
+    });
+
+    while (!waiter_started.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_EQ(waiter_finished.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+
+    limiter.notifyAll();
+    ASSERT_EQ(waiter_finished.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    waiter.join();
 }
 
 TEST(KeyspaceCpuLimiterTest, CPUQuotaWorksWithoutPoolLimit)
@@ -61,6 +130,7 @@ TEST(KeyspaceCpuLimiterTest, CPUQuotaWorksWithoutPoolLimit)
     KeyspaceCpuLimiter limiter(0, cpu_quota_per_second_ns);
     const Task * task = nullptr;
 
+    ASSERT_TRUE(limiter.hasCPUQuota());
     ASSERT_TRUE(limiter.tryAcquire(keyspace_id));
     limiter.bindOwner(keyspace_id, task);
     ASSERT_TRUE(limiter.consumeCPUTime(

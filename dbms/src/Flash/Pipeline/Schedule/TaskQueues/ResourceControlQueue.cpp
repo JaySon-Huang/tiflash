@@ -174,9 +174,7 @@ bool ResourceControlQueue<NestedTaskQueueType>::take(TaskPtr & task)
             if (!resource_group_infos.empty())
             {
                 lock.unlock();
-                keyspace_cpu_limiter->waitForChange(
-                    previous_change_id,
-                    std::min(std::chrono::milliseconds(wait_dura), keyspace_cpu_limiter->getRefillWaitDuration()));
+                keyspace_cpu_limiter->waitForProgress(previous_change_id, std::chrono::milliseconds(wait_dura));
                 lock.lock();
             }
             else
@@ -203,7 +201,7 @@ void ResourceControlQueue<NestedTaskQueueType>::updateStatistics(
     auto ru = cpuTimeToRU(inc_value);
     const String & resource_group_name = task->getResourceGroupName();
     const auto & keyspace_id = task->getKeyspaceID();
-    if (keyspace_cpu_limiter)
+    if (keyspace_cpu_limiter && keyspace_cpu_limiter->isEnabled())
     {
         keyspace_cpu_limiter->release(task.get());
         notifyWaiters();

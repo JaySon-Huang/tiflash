@@ -92,6 +92,8 @@ public:
 
     bool isEnabled() const { return max_active_tasks != 0 || cpu_quota_per_second_ns != 0; }
 
+    bool hasCPUQuota() const { return cpu_quota_per_second_ns != 0; }
+
     /// Charge CPU consumed since the previous execute() call. Returning true
     /// asks the task thread to yield before it starts another execution round.
     bool consumeCPUTime(const Task * task, UInt64 cpu_time_ns)
@@ -112,11 +114,24 @@ public:
         return quota.tokens_ns <= 0;
     }
 
-    /// Token refill is time based, so a queue with only throttled work must
-    /// periodically retry even when no task is submitted or completed.
-    std::chrono::milliseconds getRefillWaitDuration() const
+    /// Wait until a limiter event. If CPU quota is enabled, also wake after a
+    /// short interval so take() can retry after token refill. Do not pass
+    /// `duration::max()` into `wait_for`: converting it to a steady_clock
+    /// deadline overflows and the wait returns immediately.
+    void waitForProgress(UInt64 previous_change_id)
     {
-        return cpu_quota_per_second_ns == 0 ? std::chrono::milliseconds::max() : std::chrono::milliseconds(1);
+        if (cpu_quota_per_second_ns == 0)
+            waitForChange(previous_change_id);
+        else
+            waitForChange(previous_change_id, std::chrono::milliseconds(1));
+    }
+
+    void waitForProgress(UInt64 previous_change_id, std::chrono::milliseconds extra_timeout)
+    {
+        if (cpu_quota_per_second_ns == 0)
+            waitForChange(previous_change_id, extra_timeout);
+        else
+            waitForChange(previous_change_id, std::min(extra_timeout, std::chrono::milliseconds(1)));
     }
 
     void release(const Task * task)
@@ -177,6 +192,14 @@ public:
     {
         if (!isEnabled())
             return true;
+
+        // wait_for(duration::max()) overflows the steady_clock deadline and
+        // returns immediately while the predicate is still false.
+        if (timeout == std::chrono::milliseconds::max())
+        {
+            waitForChange(previous_change_id);
+            return true;
+        }
 
         std::unique_lock lock(mu);
         return cv.wait_for(lock, timeout, [&] { return change_id != previous_change_id; });
