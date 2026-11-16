@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <common/likely.h>
+
 #include <cstddef>
 
 
@@ -30,11 +32,17 @@ inline unsigned int bitScanReverse(unsigned int x)
 
 
 /** For zero argument, result is zero.
-  * For arguments with most significand bit set, result is zero.
+  * For arguments with most significand bit set, result is n.
   * For other arguments, returns value, rounded up to power of two.
   */
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
+    // if MSB is set, return n to avoid return zero
+    if (unlikely(n >= 0x8000000000000000ULL))
+        return n;
+    else if (n <= 1)
+        return n;
+
     --n;
     n |= n >> 1;
     n |= n >> 2;

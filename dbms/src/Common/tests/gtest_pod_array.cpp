@@ -12,8 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Common/BitHelpers.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <gtest/gtest.h>
+
+#include <limits>
 
 using namespace DB;
 
@@ -110,4 +114,49 @@ TEST(Common, PODNoOverallocation)
     }
 
     EXPECT_EQ(capacities, (std::vector<size_t>{4017, 8113, 16305, 32689, 65457, 130993, 262065, 524209, 1048497}));
+}
+
+TEST(Common, RoundUpToPowerOfTwoOrZeroHugeValues)
+{
+    /// The rounding is implemented by smearing the bits and adding one, which wraps around to
+    /// zero once the most significant bit is set. Zero is not a "nothing to allocate" answer:
+    /// PODArray::reserve() forwards it to the allocator as a byte count.
+    constexpr size_t sign_bit = size_t{1} << (sizeof(size_t) * 8 - 1);
+    constexpr size_t max_size = std::numeric_limits<size_t>::max();
+
+    /// Small values keep the previous behaviour.
+    EXPECT_EQ(0UL, roundUpToPowerOfTwoOrZero(0));
+    EXPECT_EQ(1UL, roundUpToPowerOfTwoOrZero(1));
+    EXPECT_EQ(2UL, roundUpToPowerOfTwoOrZero(2));
+    EXPECT_EQ(4UL, roundUpToPowerOfTwoOrZero(3));
+    EXPECT_EQ(1024UL, roundUpToPowerOfTwoOrZero(1023));
+    EXPECT_EQ(sign_bit / 2, roundUpToPowerOfTwoOrZero(sign_bit / 2));
+    EXPECT_EQ(sign_bit, roundUpToPowerOfTwoOrZero(sign_bit / 2 + 1));
+
+    /// Regression: values at or above 2^63 used to round down to 0.
+    EXPECT_EQ(sign_bit, roundUpToPowerOfTwoOrZero(sign_bit));
+    EXPECT_EQ(sign_bit + 1, roundUpToPowerOfTwoOrZero(sign_bit + 1));
+    EXPECT_EQ(max_size, roundUpToPowerOfTwoOrZero(max_size));
+}
+
+TEST(Common, PODArrayReserveHugeSizeKeepsBufferOwned)
+{
+    /// A reserve() whose padded byte count reaches 2^63 must fail the allocation while the
+    /// array still owns its buffer. Before the fix the count was rounded down to 0, realloc(0)
+    /// freed the buffer and returned nullptr, the exception left c_start dangling and the
+    /// destructor freed the very same block again (double free).
+    PaddedPODArray<char> chars;
+    chars.push_back('a');
+    chars.push_back('b');
+
+    const size_t huge_elements = size_t{1} << (sizeof(size_t) * 8 - 1);
+    EXPECT_THROW(chars.reserve(huge_elements), Exception);
+
+    /// The array must be untouched and still usable after the failed allocation.
+    ASSERT_EQ(2UL, chars.size());
+    EXPECT_EQ('a', chars[0]);
+    EXPECT_EQ('b', chars[1]);
+    chars.push_back('c');
+    EXPECT_EQ(3UL, chars.size());
+    EXPECT_EQ(std::string("abc"), std::string(chars.data(), chars.size()));
 }
