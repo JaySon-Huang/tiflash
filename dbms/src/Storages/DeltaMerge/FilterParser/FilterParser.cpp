@@ -115,7 +115,8 @@ inline RSOperatorPtr parseTiCompareExpr( //
     const FilterParser::RSFilterType filter_type,
     const TiDB::ColumnInfos & scan_column_infos,
     const FilterParser::AttrCreatorByColumnID & creator,
-    const TimezoneInfo & timezone_info)
+    const TimezoneInfo & timezone_info,
+    bool enable_decimal_rough_set_filter)
 {
     if (unlikely(expr.children_size() != 2 && filter_type != FilterParser::RSFilterType::In))
         return createUnsupported(fmt::format(
@@ -180,6 +181,16 @@ inline RSOperatorPtr parseTiCompareExpr( //
                     "ColumnRef with unknown column id is not supported, sig={} col_id={}",
                     tipb::ScalarFuncSig_Name(expr.sig()),
                     col_id));
+            }
+            // The decimal min-max index may have been generated for existing DMFiles, but we can still disable
+            // using it for rough set filtering through the setting. Fall back to Unsupported so that the
+            // rough check conservatively returns Some for every pack, while other column types keep pruning.
+            if (unlikely(!enable_decimal_rough_set_filter && is_decimal_column))
+            {
+                return createUnsupported(fmt::format(
+                    "Rough set filter on decimal column is disabled by "
+                    "dt_enable_decimal_rough_set_filter, sig={}",
+                    tipb::ScalarFuncSig_Name(expr.sig())));
             }
         }
         else if (isLiteralExpr(child))
@@ -275,7 +286,8 @@ RSOperatorPtr parseTiExpr(
     const TiDB::ColumnInfos & scan_column_infos,
     const FilterParser::AttrCreatorByColumnID & creator,
     const TimezoneInfo & timezone_info,
-    const LoggerPtr & log)
+    const LoggerPtr & log,
+    bool enable_decimal_rough_set_filter)
 {
     if (unlikely(!isFunctionExpr(expr)))
         return createUnsupported(
@@ -302,7 +314,8 @@ RSOperatorPtr parseTiExpr(
                     fmt::format("logical not with {} children is not supported", expr.children_size()));
 
             if (const auto & child = expr.children(0); likely(isFunctionExpr(child)))
-                return createNot(parseTiExpr(child, scan_column_infos, creator, timezone_info, log));
+                return createNot(parseTiExpr(
+                    child, scan_column_infos, creator, timezone_info, log, enable_decimal_rough_set_filter));
             else
                 return createUnsupported(fmt::format(
                     "child of logical not is not function, child_type={}",
@@ -317,7 +330,8 @@ RSOperatorPtr parseTiExpr(
             for (const auto & child : expr.children())
             {
                 if (likely(isFunctionExpr(child)))
-                    children.emplace_back(parseTiExpr(child, scan_column_infos, creator, timezone_info, log));
+                    children.emplace_back(parseTiExpr(
+                        child, scan_column_infos, creator, timezone_info, log, enable_decimal_rough_set_filter));
                 else
                     children.emplace_back(createUnsupported(fmt::format(
                         "child of logical operator is not function, child_type={}",
@@ -337,7 +351,13 @@ RSOperatorPtr parseTiExpr(
         case FilterParser::RSFilterType::Less:
         case FilterParser::RSFilterType::LessEqual:
         case FilterParser::RSFilterType::In:
-            return parseTiCompareExpr(expr, filter_type, scan_column_infos, creator, timezone_info);
+            return parseTiCompareExpr(
+                expr,
+                filter_type,
+                scan_column_infos,
+                creator,
+                timezone_info,
+                enable_decimal_rough_set_filter);
 
         case FilterParser::RSFilterType::IsNull:
         {
@@ -391,18 +411,31 @@ RSOperatorPtr FilterParser::parseDAGQuery(
     const TiDB::ColumnInfos & scan_column_infos,
     FilterParser::AttrCreatorByColumnID && creator,
     const LoggerPtr & log,
-    bool enable_trim_minmax)
+    bool enable_trim_minmax,
+    bool enable_decimal_rough_set_filter)
 {
     /// By default, multiple conditions with operator "and"
     RSOperators children;
     children.reserve(dag_info.filters.size() + dag_info.pushed_down_filters.size());
     for (const auto & filter : dag_info.filters)
     {
-        children.emplace_back(cop::parseTiExpr(filter, scan_column_infos, creator, dag_info.timezone_info, log));
+        children.emplace_back(cop::parseTiExpr(
+            filter,
+            scan_column_infos,
+            creator,
+            dag_info.timezone_info,
+            log,
+            enable_decimal_rough_set_filter));
     }
     for (const auto & filter : dag_info.pushed_down_filters)
     {
-        children.emplace_back(cop::parseTiExpr(filter, scan_column_infos, creator, dag_info.timezone_info, log));
+        children.emplace_back(cop::parseTiExpr(
+            filter,
+            scan_column_infos,
+            creator,
+            dag_info.timezone_info,
+            log,
+            enable_decimal_rough_set_filter));
     }
 
     if (children.empty())

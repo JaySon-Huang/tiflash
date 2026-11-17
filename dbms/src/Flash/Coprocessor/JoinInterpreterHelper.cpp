@@ -490,6 +490,22 @@ std::vector<RuntimeFilterPtr> TiFlashJoin::genRuntimeFilterList(
     for (auto rf_pb : join.runtime_filter_list())
     {
         RuntimeFilterPtr runtime_filter = std::make_shared<RuntimeFilter>(rf_pb);
+        // The decimal min-max index may have been generated, but the user can disable using it for rough
+        // set filtering. A runtime filter IN on a decimal column also prunes packs through the min-max index,
+        // so skip registering it to keep the behavior consistent with dt_enable_decimal_rough_set_filter.
+        if (unlikely(!context.getSettingsRef().dt_enable_decimal_rough_set_filter))
+        {
+            const auto target_tp = rf_pb.target_expr_list().Get(0).field_type().tp();
+            if (target_tp == TiDB::TypeDecimal || target_tp == TiDB::TypeNewDecimal)
+            {
+                LOG_DEBUG(
+                    log,
+                    "The runtime filter {} on decimal column will not be register, because "
+                    "dt_enable_decimal_rough_set_filter is false",
+                    rf_pb.id());
+                continue;
+            }
+        }
         // check if rs operator support runtime filter target expr type
         try
         {
